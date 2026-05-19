@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+env/
+
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Output & Temp Files
+*.json
+*.png
+*.jpg
+*.jpeg
+tmp/
+
+# Reverse Engineering Legacy Artifacts
+ghidra_12.1_PUBLIC/
+legacy_archive/
+Forza Painter.rep/
+Forza Painter.gpr
+CMake/
+ref/
+output_exe/
+update-codes.dat
+*.exe
+imgui.ini
