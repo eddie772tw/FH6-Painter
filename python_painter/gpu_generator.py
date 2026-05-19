@@ -31,37 +31,101 @@ class GPUImageGenerator:
         print('=' * 80)
         print(f'Loading Target Image: {img_path}')
         try:
-            pil_img = Image.open(img_path).convert('RGB')
+            pil_img = Image.open(img_path)
         except Exception as e:
             print(f'[Error] Failed to read target image: {e}')
             return False
+
+        # Detect alpha channel
+        has_alpha = pil_img.mode in ('RGBA', 'LA', 'PA')
+        if has_alpha:
+            pil_img = pil_img.convert('RGBA')
+            alpha_data = pil_img.split()[3]
+            if alpha_data.getextrema()[0] >= 250:
+                has_alpha = False
+                pil_img = pil_img.convert('RGB')
+                print('[Alpha] Image has RGBA format but is fully opaque. Using standard RGB mode.')
+            else:
+                print('[Alpha] Transparent background detected. Alpha-aware optimization enabled.')
+        else:
+            pil_img = pil_img.convert('RGB')
+
         orig_w, orig_h = pil_img.size
         max_dim = float(max(orig_w, orig_h))
         offset_x = (max_dim - orig_w) / 2.0
         offset_y = (max_dim - orig_h) / 2.0
 
-        mean_c = pil_img.resize((1, 1), Image.Resampling.LANCZOS).getpixel((0, 0))
-        square_img = Image.new('RGB', (int(max_dim), int(max_dim)), mean_c)
-        square_img.paste(pil_img, (int(offset_x), int(offset_y)))
+        if has_alpha:
+            rgb_img = pil_img.convert('RGB')
+            alpha_channel = pil_img.split()[3]
 
-        pil_img_resized = square_img.resize((256, 256), Image.Resampling.LANCZOS)
-        target = torch.from_numpy(import_numpy_array_data_helper(pil_img_resized)).permute(2, 0, 1).float().to(self.device) / 255.0
-        mean_color = target.mean(dim=[1, 2], keepdim=True)
-        canvas = mean_color.clone().repeat(1, 256, 256)
+            square_rgb = Image.new('RGB', (int(max_dim), int(max_dim)), (0, 0, 0))
+            square_rgb.paste(rgb_img, (int(offset_x), int(offset_y)))
+            square_alpha = Image.new('L', (int(max_dim), int(max_dim)), 0)
+            square_alpha.paste(alpha_channel, (int(offset_x), int(offset_y)))
+
+            resized_rgb = square_rgb.resize((256, 256), Image.Resampling.LANCZOS)
+            resized_alpha = square_alpha.resize((256, 256), Image.Resampling.LANCZOS)
+
+            target = torch.from_numpy(import_numpy_array_data_helper(resized_rgb)).permute(2, 0, 1).float().to(self.device) / 255.0
+            alpha_mask = torch.from_numpy(import_numpy_array_data_helper(resized_alpha)).float().to(self.device) / 255.0
+            # Binary threshold
+            alpha_mask = (alpha_mask > 0.5).float()
+
+            # Mean color over opaque pixels only
+            opaque_count = alpha_mask.sum()
+            if opaque_count > 0:
+                mean_r = (target[0] * alpha_mask).sum() / opaque_count
+                mean_g = (target[1] * alpha_mask).sum() / opaque_count
+                mean_b = (target[2] * alpha_mask).sum() / opaque_count
+                mean_color = torch.stack([mean_r, mean_g, mean_b]).view(3, 1, 1)
+            else:
+                mean_color = torch.zeros(3, 1, 1, device=self.device)
+
+            canvas = mean_color.clone().repeat(1, 256, 256)
+            opaque_ratio = opaque_count.item() / (256.0 * 256.0)
+            print(f'[Alpha] Opaque pixel coverage: {opaque_ratio * 100.0:.1f}%')
+        else:
+            mean_c = pil_img.resize((1, 1), Image.Resampling.LANCZOS).getpixel((0, 0))
+            square_img = Image.new('RGB', (int(max_dim), int(max_dim)), mean_c)
+            square_img.paste(pil_img, (int(offset_x), int(offset_y)))
+
+            pil_img_resized = square_img.resize((256, 256), Image.Resampling.LANCZOS)
+            target = torch.from_numpy(import_numpy_array_data_helper(pil_img_resized)).permute(2, 0, 1).float().to(self.device) / 255.0
+            alpha_mask = torch.ones(256, 256, device=self.device)
+            mean_color = target.mean(dim=[1, 2], keepdim=True)
+            canvas = mean_color.clone().repeat(1, 256, 256)
+
         shapes_json = []
-        bg_r = int(mean_color[0, 0, 0].item() * 255.0)
-        bg_g = int(mean_color[1, 0, 0].item() * 255.0)
-        bg_b = int(mean_color[2, 0, 0].item() * 255.0)
-        shapes_json.append({'type': 1, 'data': [0.0, 0.0, float(orig_w), float(orig_h)], 'color': [bg_r, bg_g, bg_b, 0]})
+        if has_alpha:
+            print('[Alpha] No background layer will be generated (transparent mode).')
+        else:
+            bg_r = int(mean_color[0, 0, 0].item() * 255.0)
+            bg_g = int(mean_color[1, 0, 0].item() * 255.0)
+            bg_b = int(mean_color[2, 0, 0].item() * 255.0)
+            shapes_json.append({'type': 1, 'data': [0.0, 0.0, float(orig_w), float(orig_h)], 'color': [bg_r, bg_g, bg_b, 0]})
+
         print(f'Target layers to solve: {target_layers} ellipses')
         print(f'Optimization pipeline: {self.random_samples} random / {self.mutated_samples} mutations per shape')
         print('Solving...')
         start_time = time.perf_counter()
 
+        # Alpha-aware color solver: only consider opaque pixels
+        alpha_mask_2d = alpha_mask  # (256, 256)
+
         def solve_optimal_colors(masks_tensor: torch.Tensor) -> torch.Tensor:
-            mask_sums = masks_tensor.sum(dim=[1, 2], keepdim=True) + 1e-06
-            target_weighted = (target.unsqueeze(0) * masks_tensor.unsqueeze(1)).sum(dim=[2, 3], keepdim=True)
+            # masks_tensor: (batch, 256, 256)
+            effective_masks = masks_tensor * alpha_mask_2d.unsqueeze(0)  # mask out transparent pixels
+            mask_sums = effective_masks.sum(dim=[1, 2], keepdim=True) + 1e-06
+            target_weighted = (target.unsqueeze(0) * effective_masks.unsqueeze(1)).sum(dim=[2, 3], keepdim=True)
             return target_weighted / mask_sums.unsqueeze(1)
+
+        def compute_losses(rendered: torch.Tensor) -> torch.Tensor:
+            # Only compute error over opaque pixels
+            diff_sq = (rendered - target.unsqueeze(0)) ** 2  # (batch, 3, 256, 256)
+            masked_diff = diff_sq * alpha_mask_2d.unsqueeze(0).unsqueeze(0)  # mask transparent
+            return masked_diff.mean(dim=[1, 2, 3])
+
         with torch.no_grad():
             for layer in range(target_layers):
                 best_loss = 1000000000.0
@@ -89,7 +153,7 @@ class GPUImageGenerator:
                     masks = ((x_p / rx) ** 2 + (y_p / ry) ** 2 <= 1.0).float()
                     opt_colors = solve_optimal_colors(masks)
                     rendered = canvas.unsqueeze(0) * (1.0 - masks.unsqueeze(1)) + opt_colors * masks.unsqueeze(1)
-                    losses = torch.mean((rendered - target.unsqueeze(0)) ** 2, dim=[1, 2, 3])
+                    losses = compute_losses(rendered)
                     min_idx = torch.argmin(losses).item()
                     min_loss = losses[min_idx].item()
                     if min_loss < best_loss:
@@ -123,7 +187,7 @@ class GPUImageGenerator:
                     masks = ((x_p / rx) ** 2 + (y_p / ry) ** 2 <= 1.0).float()
                     opt_colors = solve_optimal_colors(masks)
                     rendered = canvas.unsqueeze(0) * (1.0 - masks.unsqueeze(1)) + opt_colors * masks.unsqueeze(1)
-                    losses = torch.mean((rendered - target.unsqueeze(0)) ** 2, dim=[1, 2, 3])
+                    losses = compute_losses(rendered)
                     min_idx = torch.argmin(losses).item()
                     min_loss = losses[min_idx].item()
                     if min_loss < best_loss:
