@@ -239,7 +239,7 @@ def handle_image_generation(img_path: str) -> int:
 def main() -> int:
     if len(sys.argv) < 2:
         print('+' * 80)
-        print(' Forza Painter Python Migration Edition')
+        print(' FH6 Painter')
         print('+' * 80)
         print('Usage:')
         print('  Image to JSON: Drag-and-drop PNG/JPG files onto this script.')

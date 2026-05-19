@@ -35,7 +35,16 @@ class GPUImageGenerator:
         except Exception as e:
             print(f'[Error] Failed to read target image: {e}')
             return False
-        pil_img_resized = pil_img.resize((256, 256), Image.Resampling.LANCZOS)
+        orig_w, orig_h = pil_img.size
+        max_dim = float(max(orig_w, orig_h))
+        offset_x = (max_dim - orig_w) / 2.0
+        offset_y = (max_dim - orig_h) / 2.0
+
+        mean_c = pil_img.resize((1, 1), Image.Resampling.LANCZOS).getpixel((0, 0))
+        square_img = Image.new('RGB', (int(max_dim), int(max_dim)), mean_c)
+        square_img.paste(pil_img, (int(offset_x), int(offset_y)))
+
+        pil_img_resized = square_img.resize((256, 256), Image.Resampling.LANCZOS)
         target = torch.from_numpy(import_numpy_array_data_helper(pil_img_resized)).permute(2, 0, 1).float().to(self.device) / 255.0
         mean_color = target.mean(dim=[1, 2], keepdim=True)
         canvas = mean_color.clone().repeat(1, 256, 256)
@@ -43,7 +52,7 @@ class GPUImageGenerator:
         bg_r = int(mean_color[0, 0, 0].item() * 255.0)
         bg_g = int(mean_color[1, 0, 0].item() * 255.0)
         bg_b = int(mean_color[2, 0, 0].item() * 255.0)
-        shapes_json.append({'type': 1, 'data': [0.0, 0.0, 3000.0, 3000.0], 'color': [bg_r, bg_g, bg_b, 0]})
+        shapes_json.append({'type': 1, 'data': [0.0, 0.0, float(orig_w), float(orig_h)], 'color': [bg_r, bg_g, bg_b, 0]})
         print(f'Target layers to solve: {target_layers} ellipses')
         print(f'Optimization pipeline: {self.random_samples} random / {self.mutated_samples} mutations per shape')
         print('Solving...')
@@ -133,17 +142,17 @@ class GPUImageGenerator:
                 best_yp = -best_dx * best_sin + best_dy * best_cos
                 best_mask = ((best_xp / best_rx) ** 2 + (best_yp / best_ry) ** 2 <= 1.0).float()
                 canvas = canvas * (1.0 - best_mask) + best_color.unsqueeze(1).unsqueeze(2) * best_mask
-                x_json = float((best_cx + 1.0) / 2.0 * 2000.0)
-                y_json = float((best_cy + 1.0) / 2.0 * 2000.0)
-                sx_json = float(best_rx * 2000.0)
-                sy_json = float(best_ry * 2000.0)
+                x_json = float((best_cx + 1.0) / 2.0 * max_dim - offset_x)
+                y_json = float((best_cy + 1.0) / 2.0 * max_dim - offset_y)
+                sx_json = float(best_rx * max_dim)
+                sy_json = float(best_ry * max_dim)
                 rot_json = float(best_theta * 180.0 / math.pi % 360.0)
                 if rot_json < 0.0:
                     rot_json += 360.0
                 col_r = max(0, min(255, int(best_color[0].item() * 255.0)))
                 col_g = max(0, min(255, int(best_color[1].item() * 255.0)))
                 col_b = max(0, min(255, int(best_color[2].item() * 255.0)))
-                shapes_json.append({'type': 102, 'data': [x_json, y_json, sx_json, sy_json, rot_json], 'color': [col_r, col_g, col_b, 255]})
+                shapes_json.append({'type': 16, 'data': [x_json, y_json, sx_json, sy_json, rot_json], 'color': [col_r, col_g, col_b, 255]})
                 if (layer + 1) % 50 == 0 or layer + 1 == target_layers:
                     progress = (layer + 1) / target_layers * 100.0
                     print(f'  [Progress] Shape {layer + 1:04d}/{target_layers:04d} solved ({progress:.1f}%) | Current L2 Loss: {best_loss:.6f}')
