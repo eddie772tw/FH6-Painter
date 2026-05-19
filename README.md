@@ -1,4 +1,4 @@
-# Forza Painter - Advanced Python Engine
+# FH6 Painter - A Optimized Version of Forza Painter in Python
 
 > The Ultimate High-Performance Vectorization & Shape Generation Engine for Forza Horizon.
 
