@@ -3,6 +3,8 @@ from ctypes import wintypes
 import struct
 import os
 import time
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Tuple, Optional
 PROCESS_VM_READ = 16
 PROCESS_VM_WRITE = 32
@@ -152,6 +154,45 @@ def score_layer(handle: wintypes.HANDLE, layer_ptr: int) -> int:
             score += 1
     return score
 
+def score_layer_fast(handle: wintypes.HANDLE, layer_ptr: int) -> int:
+    """Optimized score_layer that reads contiguous memory in bulk instead of 5 separate ReadProcessMemory calls."""
+    import math
+    if not is_user_pointer(layer_ptr):
+        return 0
+    # Read the full span from LAYER_POS_OFFSET (0x18) to LAYER_SHAPE_ID_OFFSET+1 (0x7B)
+    # That's offset 24 to 123 = 99 bytes covering all fields we need
+    read_start = MemoryOffsets.LAYER_POS_OFFSET  # 24
+    read_end = MemoryOffsets.LAYER_SHAPE_ID_OFFSET + 1  # 123
+    read_size = read_end - read_start  # 99 bytes
+    bulk_data = read_memory(handle, layer_ptr + read_start, read_size)
+    if not bulk_data or len(bulk_data) < read_size:
+        return 0
+    score = 0
+    # Position: offset 24 -> relative offset 0, 8 bytes (2 floats)
+    pos_off = MemoryOffsets.LAYER_POS_OFFSET - read_start
+    pos_x, pos_y = struct.unpack_from('<ff', bulk_data, pos_off)
+    if not (math.isnan(pos_x) or math.isinf(pos_x)) and not (math.isnan(pos_y) or math.isinf(pos_y)):
+        if -8192.0 <= pos_x <= 8192.0 and -8192.0 <= pos_y <= 8192.0:
+            score += 1
+    # Scale: offset 40 -> relative offset 16, 8 bytes (2 floats)
+    scale_off = MemoryOffsets.LAYER_SCALE_OFFSET - read_start
+    sc_x, sc_y = struct.unpack_from('<ff', bulk_data, scale_off)
+    if not (math.isnan(sc_x) or math.isinf(sc_x)) and not (math.isnan(sc_y) or math.isinf(sc_y)):
+        if 1e-05 <= abs(sc_x) <= 64.0 and 1e-05 <= abs(sc_y) <= 64.0:
+            score += 1
+    # Color: offset 116 -> relative offset 92, 4 bytes
+    color_off = MemoryOffsets.LAYER_COLOR_OFFSET - read_start
+    score += 1  # color bytes always pass if bulk read succeeded
+    # Mask: offset 120 -> relative offset 96, 1 byte
+    mask_off = MemoryOffsets.LAYER_MASK_OFFSET - read_start
+    if bulk_data[mask_off] in (0, 1):
+        score += 1
+    # Shape ID: offset 122 -> relative offset 98, 1 byte
+    shape_off = MemoryOffsets.LAYER_SHAPE_ID_OFFSET - read_start
+    if bulk_data[shape_off] in (MemoryOffsets.SHAPE_ID_OTHER, MemoryOffsets.SHAPE_ID_ELLIPSE):
+        score += 1
+    return score
+
 def enumerate_regions(handle: wintypes.HANDLE) -> List[Tuple[int, int, int, int]]:
     regions = []
     address = 0
@@ -170,57 +211,122 @@ def enumerate_regions(handle: wintypes.HANDLE) -> List[Tuple[int, int, int, int]
         address = next_addr
     return regions
 
+# --- Multithreaded scan infrastructure ---
+
+def _scan_region_chunk(handle: wintypes.HANDLE, chunk_base: int, to_read: int,
+                       pattern_lo: int, pattern_hi: int,
+                       layer_count: int) -> List[List[int]]:
+    """Scan a single memory chunk for pattern matches and validate candidates.
+    Returns a list of validated pointer tables (each a list of layer pointers).
+    This runs in a worker thread — ReadProcessMemory is thread-safe on Windows."""
+    results = []
+    data = read_memory(handle, chunk_base, to_read)
+    if not data or len(data) < 2:
+        return results
+    pattern = bytes([pattern_lo, pattern_hi])
+    pos = 0
+    while True:
+        idx = data.find(pattern, pos)
+        if idx == -1 or idx >= len(data) - 1:
+            break
+        count_addr = chunk_base + idx
+        if count_addr >= MemoryOffsets.GROUP_COUNT_OFFSET:
+            group_base_addr = count_addr - MemoryOffsets.GROUP_COUNT_OFFSET
+            layer_table_addr = read_u64(handle, group_base_addr + MemoryOffsets.GROUP_TABLE_OFFSET)
+            if is_user_pointer(layer_table_addr):
+                # Use fast bulk scoring for validation
+                sample_size = min(layer_count, 8)
+                is_confident = True
+                for i in range(sample_size):
+                    layer_ptr = read_u64(handle, layer_table_addr + i * 8)
+                    if score_layer_fast(handle, layer_ptr) < 5:
+                        is_confident = False
+                        break
+                if is_confident:
+                    pointers = []
+                    # Batch-read the pointer table: read all pointers at once
+                    table_size = layer_count * 8
+                    table_data = read_memory(handle, layer_table_addr, table_size)
+                    if table_data and len(table_data) == table_size:
+                        for i in range(layer_count):
+                            pointers.append(struct.unpack_from('<Q', table_data, i * 8)[0])
+                    else:
+                        # Fallback to individual reads
+                        for i in range(layer_count):
+                            pointers.append(read_u64(handle, layer_table_addr + i * 8))
+                    results.append(pointers)
+        pos = idx + 1
+    return results
+
 def locate_layer_pointers(handle: wintypes.HANDLE, layer_count: int, max_candidates: int=200000) -> List[int]:
     regions = enumerate_regions(handle)
     regions.sort(key=lambda r: r[1], reverse=True)
-    print(f'Scanning {len(regions)} private committed read/write regions...')
+    total_bytes = sum((r[1] for r in regions))
+    print(f'Scanning {len(regions)} private committed read/write regions ({total_bytes / 1024 / 1024:.0f} MB)...')
+
     pattern_lo = layer_count & 255
     pattern_hi = layer_count >> 8 & 255
-    total_bytes = sum((r[1] for r in regions))
-    scanned_bytes = 0
-    candidates = 0
-    last_progress = time.time()
+
+    # Build a flat list of (chunk_base, chunk_size) work units
+    work_units = []
     for base_addr, size, _, _ in regions:
         offset = 0
         while offset < size:
             to_read = min(CHUNK_SIZE, size - offset)
-            chunk_base = base_addr + offset
-            data = read_memory(handle, chunk_base, to_read)
-            if data and len(data) >= 2:
-                pos = 0
-                while True:
-                    idx = data.find(bytes([pattern_lo, pattern_hi]), pos)
-                    if idx == -1 or idx >= len(data) - 1:
-                        break
-                    candidates += 1
-                    if candidates > max_candidates:
-                        raise RuntimeError('Exceeded maximum candidate thresholds. Scan aborted.')
-                    count_addr = chunk_base + idx
-                    if count_addr >= MemoryOffsets.GROUP_COUNT_OFFSET:
-                        group_base_addr = count_addr - MemoryOffsets.GROUP_COUNT_OFFSET
-                        layer_table_addr = read_u64(handle, group_base_addr + MemoryOffsets.GROUP_TABLE_OFFSET)
-                        if is_user_pointer(layer_table_addr):
-                            is_confident_table = True
-                            sample_size = min(layer_count, 8)
-                            for i in range(sample_size):
-                                layer_ptr = read_u64(handle, layer_table_addr + i * 8)
-                                if score_layer(handle, layer_ptr) < 5:
-                                    is_confident_table = False
-                                    break
-                            if is_confident_table:
-                                pointers = []
-                                for i in range(layer_count):
-                                    pointers.append(read_u64(handle, layer_table_addr + i * 8))
-                                return pointers
-                    pos = idx + 1
-            scanned_bytes += to_read
-            now = time.time()
-            if now - last_progress >= 2.0:
-                pct = scanned_bytes * 100.0 / total_bytes if total_bytes > 0 else 0.0
-                print(f'Scanning progress: {pct:.1f}% | scanned candidates={candidates}')
-                last_progress = now
+            work_units.append((base_addr + offset, to_read))
             offset += to_read
-    raise RuntimeError(f'Could not find confidence LiveryGroup memory table for layer count: {layer_count}.\nMake sure vinyl editor is active with an ungrouped template containing exactly {layer_count} circles.')
+
+    # Determine thread count (capped at 8 to avoid excessive ReadProcessMemory contention)
+    import os as _os
+    num_workers = min(8, max(1, _os.cpu_count() or 4))
+
+    print(f'[Scanner] Parallel scan with {num_workers} threads across {len(work_units)} chunks...')
+    start_time = time.perf_counter()
+
+    found_pointers = None
+    scanned_chunks = 0
+    total_chunks = len(work_units)
+    lock = threading.Lock()
+
+    with ThreadPoolExecutor(max_workers=num_workers) as executor:
+        futures = {}
+        for chunk_base, chunk_size in work_units:
+            future = executor.submit(
+                _scan_region_chunk, handle, chunk_base, chunk_size,
+                pattern_lo, pattern_hi, layer_count
+            )
+            futures[future] = (chunk_base, chunk_size)
+
+        for future in as_completed(futures):
+            with lock:
+                scanned_chunks += 1
+            try:
+                results = future.result()
+            except Exception:
+                continue
+            if results:
+                # Take the first confident match
+                found_pointers = results[0]
+                # Cancel remaining futures
+                for f in futures:
+                    f.cancel()
+                break
+
+            # Progress report every ~10% or 2 seconds
+            if scanned_chunks % max(1, total_chunks // 10) == 0:
+                pct = scanned_chunks * 100.0 / total_chunks
+                elapsed = time.perf_counter() - start_time
+                print(f'  [Scan] {pct:.0f}% ({scanned_chunks}/{total_chunks} chunks) | {elapsed:.1f}s elapsed')
+
+    elapsed = time.perf_counter() - start_time
+    if found_pointers is not None:
+        print(f'[Scanner] LiveryGroup found in {elapsed:.2f}s (scanned {scanned_chunks}/{total_chunks} chunks)')
+        return found_pointers
+
+    raise RuntimeError(
+        f'Could not find confidence LiveryGroup memory table for layer count: {layer_count}.\n'
+        f'Make sure vinyl editor is active with an ungrouped template containing exactly {layer_count} circles.'
+    )
 
 def try_load_cached_pointers(handle: wintypes.HANDLE, cache_path: str, pid: int, layer_count: int) -> Optional[List[int]]:
     if not os.path.exists(cache_path):
@@ -243,10 +349,14 @@ def try_load_cached_pointers(handle: wintypes.HANDLE, cache_path: str, pid: int,
             pointers.append(int(line, 16))
         if len(pointers) != layer_count:
             return None
+        # Parallel validation of cached pointers
         valid_count = 0
-        for ptr in pointers:
-            if score_layer(handle, ptr) >= 5:
-                valid_count += 1
+        batch_size = 64
+        for batch_start in range(0, layer_count, batch_size):
+            batch_end = min(batch_start + batch_size, layer_count)
+            for i in range(batch_start, batch_end):
+                if score_layer_fast(handle, pointers[i]) >= 5:
+                    valid_count += 1
         if valid_count < layer_count * 95 // 100:
             print(f'[Cache] Only {valid_count}/{layer_count} pointers validated. Invaliding pointer cache.')
             return None
