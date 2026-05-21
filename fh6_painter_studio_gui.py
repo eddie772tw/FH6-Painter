@@ -130,9 +130,28 @@ class ForzaStudioGUI:
                 "path": "",
                 "desc": "Default system generation profile"
             })
-        # Sort so default is first
-        profiles.sort(key=lambda x: 0 if x["name"] == "_default" else 1)
+        # Sort alphabetically first
+        profiles.sort(key=lambda x: x["name"])
+        # Move "c. balanced" profile to the front (index 0) so it's selected by default
+        balanced_idx = -1
+        for idx, p in enumerate(profiles):
+            if "balanced" in p["name"].lower():
+                balanced_idx = idx
+                break
+        if balanced_idx != -1:
+            balanced_item = profiles.pop(balanced_idx)
+            profiles.insert(0, balanced_item)
+        elif len(profiles) > 0:
+            default_idx = -1
+            for idx, p in enumerate(profiles):
+                if p["name"] == "_default":
+                    default_idx = idx
+                    break
+            if default_idx != -1:
+                default_item = profiles.pop(default_idx)
+                profiles.insert(0, default_item)
         return profiles
+
 
     def apply_styles(self):
         """Set up standard TTK style properties for modern flat design."""
@@ -581,9 +600,11 @@ class ForzaStudioGUI:
             messagebox.showerror("Error", "Invalid Layers Limit.\nPlease enter an integer between 500 and 3000.")
             return
             
-        # Determine output JSON name
-        base_name, _ = os.path.splitext(img_path)
-        output_json = f"{base_name}.json"
+        # Determine output JSON name and create a structured output folder under the project root
+        img_base = os.path.splitext(os.path.basename(img_path))[0]
+        project_root = os.path.dirname(os.path.abspath(__file__))
+        output_dir = os.path.join(project_root, "output", img_base)
+        output_json = os.path.join(output_dir, f"{img_base}.json")
         self.auto_load_json_path = output_json
         
         # Determine profile INI path

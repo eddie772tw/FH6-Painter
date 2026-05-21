@@ -261,6 +261,197 @@ def find_best_ellipse(target, canvas, num_candidates=200, optimization_steps=50)
     
     return (x_c, y_c, r_x, r_y, theta, r, g, b, alpha, delta)
 
+# --- JIT-compiled Backward Alpha Occlusion Redundancy Check ---
+@numba.jit(nopython=True, fastmath=True, cache=True)
+def run_redundancy_check_jit(shapes_data, shapes_color, shapes_type, width, height):
+    """
+    JIT-accelerated backward occlusion tracing.
+    shapes_data: 2D array (N, 5) -> [x_c, y_c, r_x, r_y, theta] (theta in radians)
+    shapes_color: 2D array (N, 4) -> [r, g, b, alpha]
+    shapes_type: 1D array (N) -> type (1 for background, 32 for ellipse)
+    Returns a boolean mask of shape visibility (True if useful, False if redundant).
+    """
+    num_shapes = len(shapes_type)
+    visible_mask = np.ones(num_shapes, dtype=np.bool_)
+    
+    # 2D occlusion canvas initialized to 0.0
+    occlusion = np.zeros((height, width), dtype=np.float32)
+    
+    # Walk backward from top to bottom
+    for i in range(num_shapes - 1, -1, -1):
+        s_type = shapes_type[i]
+        
+        # Background canvas header (type 1)
+        if s_type == 1:
+            visible_mask[i] = True
+            # Background is 100% opaque, fills the whole canvas
+            for y in range(height):
+                for x in range(width):
+                    occlusion[y, x] = 1.0
+            continue
+            
+        # Ellipse shape (type 32)
+        x_c = np.float32(shapes_data[i, 0])
+        y_c = np.float32(shapes_data[i, 1])
+        r_x = np.float32(shapes_data[i, 2])
+        r_y = np.float32(shapes_data[i, 3])
+        theta = np.float32(shapes_data[i, 4])
+        
+        alpha = shapes_color[i, 3]
+        a_f = np.float32(alpha / 255.0)
+        
+        cos_t = np.float32(math.cos(theta))
+        sin_t = np.float32(math.sin(theta))
+        
+        # Calculate exact bounding box of the rotated ellipse
+        x_half = math.sqrt(r_x*r_x * cos_t*cos_t + r_y*r_y * sin_t*sin_t)
+        y_half = math.sqrt(r_x*r_x * sin_t*sin_t + r_y*r_y * cos_t*cos_t)
+        
+        min_x = max(0, int(x_c - x_half))
+        max_x = min(width - 1, int(x_c + x_half))
+        min_y = max(0, int(y_c - y_half))
+        max_y = min(height - 1, int(y_c + y_half))
+        
+        inv_rx2 = np.float32(1.0 / (r_x * r_x) if r_x > 0 else 0.0)
+        inv_ry2 = np.float32(1.0 / (r_y * r_y) if r_y > 0 else 0.0)
+        
+        # Check if shape contributes any visible pixel
+        has_contribution = False
+        
+        for y in range(min_y, max_y + 1):
+            dy = np.float32(y - y_c)
+            dx_start = np.float32(min_x - x_c)
+            rx = dx_start * cos_t + dy * sin_t
+            ry = -dx_start * sin_t + dy * cos_t
+            
+            for x in range(min_x, max_x + 1):
+                if (rx * rx) * inv_rx2 + (ry * ry) * inv_ry2 <= 1.0:
+                    if occlusion[y, x] < 0.999:
+                        has_contribution = True
+                        occlusion[y, x] += (1.0 - occlusion[y, x]) * a_f
+                        
+                rx += cos_t
+                ry -= sin_t
+                
+        if not has_contribution:
+            visible_mask[i] = False
+            
+    return visible_mask
+
+def optimize_redundant_shapes(shapes_list, width, height):
+    """Filters out fully occluded/redundant shapes from the shapes list."""
+    if len(shapes_list) <= 1:
+        return shapes_list
+        
+    num_shapes = len(shapes_list)
+    shapes_data = np.zeros((num_shapes, 5), dtype=np.float32)
+    shapes_color = np.zeros((num_shapes, 4), dtype=np.int32)
+    shapes_type = np.zeros(num_shapes, dtype=np.int32)
+    
+    for i, s in enumerate(shapes_list):
+        s_type = s["type"]
+        shapes_type[i] = s_type
+        data = s["data"]
+        if s_type == 32 and len(data) >= 5:
+            shapes_data[i, 0] = data[0]
+            shapes_data[i, 1] = data[1]
+            shapes_data[i, 2] = data[2]
+            shapes_data[i, 3] = data[3]
+            shapes_data[i, 4] = math.radians(data[4])
+            
+        color = s["color"]
+        if len(color) >= 4:
+            shapes_color[i, 0] = color[0]
+            shapes_color[i, 1] = color[1]
+            shapes_color[i, 2] = color[2]
+            shapes_color[i, 3] = color[3]
+            
+    visible_mask = run_redundancy_check_jit(shapes_data, shapes_color, shapes_type, width, height)
+    optimized_shapes = [shapes_list[i] for i in range(num_shapes) if visible_mask[i]]
+    
+    removed_count = num_shapes - len(optimized_shapes)
+    if removed_count > 0:
+        print(f"\n[Optimization] Removed {removed_count} redundant/occluded shapes! Conserved layers count: {len(optimized_shapes)}")
+        
+    return optimized_shapes
+
+def optimize_redundant_shapes_final(shapes_list, width, height):
+    """
+    末尾專用：不刪除冗餘形狀，而是將其重置為左上角 (0, 0) 的極小全透明形狀，
+    以維持總層數剛好等於原始層數限制，便於遊戲內手動清理。
+    """
+    if len(shapes_list) <= 1:
+        return shapes_list
+        
+    num_shapes = len(shapes_list)
+    shapes_data = np.zeros((num_shapes, 5), dtype=np.float32)
+    shapes_color = np.zeros((num_shapes, 4), dtype=np.int32)
+    shapes_type = np.zeros(num_shapes, dtype=np.int32)
+    
+    for i, s in enumerate(shapes_list):
+        s_type = s["type"]
+        shapes_type[i] = s_type
+        data = s["data"]
+        if s_type == 32 and len(data) >= 5:
+            shapes_data[i, 0] = data[0]
+            shapes_data[i, 1] = data[1]
+            shapes_data[i, 2] = data[2]
+            shapes_data[i, 3] = data[3]
+            shapes_data[i, 4] = math.radians(data[4])
+            
+        color = s["color"]
+        if len(color) >= 4:
+            shapes_color[i, 0] = color[0]
+            shapes_color[i, 1] = color[1]
+            shapes_color[i, 2] = color[2]
+            shapes_color[i, 3] = color[3]
+            
+    visible_mask = run_redundancy_check_jit(shapes_data, shapes_color, shapes_type, width, height)
+    
+    final_shapes = []
+    reset_count = 0
+    
+    # shapes_list[0] 是 background header
+    final_shapes.append(shapes_list[0])
+    
+    for i in range(1, num_shapes):
+        s = shapes_list[i]
+        if visible_mask[i]:
+            final_shapes.append(s)
+        else:
+            # 冗餘形狀，將其重置為左上角極小全透明
+            reset_shape = {
+                "type": 32,
+                "data": [0.0, 0.0, 2.0, 2.0, 0.0],
+                "color": [0, 0, 0, 0],
+                "score": 0.0
+            }
+            final_shapes.append(reset_shape)
+            reset_count += 1
+            
+    if reset_count > 0:
+        print(f"\n[Optimization] Final check: reset {reset_count} redundant shapes to top-left (0,0) with 100% transparency.")
+        
+    return final_shapes
+
+
+def rebuild_canvas_from_shapes(canvas, shapes_list, avg_r, avg_g, avg_b):
+    """Re-draws all valid shapes onto the canvas after redundancy check optimization."""
+    canvas[:, :, 0] = avg_r
+    canvas[:, :, 1] = avg_g
+    canvas[:, :, 2] = avg_b
+    
+    for s in shapes_list:
+        if s["type"] == 32:
+            data = s["data"]
+            color = s["color"]
+            draw_ellipse(
+                canvas, 
+                data[0], data[1], data[2], data[3], 
+                math.radians(data[4]), 
+                color[0], color[1], color[2], color[3]
+            )
+
 # --- Helper Functions ---
 def load_profile(profile_path):
     """Parses custom .ini profile files from the settings directory."""
@@ -286,9 +477,22 @@ def run_generator(image_path, output_path=None, profile_path=None, layers_limit=
         print(f"ERROR: Image not found: {image_path}", file=sys.stderr)
         return 1
         
+    # --- Resolve default profile to c. balanced if not provided ---
+    if not profile_path:
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        project_root = os.path.dirname(script_dir)  # parent of 'tools'
+        default_profile = os.path.join(project_root, "settings", "c. balanced - good quality and speed.ini")
+        if os.path.exists(default_profile):
+            profile_path = default_profile
+            print(f"No profile specified. Using default: {os.path.basename(profile_path)}")
+
+        
     if not output_path:
-        base_name, _ = os.path.splitext(image_path)
-        output_path = f"{base_name}.json"
+        img_base = os.path.splitext(os.path.basename(image_path))[0]
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        project_root = os.path.dirname(script_dir)  # parent of 'tools'
+        output_dir = os.path.join(project_root, "output", img_base)
+        output_path = os.path.join(output_dir, f"{img_base}.json")
         
     # --- Load Settings from Profile ---
     profile = load_profile(profile_path)
@@ -297,7 +501,9 @@ def run_generator(image_path, output_path=None, profile_path=None, layers_limit=
     profile_layers = int(profile.get("stopAt", 2000))
     profile_candidates = int(profile.get("randomSamples", 20000))
     profile_steps = int(profile.get("mutatedSamples", 200))
-    save_every = int(profile.get("saveEvery", 10))
+    save_every = int(profile.get("saveEvery", 500))
+    if save_every < 500:
+        save_every = 500
     posterize_levels = int(profile.get("posterizeLevels", 256))
     
     save_at_str = profile.get("saveAt", "")
@@ -318,6 +524,8 @@ def run_generator(image_path, output_path=None, profile_path=None, layers_limit=
         print(f"Profile: {os.path.basename(profile_path)}")
     print(f"Target: {image_path} -> Output: {output_path}")
     print(f"Layers limit: {layers} | Candidates: {candidates} | Optim steps: {steps}")
+    # Ensure the output directory exists before starting generation to support intermediate saves safely
+    os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
     
     # Load and preprocess image
     img = Image.open(image_path).convert("RGB")
@@ -366,7 +574,12 @@ def run_generator(image_path, output_path=None, profile_path=None, layers_limit=
     start_time = time.time()
     last_print = time.time()
     
-    for i in range(layers):
+    attempts = 0
+    max_attempts = layers * 3
+    total_generated_so_far = 0
+    
+    while (len(shapes_list) - 1 < layers) and (attempts < max_attempts):
+        attempts += 1
         result = find_best_ellipse(target, canvas, candidates, steps)
         if not result:
             continue
@@ -384,7 +597,21 @@ def run_generator(image_path, output_path=None, profile_path=None, layers_limit=
             "score": float(delta)
         })
         
-        current_layer = i + 1
+        total_generated_so_far += 1
+        current_layer = len(shapes_list) - 1
+        
+        # --- Midway Redundancy Check & Canvas Rebuilding ---
+        # Golden rule: Start checking after 1000 layers, every 100 layers.
+        # Test mode fallback: If layers < 1000, trigger every 10 layers starting at 10.
+        is_normal_trigger = (total_generated_so_far >= 1000 and (total_generated_so_far - 1000) % 100 == 0)
+        is_test_trigger = (layers < 1000 and total_generated_so_far >= 10 and (total_generated_so_far - 10) % 10 == 0)
+        
+        if is_normal_trigger or is_test_trigger:
+            print(f"\n[Engine] Reached {total_generated_so_far} generated layers. Running mid-way redundancy check...")
+            shapes_list = optimize_redundant_shapes(shapes_list, width, height)
+            # Rebuild canvas from stable ordered remaining shapes
+            rebuild_canvas_from_shapes(canvas, shapes_list, avg_r, avg_g, avg_b)
+            current_layer = len(shapes_list) - 1
         
         # Check if we should save intermediate JSON
         if current_layer in save_at or (save_every > 0 and current_layer % save_every == 0 and current_layer < layers):
@@ -406,15 +633,23 @@ def run_generator(image_path, output_path=None, profile_path=None, layers_limit=
         if progress_callback:
             progress_callback(current_layer, layers, speed, eta, canvas)
             
-        if now - last_print >= 1.0 or i == layers - 1:
+        if now - last_print >= 1.0 or current_layer == layers:
             pct = current_layer * 100.0 / layers
-            sys.stdout.write(f"\rGenerating Shapes: {pct:5.1f}% | Layer {current_layer:4d}/{layers} | Speed: {speed:5.1f} layers/s | ETA: {eta:4.0f}s")
-            sys.stdout.flush()
+            if not progress_callback:
+                sys.stdout.write(f"\rGenerating Shapes: {pct:5.1f}% | Layer {current_layer:4d}/{layers} | Speed: {speed:5.1f} layers/s | ETA: {eta:4.0f}s")
+                sys.stdout.flush()
+            else:
+                if current_layer % 500 == 0 or current_layer == layers:
+                    print(f"[Engine] Shape generation progress: {pct:.1f}% ({current_layer}/{layers})")
             last_print = now
             
     print()
     total_time = time.time() - start_time
     print(f"Shape generation completed in {total_time:.2f} seconds!")
+    
+    # --- Final Redundancy Check: Reset redundant layers to top-left transparent shapes ---
+    print("\n[Engine] Running final redundancy check to reserve layer count and reset occluded shapes...")
+    shapes_list = optimize_redundant_shapes_final(shapes_list, width, height)
     
     # Save to final JSON file
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
@@ -423,6 +658,7 @@ def run_generator(image_path, output_path=None, profile_path=None, layers_limit=
         
     print(f"JSON geometry successfully written to: {output_path}")
     return 0
+
 
 def main():
     parser = argparse.ArgumentParser(description="High-performance Python Image-to-JSON Shape Generator")
