@@ -11,7 +11,7 @@ from tkinter import ttk, filedialog, scrolledtext, messagebox
 # --- Ensure we can import from the tools directory ---
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "tools"))
 try:
-    from tools.fh6_painter_generator import run_generator
+    from tools.fh6_painter_generator import run_generator, rebuild_canvas_from_shapes
     from tools.fh6_import_layer_table import run_importer
     from PIL import Image, ImageTk, ImageDraw
     import numpy as np
@@ -20,24 +20,13 @@ except ImportError as e:
     HAS_LIBS = False
     IMPORT_ERROR = str(e)
 
-# --- Thread-safe Console I/O Redirector ---
-class IORedirector:
-    def __init__(self, log_queue):
-        self.log_queue = log_queue
-
-    def write(self, string):
-        self.log_queue.put(string)
-
-    def flush(self):
-        pass
-
 # --- Premium Dark Studio GUI Application ---
 class ForzaStudioGUI:
     def __init__(self, root, preload_file=None):
         self.root = root
         self.root.title("FORZA STUDIO - FH6 Shape Generator & Importer")
-        self.root.geometry("1100x760")
-        self.root.minsize(1024, 720)
+        self.root.geometry("1100x660")
+        self.root.minsize(1024, 620)
         
         # --- UI Color Palette ---
         self.bg_main = "#121212"       # Dark Background
@@ -62,7 +51,6 @@ class ForzaStudioGUI:
         self.root.configure(bg=self.bg_main)
         
         # Initialize thread-safe data holders
-        self.log_queue = queue.Queue()
         self.preview_image_lock = threading.Lock()
         self.latest_canvas_array = None
         self.latest_progress = (0, 100, 0.0, 0.0) # (current, total, speed, eta)
@@ -352,18 +340,6 @@ class ForzaStudioGUI:
         # Fluid progress bar
         self.progress_bar = ttk.Progressbar(preview_body, orient="horizontal", mode="determinate", style="Custom.Horizontal.TProgressbar")
         self.progress_bar.pack(fill="x", pady=(5, 5))
-        
-        # --- BOTTOM SYSTEM CONSOLE ---
-        card_console = ttk.Frame(main_container, style="Card.TFrame")
-        card_console.pack(fill="x", side="bottom", pady=(10, 0))
-        
-        self.create_card_header(card_console, "5. SYSTEM LOG CONSOLE", "Diagnostic outputs, scanner logs, and engine responses")
-        
-        console_body = tk.Frame(card_console, bg=self.bg_card)
-        console_body.pack(fill="both", expand=True, padx=15, pady=(2, 8))
-        
-        self.txt_console = scrolledtext.ScrolledText(console_body, height=7, bg="#080808", fg="#00FF66", insertbackground="#00FF66", font=("Consolas", 9), bd=0, highlightthickness=1, highlightbackground="#1A1A1A")
-        self.txt_console.pack(fill="both", expand=True)
 
     def create_card_header(self, parent, title, subtitle):
         """Creates a standardized modern card header inside custom panels."""
@@ -415,9 +391,9 @@ class ForzaStudioGUI:
         self.canvas_preview.create_text(center, center + 25, text="LOAD INPUT DATA FILE", fill="#555555", font=("Microsoft JhengHei", 8))
 
     def log_to_console(self, text):
-        """Prints a diagnostic log line into the virtual system console."""
-        self.txt_console.insert(tk.END, text)
-        self.txt_console.see(tk.END)
+        """Prints a diagnostic log line into the standard terminal console."""
+        sys.stdout.write(text)
+        sys.stdout.flush()
 
     def on_profile_selected(self, event):
         """Fires when user selects a profile; updates HUD descriptive elements and pre-populates overrides."""
@@ -479,6 +455,33 @@ class ForzaStudioGUI:
             self.btn_generate.configure(state="disabled", bg=self.color_blue_disabled, fg="#888888")
             self.btn_inject.configure(state="normal", bg=self.color_blue, fg=self.fg_primary)
             
+            # --- Load JSON and render preview instantly ---
+            if os.path.exists(path):
+                import json
+                try:
+                    with open(path, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                    shapes = data.get("shapes", [])
+                    if len(shapes) > 0:
+                        header = shapes[0]
+                        # Extract background dimensions and colors from header shape
+                        h_data = header.get("data", [0.0, 0.0, 600.0, 600.0])
+                        h_color = header.get("color", [128, 128, 128, 0])
+                        width = int(h_data[2]) if len(h_data) >= 3 else 600
+                        height = int(h_data[3]) if len(h_data) >= 4 else 600
+                        avg_r, avg_g, avg_b = h_color[0], h_color[1], h_color[2]
+                        
+                        # Generate premium RGBA preview canvas array to support checkerboard preview
+                        canvas = np.zeros((height, width, 4), dtype=np.float32)
+                        rebuild_canvas_from_shapes(canvas, shapes, avg_r, avg_g, avg_b)
+                        
+                        # Lock and update share preview array for live workbench repainting
+                        with self.preview_image_lock:
+                            self.latest_canvas_array = canvas.copy()
+                            self.need_preview_update = True
+                except Exception as e:
+                    self.log_to_console(f"\n[Instant Preview Loader Error] {e}\n")
+            
         else:
             # Unidentified format
             self.btn_generate.configure(state="disabled", bg=self.bg_card, fg="#555555")
@@ -509,16 +512,8 @@ class ForzaStudioGUI:
 
     # --- Thread-Safe Update Hook ---
     def poll_background_updates(self):
-        """Cycles every 100ms in the main loop to dump log queues and repaint previews."""
-        # 1. Update text console
-        while not self.log_queue.empty():
-            try:
-                msg = self.log_queue.get_nowait()
-                self.log_to_console(msg)
-            except queue.Empty:
-                break
-                
-        # 2. Update Canvas Preview from shared numpy variable
+        """Cycles every 100ms in the main loop to repaint previews and handle metrics."""
+        # 1. Update Canvas Preview from shared numpy variable
         if self.need_preview_update:
             with self.preview_image_lock:
                 arr = self.latest_canvas_array.copy() if self.latest_canvas_array is not None else None
@@ -528,7 +523,29 @@ class ForzaStudioGUI:
                 try:
                     # Clip numpy array and convert float32 to uint8
                     arr_clipped = np.clip(arr, 0.0, 255.0).astype(np.uint8)
-                    pil_img = Image.fromarray(arr_clipped)
+                    
+                    if arr.ndim == 3 and arr.shape[2] == 4:
+                        # Extract RGB and Alpha
+                        arr_rgb = arr_clipped[:, :, :3].astype(np.float32)
+                        alpha = arr_clipped[:, :, 3].astype(np.float32) / 255.0
+                        alpha = np.expand_dims(alpha, axis=2) # Shape: (H, W, 1)
+                        
+                        # Generate checkerboard pattern dynamically using fast numpy indexing
+                        H, W = arr.shape[0], arr.shape[1]
+                        block_size = 8
+                        y_indices = np.arange(H) // block_size
+                        x_indices = np.arange(W) // block_size
+                        grid = (y_indices[:, None] + x_indices[None, :]) % 2
+                        checker = np.zeros((H, W, 3), dtype=np.float32)
+                        checker[grid == 0] = [200.0, 200.0, 200.0]
+                        checker[grid == 1] = [255.0, 255.0, 255.0]
+                        
+                        # Blend: blended = rgb * alpha + checker * (1 - alpha)
+                        blended = (arr_rgb * alpha + checker * (1.0 - alpha)).astype(np.uint8)
+                        pil_img = Image.fromarray(blended)
+                    else:
+                        pil_img = Image.fromarray(arr_clipped)
+                        
                     # Resize to fit panel
                     pil_resized = pil_img.resize((self.canvas_size, self.canvas_size), Image.Resampling.NEAREST)
                     self.img_tk = ImageTk.PhotoImage(pil_resized)
@@ -550,10 +567,6 @@ class ForzaStudioGUI:
         # 4. Check Thread Completion for UX Automatic Transitions
         if self.active_thread and not self.active_thread.is_alive():
             self.active_thread = None
-            
-            # Restore stdout/stderr
-            sys.stdout = sys.__stdout__
-            sys.stderr = sys.__stderr__
             
             self.unlock_ui()
             
@@ -635,13 +648,6 @@ class ForzaStudioGUI:
         self.is_generating = True
         self.status_lbl.configure(text="GENERATING", fg=self.color_green)
         
-        # Redirect prints to queue
-        redirector = IORedirector(self.log_queue)
-        sys.stdout = redirector
-        sys.stderr = redirector
-        
-        # Clear Console Log Box
-        self.txt_console.delete("1.0", tk.END)
         self.log_to_console("[System] Triggering high-performance Python shape generator...\n")
         
         # Progress callback hook
@@ -693,13 +699,6 @@ class ForzaStudioGUI:
         self.is_importing = True
         self.status_lbl.configure(text="INJECTING", fg=self.color_blue)
         
-        # Redirect prints to queue
-        redirector = IORedirector(self.log_queue)
-        sys.stdout = redirector
-        sys.stderr = redirector
-        
-        # Clear log box
-        self.txt_console.delete("1.0", tk.END)
         self.log_to_console("[System] Opening Win32 process handles for forzahorizon6.exe...\n")
         
         # Clean HUD Radar Canvas to signal injection

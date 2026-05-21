@@ -6,6 +6,8 @@ import math
 import random
 import json
 import argparse
+import gc
+
 
 # --- Check dependencies ---
 HAS_DEPENDENCIES = True
@@ -23,11 +25,12 @@ if not HAS_DEPENDENCIES:
 
 # --- Numba JIT Accelerated Core ---
 @numba.jit(nopython=True, fastmath=True, cache=True)
-def evaluate_candidate(target, canvas, x_c, y_c, r_x, r_y, theta, alpha):
+def evaluate_candidate(target, canvas, x_c, y_c, r_x, r_y, theta, alpha, alpha_mask, check_contour):
     """
     Evaluates a candidate rotated ellipse against the target image.
     Calculates the optimal average color and the Delta Mean Squared Error (MSE).
     Optimized via Loop Fusion (single-pass) and Strength Reduction.
+    If check_contour is True, guarantees the ellipse is strictly inside the target contour.
     """
     height = target.shape[0]
     width = target.shape[1]
@@ -75,6 +78,12 @@ def evaluate_candidate(target, canvas, x_c, y_c, r_x, r_y, theta, alpha):
         
         for x in range(min_x, max_x + 1):
             if (rx * rx) * inv_rx2 + (ry * ry) * inv_ry2 <= 1.0:
+                # Strictly enforce shape boundaries inside target contour
+                if check_contour:
+                    if alpha_mask[y, x] <= 10.0:
+                        # Reject this candidate immediately with infinite penalty
+                        return np.float32(0.0), np.float32(0.0), np.float32(0.0), np.float32(99999999.0)
+                        
                 t_r = target[y, x, 0]
                 t_g = target[y, x, 1]
                 t_b = target[y, x, 2]
@@ -105,7 +114,7 @@ def evaluate_candidate(target, canvas, x_c, y_c, r_x, r_y, theta, alpha):
             ry -= sin_t
             
     if count == 0:
-        return 0.0, 0.0, 0.0, 99999999.0
+        return np.float32(0.0), np.float32(0.0), np.float32(0.0), np.float32(99999999.0)
         
     avg_r = sum_t_r / count
     avg_g = sum_t_g / count
@@ -121,9 +130,9 @@ def evaluate_candidate(target, canvas, x_c, y_c, r_x, r_y, theta, alpha):
     delta_g = a2_minus_2a * sum_c2_g + two_a * sum_ct_g + two_a_one_minus_a * avg_g * sum_c_g + a2_minus_2a * avg_g * sum_t_g
     delta_b = a2_minus_2a * sum_c2_b + two_a * sum_ct_b + two_a_one_minus_a * avg_b * sum_c_b + a2_minus_2a * avg_b * sum_t_b
     
-    total_delta_mse = float(delta_r + delta_g + delta_b)
+    total_delta_mse = delta_r + delta_g + delta_b
     
-    return float(avg_r), float(avg_g), float(avg_b), total_delta_mse
+    return avg_r, avg_g, avg_b, total_delta_mse
 
 @numba.jit(nopython=True, fastmath=True, cache=True)
 def draw_ellipse(canvas, x_c, y_c, r_x, r_y, theta, r, g, b, alpha):
@@ -163,13 +172,15 @@ def draw_ellipse(canvas, x_c, y_c, r_x, r_y, theta, r, g, b, alpha):
                 canvas[y, x, 0] = canvas[y, x, 0] * one_minus_a + r_val * a_f
                 canvas[y, x, 1] = canvas[y, x, 1] * one_minus_a + g_val * a_f
                 canvas[y, x, 2] = canvas[y, x, 2] * one_minus_a + b_val * a_f
+                if canvas.shape[2] == 4:
+                    canvas[y, x, 3] = canvas[y, x, 3] * one_minus_a + np.float32(alpha)
             
             rx += cos_t
             ry -= sin_t
 
 # --- Numba Parallel Random Search ---
 @numba.jit(nopython=True, parallel=True, fastmath=True, cache=True)
-def parallel_random_search(target, canvas, num_candidates, width, height, max_r):
+def parallel_random_search(target, canvas, num_candidates, width, height, max_r, alpha_mask, check_contour):
     # Pre-generate random parameters using NumPy's fast JIT random generator as float32
     x_c_arr = np.random.uniform(0.0, float(width), num_candidates).astype(np.float32)
     y_c_arr = np.random.uniform(0.0, float(height), num_candidates).astype(np.float32)
@@ -187,7 +198,8 @@ def parallel_random_search(target, canvas, num_candidates, width, height, max_r)
             target, canvas, 
             x_c_arr[i], y_c_arr[i], 
             r_x_arr[i], r_y_arr[i], 
-            theta_arr[i], int(alpha_arr[i])
+            theta_arr[i], int(alpha_arr[i]),
+            alpha_mask, check_contour
         )
         deltas[i] = np.float32(delta)
         colors[i, 0] = np.float32(r)
@@ -206,7 +218,7 @@ def parallel_random_search(target, canvas, num_candidates, width, height, max_r)
 
 # --- Numba Serial Hill-Climbing ---
 @numba.jit(nopython=True, fastmath=True, cache=True)
-def serial_hill_climb(target, canvas, x_c, y_c, r_x, r_y, theta, alpha, r, g, b, best_delta, optimization_steps):
+def serial_hill_climb(target, canvas, x_c, y_c, r_x, r_y, theta, alpha, r, g, b, best_delta, optimization_steps, alpha_mask, check_contour):
     curr_x_c = np.float32(x_c)
     curr_y_c = np.float32(y_c)
     curr_r_x = np.float32(r_x)
@@ -229,7 +241,7 @@ def serial_hill_climb(target, canvas, x_c, y_c, r_x, r_y, theta, alpha, r, g, b,
         ntheta = curr_theta + np.float32(np.random.normal(0.0, 0.25 * scale))
         nalpha = max(10, min(255, int(curr_alpha + np.random.normal(0.0, 8.0 * scale))))
         
-        nr, ng, nb, delta = evaluate_candidate(target, canvas, nx_c, ny_c, nr_x, nr_y, ntheta, nalpha)
+        nr, ng, nb, delta = evaluate_candidate(target, canvas, nx_c, ny_c, nr_x, nr_y, ntheta, nalpha, alpha_mask, check_contour)
         if delta < curr_delta:
             curr_delta = np.float32(delta)
             curr_x_c = nx_c
@@ -245,18 +257,22 @@ def serial_hill_climb(target, canvas, x_c, y_c, r_x, r_y, theta, alpha, r, g, b,
     return (float(curr_x_c), float(curr_y_c), float(curr_r_x), float(curr_r_y), float(curr_theta), int(curr_r), int(curr_g), int(curr_b), curr_alpha, float(curr_delta))
 
 # --- Hill-Climbing Search ---
-def find_best_ellipse(target, canvas, num_candidates=200, optimization_steps=50):
+def find_best_ellipse(target, canvas, num_candidates=200, optimization_steps=50, alpha_mask=None, check_contour=False):
     height, width, _ = target.shape
     max_r = max(10.0, min(width, height) / 3.0)
     
+    if alpha_mask is None:
+        alpha_mask = np.zeros((1, 1), dtype=np.float32)
+        check_contour = False
+        
     # 1. Parallel Random Search Phase
     x_c, y_c, r_x, r_y, theta, alpha, r, g, b, delta = parallel_random_search(
-        target, canvas, num_candidates, width, height, max_r
+        target, canvas, num_candidates, width, height, max_r, alpha_mask, check_contour
     )
     
     # 2. Local JIT Hill-Climbing Optimization Phase
     x_c, y_c, r_x, r_y, theta, r, g, b, alpha, delta = serial_hill_climb(
-        target, canvas, x_c, y_c, r_x, r_y, theta, alpha, r, g, b, delta, optimization_steps
+        target, canvas, x_c, y_c, r_x, r_y, theta, alpha, r, g, b, delta, optimization_steps, alpha_mask, check_contour
     )
     
     return (x_c, y_c, r_x, r_y, theta, r, g, b, alpha, delta)
@@ -435,22 +451,67 @@ def optimize_redundant_shapes_final(shapes_list, width, height):
     return final_shapes
 
 
-def rebuild_canvas_from_shapes(canvas, shapes_list, avg_r, avg_g, avg_b):
-    """Re-draws all valid shapes onto the canvas after redundancy check optimization."""
-    canvas[:, :, 0] = avg_r
-    canvas[:, :, 1] = avg_g
-    canvas[:, :, 2] = avg_b
+@numba.jit(nopython=True, fastmath=True, cache=True)
+def rebuild_canvas_jit(canvas, avg_r, avg_g, avg_b, avg_a, shapes_data, shapes_color):
+    """JIT accelerated fast canvas background reset and shape drawing loop."""
+    canvas[:, :, 0] = np.float32(avg_r)
+    canvas[:, :, 1] = np.float32(avg_g)
+    canvas[:, :, 2] = np.float32(avg_b)
+    if canvas.shape[2] == 4:
+        canvas[:, :, 3] = np.float32(avg_a)
     
+    num_shapes = len(shapes_data)
+    for i in range(num_shapes):
+        draw_ellipse(
+            canvas, 
+            shapes_data[i, 0], shapes_data[i, 1], shapes_data[i, 2], shapes_data[i, 3], 
+            shapes_data[i, 4], 
+            shapes_color[i, 0], shapes_color[i, 1], shapes_color[i, 2], shapes_color[i, 3]
+        )
+
+def rebuild_canvas_from_shapes(canvas, shapes_list, avg_r, avg_g, avg_b):
+    """Re-draws all valid shapes onto the canvas after redundancy check optimization using fast JIT compiler."""
+    avg_a = 255.0
+    if len(shapes_list) > 0:
+        header = shapes_list[0]
+        h_color = header.get("color", [128, 128, 128, 255])
+        avg_a = h_color[3] if len(h_color) >= 4 else 255.0
+
+    if len(shapes_list) <= 1:
+        canvas[:, :, 0] = avg_r
+        canvas[:, :, 1] = avg_g
+        canvas[:, :, 2] = avg_b
+        if canvas.shape[2] == 4:
+            canvas[:, :, 3] = avg_a
+        return
+        
+    num_shapes = 0
+    for s in shapes_list:
+        if s["type"] == 32:
+            num_shapes += 1
+            
+    shapes_data = np.zeros((num_shapes, 5), dtype=np.float32)
+    shapes_color = np.zeros((num_shapes, 4), dtype=np.int32)
+    
+    idx = 0
     for s in shapes_list:
         if s["type"] == 32:
             data = s["data"]
+            shapes_data[idx, 0] = data[0]
+            shapes_data[idx, 1] = data[1]
+            shapes_data[idx, 2] = data[2]
+            shapes_data[idx, 3] = data[3]
+            shapes_data[idx, 4] = math.radians(data[4])
+            
             color = s["color"]
-            draw_ellipse(
-                canvas, 
-                data[0], data[1], data[2], data[3], 
-                math.radians(data[4]), 
-                color[0], color[1], color[2], color[3]
-            )
+            shapes_color[idx, 0] = color[0]
+            shapes_color[idx, 1] = color[1]
+            shapes_color[idx, 2] = color[2]
+            shapes_color[idx, 3] = color[3]
+            idx += 1
+            
+    rebuild_canvas_jit(canvas, avg_r, avg_g, avg_b, avg_a, shapes_data, shapes_color)
+
 
 # --- Helper Functions ---
 def load_profile(profile_path):
@@ -527,8 +588,15 @@ def run_generator(image_path, output_path=None, profile_path=None, layers_limit=
     # Ensure the output directory exists before starting generation to support intermediate saves safely
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
     
-    # Load and preprocess image
-    img = Image.open(image_path).convert("RGB")
+    # Load and preprocess image (preserving RGBA if present to support transparent backgrounds)
+    img_raw = Image.open(image_path)
+    has_alpha = (img_raw.mode in ("RGBA", "LA") or (img_raw.mode == "P" and "transparency" in img_raw.info))
+    if has_alpha:
+        img = img_raw.convert("RGBA")
+        print("Detected transparent background (RGBA/LA/Palette with alpha). Enabling Alpha-guided Ambient Padding.")
+    else:
+        img = img_raw.convert("RGB")
+        
     width, height = img.size
     
     # Auto-resize to match maxResolution if specified
@@ -546,12 +614,41 @@ def run_generator(image_path, output_path=None, profile_path=None, layers_limit=
     if 0 < posterize_levels < 256:
         print(f"Applying color posterization with {posterize_levels} levels...")
         factor = 255.0 / (posterize_levels - 1)
-        target = np.round(target / factor) * factor
+        if has_alpha:
+            target[:, :, :3] = np.round(target[:, :, :3] / factor) * factor
+        else:
+            target = np.round(target / factor) * factor
     
-    # Calculate target image average color
-    avg_r = np.mean(target[:, :, 0])
-    avg_g = np.mean(target[:, :, 1])
-    avg_b = np.mean(target[:, :, 2])
+    alpha_mask = None
+    if has_alpha:
+        # Extract RGB channels and Alpha channel
+        target_rgb = target[:, :, :3]
+        alpha_mask = target[:, :, 3]
+        
+        # Create foreground mask (opacity > 10)
+        fg_mask = alpha_mask > 10.0
+        
+        # Calculate foreground average color to avoid background contamination
+        if np.any(fg_mask):
+            avg_r = np.mean(target_rgb[fg_mask, 0])
+            avg_g = np.mean(target_rgb[fg_mask, 1])
+            avg_b = np.mean(target_rgb[fg_mask, 2])
+        else:
+            avg_r, avg_g, avg_b = 128.0, 128.0, 128.0
+            
+        # Target transparent/background area is padded with the foreground average color
+        bg_mask = ~fg_mask
+        target_rgb[bg_mask, 0] = avg_r
+        target_rgb[bg_mask, 1] = avg_g
+        target_rgb[bg_mask, 2] = avg_b
+        
+        # Strip alpha channel from target for painter loop integration
+        target = target_rgb
+    else:
+        # Calculate target image average color
+        avg_r = np.mean(target[:, :, 0])
+        avg_g = np.mean(target[:, :, 1])
+        avg_b = np.mean(target[:, :, 2])
     
     # Initialize canvas with target image average color
     canvas = np.zeros_like(target)
@@ -571,6 +668,9 @@ def run_generator(image_path, output_path=None, profile_path=None, layers_limit=
     }
     shapes_list.append(header)
     
+    # Disable automatic garbage collection to eliminate overhead from many dict allocations in loop
+    gc.disable()
+    
     start_time = time.time()
     last_print = time.time()
     
@@ -579,8 +679,9 @@ def run_generator(image_path, output_path=None, profile_path=None, layers_limit=
     total_generated_so_far = 0
     
     while (len(shapes_list) - 1 < layers) and (attempts < max_attempts):
+
         attempts += 1
-        result = find_best_ellipse(target, canvas, candidates, steps)
+        result = find_best_ellipse(target, canvas, candidates, steps, alpha_mask=alpha_mask, check_contour=has_alpha)
         if not result:
             continue
             
@@ -601,10 +702,10 @@ def run_generator(image_path, output_path=None, profile_path=None, layers_limit=
         current_layer = len(shapes_list) - 1
         
         # --- Midway Redundancy Check & Canvas Rebuilding ---
-        # Golden rule: Start checking after 1000 layers, every 100 layers.
-        # Test mode fallback: If layers < 1000, trigger every 10 layers starting at 10.
-        is_normal_trigger = (total_generated_so_far >= 1000 and (total_generated_so_far - 1000) % 100 == 0)
-        is_test_trigger = (layers < 1000 and total_generated_so_far >= 10 and (total_generated_so_far - 10) % 10 == 0)
+        # Golden rule: Trigger every 500 layers, starting from layer 500 (applying under 1000 layers too).
+        # Test mode fallback: If layers < 500, trigger every 10 layers starting at 10.
+        is_normal_trigger = (total_generated_so_far > 0 and total_generated_so_far % 500 == 0)
+        is_test_trigger = (layers < 500 and total_generated_so_far >= 10 and (total_generated_so_far - 10) % 10 == 0)
         
         if is_normal_trigger or is_test_trigger:
             print(f"\n[Engine] Reached {total_generated_so_far} generated layers. Running mid-way redundancy check...")
@@ -631,7 +732,14 @@ def run_generator(image_path, output_path=None, profile_path=None, layers_limit=
         eta = (layers - current_layer) / speed if speed > 0 else 0.0
         
         if progress_callback:
-            progress_callback(current_layer, layers, speed, eta, canvas)
+            if has_alpha:
+                # Pack canvas with alpha channel as (H, W, 4) to let GUI render transparent background with checkerboard
+                canvas_rgba = np.zeros((height, width, 4), dtype=np.float32)
+                canvas_rgba[:, :, :3] = canvas
+                canvas_rgba[:, :, 3] = alpha_mask
+                progress_callback(current_layer, layers, speed, eta, canvas_rgba)
+            else:
+                progress_callback(current_layer, layers, speed, eta, canvas)
             
         if now - last_print >= 1.0 or current_layer == layers:
             pct = current_layer * 100.0 / layers
@@ -644,7 +752,9 @@ def run_generator(image_path, output_path=None, profile_path=None, layers_limit=
             last_print = now
             
     print()
+    gc.enable()
     total_time = time.time() - start_time
+
     print(f"Shape generation completed in {total_time:.2f} seconds!")
     
     # --- Final Redundancy Check: Reset redundant layers to top-left transparent shapes ---
