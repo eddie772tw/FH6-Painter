@@ -16,6 +16,10 @@ fh6-layer-table.cache
 # Generated output JSON files
 *.json
 
+# Test images and generation output folders
+test_img/
+output/
+
 # Development configurations
 .vscode/
 .idea/
