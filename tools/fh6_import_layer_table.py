@@ -523,39 +523,38 @@ def print_preview(layer_pointers, shapes, canvas_w, canvas_h, options, count):
         sy = shape["data"][3] / options.scale_div
         print(f"#{i + 1} shapeIndex={shape_index} ptr=0x{layer_pointers[i]:X} x={x:.3f} y(write)={-y:.3f} sx={sx:.3f} sy={sy:.3f}")
 
-# --- Main Entry ---
-def main():
-    parser = argparse.ArgumentParser(description="FH6 Import Layer Table Importer in Python")
-    parser.add_argument("json_path", help="Path to input geometry JSON file")
-    parser.add_argument("--layers", type=int, default=3000, help="Template layer count")
-    parser.add_argument("--dry-run", action="store_true", help="Scan and validate memory without writing")
-    parser.add_argument("--reverse", action="store_true", help="Reverse shape order of drawing")
-    parser.add_argument("--include-header", action="store_true", help="Include transparent header canvas shape")
-    parser.add_argument("--no-cache", action="store_true", help="Ignore and bypass the layer address cache")
-    parser.add_argument("--scale-div", type=float, default=63.0, help="Shape scale divisor")
-    parser.add_argument("--coord-scale", type=float, default=1.0, help="Coordinate scale multiplier")
-    parser.add_argument("--max-candidates", type=int, default=200000, help="Max candidates scanning threshold")
-    
-    args = parser.parse_args()
-    
+def run_importer(json_path, layers=3000, dry_run=False, reverse=False, include_header=False, no_cache=False, scale_div=63.0, coord_scale=1.0, max_candidates=200000):
     print(f"Optimization Status: Numba acceleration = {'ENABLED' if HAS_NUMBA else 'DISABLED'}")
     
+    # Wrap options in a simple container class to maintain compatibility
+    class Options:
+        def __init__(self):
+            self.json_path = json_path
+            self.layers = layers
+            self.dry_run = dry_run
+            self.reverse = reverse
+            self.include_header = include_header
+            self.no_cache = no_cache
+            self.scale_div = scale_div
+            self.coord_scale = coord_scale
+            self.max_candidates = max_candidates
+            
+    options = Options()
+    
     try:
-        all_shapes = load_shapes(args.json_path)
+        all_shapes = load_shapes(json_path)
         if not all_shapes:
             raise ValueError("No shapes found in JSON.")
             
         canvas_w, canvas_h = find_canvas(all_shapes)
-        shapes = build_import_shape_list(all_shapes, args.include_header)
+        shapes = build_import_shape_list(all_shapes, include_header)
         if not shapes:
             raise ValueError("No importable shapes found after filtering.")
             
         pid = find_forza_process()
-        print(f"PID={pid} JSON shapes={len(shapes)} template layers={args.layers}")
-        print(f"canvas={canvas_w:.3f}x{canvas_h:.3f} scaleDiv={args.scale_div:.3f} coordScale={args.coord_scale:.3f} order={'reverse' if args.reverse else 'table'} dryRun={args.dry_run}")
+        print(f"PID={pid} JSON shapes={len(shapes)} template layers={layers}")
+        print(f"canvas={canvas_w:.3f}x{canvas_h:.3f} scaleDiv={scale_div:.3f} coordScale={coord_scale:.3f} order={'reverse' if reverse else 'table'} dryRun={dry_run}")
         
-        # Open process: Read/Write/Operation/Query privileges
-        # 0x1438 is equivalent to: PROCESS_QUERY_INFORMATION | PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_VM_OPERATION
         access_mask = PROCESS_QUERY_INFORMATION | PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_VM_OPERATION
         handle = kernel32.OpenProcess(access_mask, False, pid)
         if not handle:
@@ -563,30 +562,30 @@ def main():
             
         try:
             cache_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fh6-layer-table.cache")
-            layer_pointers = None if args.no_cache else try_load_cached_layer_pointers(handle, cache_path, pid, args.layers)
+            layer_pointers = None if no_cache else try_load_cached_layer_pointers(handle, cache_path, pid, layers)
             
             if layer_pointers is None:
-                layer_pointers = locate_layer_pointers(handle, args.layers, args.max_candidates)
-                save_cached_layer_pointers(cache_path, pid, args.layers, layer_pointers)
+                layer_pointers = locate_layer_pointers(handle, layers, max_candidates)
+                save_cached_layer_pointers(cache_path, pid, layers, layer_pointers)
                 
             print(f"LiveryGroup found. Valid layer pointers={len(layer_pointers)}")
             
             n = min(len(shapes), len(layer_pointers))
-            if args.dry_run:
-                print_preview(layer_pointers, shapes, canvas_w, canvas_h, args, min(n, 12))
+            if dry_run:
+                print_preview(layer_pointers, shapes, canvas_w, canvas_h, options, min(n, 12))
                 print("Dry run only; no writes performed.")
                 return 0
                 
             written = 0
             for i in range(n):
-                shape_index = len(shapes) - 1 - i if args.reverse else i
+                shape_index = len(shapes) - 1 - i if reverse else i
                 layer_index = i
                 layer_ptr = layer_pointers[layer_index]
                 
                 if score_layer(handle, layer_ptr) < 5:
                     continue
                     
-                write_shape(handle, layer_ptr, shapes[shape_index], canvas_w, canvas_h, args)
+                write_shape(handle, layer_ptr, shapes[shape_index], canvas_w, canvas_h, options)
                 written += 1
                 if written <= 12 or written % 100 == 0:
                     print(f"written {written}/{n} -> layerPtr=0x{layer_ptr:X}")
@@ -602,6 +601,32 @@ def main():
     except Exception as ex:
         print(f"ERROR: {ex}", file=sys.stderr)
         return 1
+
+# --- Main Entry ---
+def main():
+    parser = argparse.ArgumentParser(description="FH6 Import Layer Table Importer in Python")
+    parser.add_argument("json_path", help="Path to input geometry JSON file")
+    parser.add_argument("--layers", type=int, default=3000, help="Template layer count")
+    parser.add_argument("--dry-run", action="store_true", help="Scan and validate memory without writing")
+    parser.add_argument("--reverse", action="store_true", help="Reverse shape order of drawing")
+    parser.add_argument("--include-header", action="store_true", help="Include transparent header canvas shape")
+    parser.add_argument("--no-cache", action="store_true", help="Ignore and bypass the layer address cache")
+    parser.add_argument("--scale-div", type=float, default=63.0, help="Shape scale divisor")
+    parser.add_argument("--coord-scale", type=float, default=1.0, help="Coordinate scale multiplier")
+    parser.add_argument("--max-candidates", type=int, default=200000, help="Max candidates scanning threshold")
+    
+    args = parser.parse_args()
+    return run_importer(
+        json_path=args.json_path,
+        layers=args.layers,
+        dry_run=args.dry_run,
+        reverse=args.reverse,
+        include_header=args.include_header,
+        no_cache=args.no_cache,
+        scale_div=args.scale_div,
+        coord_scale=args.coord_scale,
+        max_candidates=args.max_candidates
+    )
 
 if __name__ == "__main__":
     sys.exit(main())

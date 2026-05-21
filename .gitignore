@@ -1,0 +1,21 @@
+# Compiled Python files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Numba compiler cache files
+*.nbc
+*.nbi
+
+# Run-time GUI & temporary files
+imgui.ini
+tmp/
+fh6-layer-table.cache
+
+# Generated output JSON files
+*.json
+
+# Development configurations
+.vscode/
+.idea/

@@ -53,7 +53,7 @@ def ask_layer_count(path):
     if is_json(path):
         print(f"Detected JSON recommendation: {detected} layers")
     print("FH6 limits: front/rear bumper 1000, left/right/top up to 3000.")
-    sys.stdout.write(f"How many layers? [default {detected}, allowed 500-3000]: ")
+    sys.stdout.write(f"How many layers? [default {detected}, allowed 5-3000]: ")
     sys.stdout.flush()
     try:
         user_input = sys.stdin.readline().strip()
@@ -64,7 +64,7 @@ def ask_layer_count(path):
         return detected
     try:
         val = int(user_input)
-        val = max(500, min(3000, val))
+        val = max(5, min(3000, val))
         return val
     except ValueError:
         return detected
@@ -113,10 +113,89 @@ def update_profiles_for_layer_count(root, layer_count):
             
     print(f"Updated generator profiles: stopAt={layer_count}, saveAt={save_at}")
 
-def run_cmd(exe, arguments):
+def check_python_dependencies():
+    """Checks if the required high-performance libraries are installed."""
+    try:
+        from PIL import Image
+        import numpy as np
+        import numba
+        return True
+    except ImportError:
+        return False
+
+def list_profiles(root):
+    """Lists all available settings profiles with their parsed descriptions."""
+    settings_dir = os.path.join(root, "settings")
+    if not os.path.isdir(settings_dir):
+        return []
+    
+    ini_files = glob.glob(os.path.join(settings_dir, "*.ini"))
+    ini_files.sort()
+    
+    profiles = []
+    for filepath in ini_files:
+        filename = os.path.basename(filepath)
+        if filename.startswith("_"):  # Ignore default template in selection
+            continue
+        description = "No description / 無描述"
+        try:
+            with open(filepath, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line.lower().startswith("description =") or line.lower().startswith("description="):
+                        description = line.split("=", 1)[1].strip()
+                        break
+        except Exception:
+            pass
+        profiles.append({
+            "path": filepath,
+            "name": filename[:-4],  # Strip .ini extension
+            "description": description
+        })
+    return profiles
+
+def ask_profile(root):
+    """Prompts the user to select an INI profile from settings/."""
+    profiles = list_profiles(root)
+    if not profiles:
+        print("Warning: No profiles found in settings/ directory. / 警告：未在 settings/ 中找到任何配置檔。")
+        return None
+    
+    print("\n--- 可用的產生器配置檔 / Available Generator Profiles ---")
+    for idx, p in enumerate(profiles):
+        print(f"[{idx + 1}] {p['name']} - {p['description']}")
+    
+    # Auto-select balanced profile as default if possible
+    default_idx = 0
+    for idx, p in enumerate(profiles):
+        if "balanced" in p["name"].lower() or "c." in p["name"].lower():
+            default_idx = idx
+            break
+            
+    sys.stdout.write(f"請選擇配置檔 / Choose profile [預設/default {default_idx + 1} - {profiles[default_idx]['name']}]: ")
+    sys.stdout.flush()
+    try:
+        user_input = sys.stdin.readline().strip()
+    except KeyboardInterrupt:
+        sys.exit(1)
+        
+    if not user_input:
+        return profiles[default_idx]["path"]
+    try:
+        val = int(user_input) - 1
+        if 0 <= val < len(profiles):
+            return profiles[val]["path"]
+    except ValueError:
+        pass
+    return profiles[default_idx]["path"]
+
+def run_cmd(exe, arguments, cwd=None):
     print(f"{os.path.basename(exe)} {' '.join(arguments)}")
     try:
-        res = subprocess.run([exe] + arguments, cwd=os.path.dirname(exe) or None)
+        # Enforce the __COMPAT_LAYER=RunAsInvoker environment variable to bypass UAC elevation requirements
+        env = os.environ.copy()
+        env["__COMPAT_LAYER"] = "RunAsInvoker"
+        res = subprocess.run([exe] + arguments, cwd=cwd or os.path.dirname(exe) or None, env=env)
         return res.returncode
     except Exception as e:
         print(f"Error running command: {e}")
@@ -127,12 +206,16 @@ def main():
         root = os.path.dirname(os.path.abspath(__file__))
         original_painter = os.path.join(root, "forza-painter.exe")
         importer = os.path.join(root, "tools", "fh6_import_layer_table.py")
+        py_generator = os.path.join(root, "tools", "fh6_painter_generator.py")
         
         args = sys.argv[1:]
         if not args:
+            print("請拖曳圖片檔案（產生 JSON）或 JSON 檔案（匯入 FH6 記憶體）至此腳本上運行。", file=sys.stderr)
             print("Drop PNG/JPG files here to generate JSON, or drop JSON files here to import into FH6.", file=sys.stderr)
-            print("FH6 JSON import requires the vinyl editor to be open with a fresh ungrouped template.", file=sys.stderr)
-            input("Press Enter to close...")
+            try:
+                input("Press Enter to close...")
+            except EOFError:
+                pass
             return 2
             
         exit_code = 0
@@ -143,21 +226,65 @@ def main():
                     raise FileNotFoundError(f"FH6 importer not found: {importer}")
                 print(f"Using FH6 target template: {layer_count} layers")
                 # Run importer using current Python executable
-                exit_code = run_cmd(sys.executable, [importer, path, f"--layers={layer_count}"])
+                exit_code = run_cmd(sys.executable, [importer, path, f"--layers={layer_count}"], cwd=root)
             else:
+                has_py_deps = check_python_dependencies()
+                use_py_generator = False
+                
+                # Check generator options
                 if not os.path.exists(original_painter):
-                    raise FileNotFoundError(f"Original forza-painter.exe not found: {original_painter}")
-                update_profiles_for_layer_count(root, layer_count)
-                exit_code = run_cmd(original_painter, [path])
+                    print("\n[INFO] 未偵測到 C++ forza-painter.exe，自動啟用高效能 Python 幾何圖形產生器。")
+                    use_py_generator = True
+                elif has_py_deps:
+                    print("\n偵測到同時支援 C++ 執行檔與 Python 加速產生器。")
+                    print("[1] Pure Python Generator (Numba JIT 加速，免系統管理員權限) [推薦]")
+                    print("[2] C++ forza-painter.exe (原版可執行檔)")
+                    sys.stdout.write("請選擇產生器類型 / Select generator [預設/default 1]: ")
+                    sys.stdout.flush()
+                    try:
+                        choice = sys.stdin.readline().strip()
+                    except KeyboardInterrupt:
+                        sys.exit(1)
+                    if choice == "2":
+                        use_py_generator = False
+                    else:
+                        use_py_generator = True
+                else:
+                    use_py_generator = False
+                
+                if use_py_generator:
+                    if not os.path.exists(py_generator):
+                        raise FileNotFoundError(f"Python generator script not found at: {py_generator}")
+                    if not has_py_deps:
+                        raise ImportError("Python shape generator requires 'pillow', 'numpy', and 'numba'. Please run: pip install pillow numpy numba")
+                        
+                    profile_path = ask_profile(root)
+                    
+                    args_list = [py_generator, path, f"--layers={layer_count}"]
+                    if profile_path:
+                        args_list.append(f"--profile={profile_path}")
+                        
+                    print(f"\n[INFO] 正在啟動 Python 高效能 JIT 形狀產生器...")
+                    exit_code = run_cmd(sys.executable, args_list, cwd=root)
+                else:
+                    # Run original C++ painter with bypass UAC compat layer
+                    update_profiles_for_layer_count(root, layer_count)
+                    exit_code = run_cmd(original_painter, [path], cwd=root)
                 
             if exit_code != 0:
-                input("Press Enter to close...")
+                try:
+                    input("Press Enter to close...")
+                except EOFError:
+                    pass
                 return exit_code
                 
         return exit_code
     except Exception as ex:
         print(f"ERROR: {ex}", file=sys.stderr)
-        input("Press Enter to close...")
+        try:
+            input("Press Enter to close...")
+        except EOFError:
+            pass
         return 1
 
 if __name__ == "__main__":

@@ -29,4 +29,12 @@ exit /b 1
 
 :run
 cd /D "%~dp0"
-"!PY_EXE!" fh6_painter_launcher.py %*
+if "%~1" == "" (
+    "!PY_EXE!" fh6_painter_studio_gui.py
+) else (
+    if "%~2" == "" (
+        "!PY_EXE!" fh6_painter_studio_gui.py "%~1"
+    ) else (
+        "!PY_EXE!" fh6_painter_launcher.py %*
+    )
+)
