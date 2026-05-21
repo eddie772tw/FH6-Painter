@@ -1,10 +1,14 @@
 The MIT License (MIT)
 
-Portions of this code are a geometrize-lib and Primitive library derivative.
+Copyright (c) 2026 罐頭 (eddie772tw) & Contributors
 
-forza-painter copyright (c) 2021 AE (A-Dawg#0001) (https://github.com/forza-painter/forza-painter)
-Portions of this application are modified geometrize-lib, copyright (c) 2021 Sam Twidale (https://samcodes.co.uk/)
-Originally based on the Primitive library, copyright (c) 2016 Michael Fogleman (https://github.com/fogleman/primitive)
+Portions of this codebase are derived from geometrize-lib, Primitive, and the original forza-painter.
+Their respective copyright notices and terms are listed below:
+
+- Python Refactoring & FH6 Memory Bridge: Copyright (c) 2026 罐頭 (eddie772tw) (https://github.com/eddie772tw/FH6-Painter)
+- original forza-painter: Copyright (c) 2021 AE (A-Dawg#0001) (https://github.com/forza-painter/forza-painter)
+- geometrize-lib: Copyright (c) 2021 Sam Twidale (https://samcodes.co.uk/)
+- Primitive library: Copyright (c) 2016 Michael Fogleman (https://github.com/fogleman/primitive)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
