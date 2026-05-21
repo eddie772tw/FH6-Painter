@@ -1,6 +1,0 @@
-numpy
-numba
-pillow
-opencv-python
-torch
-torch-directml
