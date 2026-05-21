@@ -25,7 +25,7 @@ if not HAS_DEPENDENCIES:
 
 # --- Numba JIT Accelerated Core ---
 @numba.jit(nopython=True, fastmath=True, cache=True)
-def evaluate_candidate(target, canvas, x_c, y_c, r_x, r_y, theta, alpha, alpha_mask, check_contour):
+def evaluate_candidate(target, canvas, x_c, y_c, r_x, r_y, theta, alpha, alpha_mask, check_contour, use_freeze=False, freeze_mask=None, use_weight=False, weight_map=None, use_uncovered=False, uncovered_map=None):
     """
     Evaluates a candidate rotated ellipse against the target image.
     Calculates the optimal average color and the Delta Mean Squared Error (MSE).
@@ -42,6 +42,11 @@ def evaluate_candidate(target, canvas, x_c, y_c, r_x, r_y, theta, alpha, alpha_m
     x_half = math.sqrt(r_x*r_x * cos_t*cos_t + r_y*r_y * sin_t*sin_t)
     y_half = math.sqrt(r_x*r_x * sin_t*sin_t + r_y*r_y * cos_t*cos_t)
     
+    # Strictly enforce image boundary constraints (Hard Boundary Constraints)
+    # If the ellipse goes beyond the outer canvas edges, reject it instantly
+    if (x_c - x_half < 0.0) or (x_c + x_half > np.float32(width)) or (y_c - y_half < 0.0) or (y_c + y_half > np.float32(height)):
+        return np.float32(0.0), np.float32(0.0), np.float32(0.0), np.float32(99999999.0)
+        
     min_x = max(0, int(x_c - x_half))
     max_x = min(width - 1, int(x_c + x_half))
     min_y = max(0, int(y_c - y_half))
@@ -83,6 +88,10 @@ def evaluate_candidate(target, canvas, x_c, y_c, r_x, r_y, theta, alpha, alpha_m
                     if alpha_mask[y, x] <= 10.0:
                         # Reject this candidate immediately with infinite penalty
                         return np.float32(0.0), np.float32(0.0), np.float32(0.0), np.float32(99999999.0)
+                
+                # Dynamic Freeze Masking: reject shape if it touches any frozen pixel
+                if use_freeze and freeze_mask[y, x] == 1:
+                    return np.float32(0.0), np.float32(0.0), np.float32(0.0), np.float32(99999999.0)
                         
                 t_r = target[y, x, 0]
                 t_g = target[y, x, 1]
@@ -92,22 +101,29 @@ def evaluate_candidate(target, canvas, x_c, y_c, r_x, r_y, theta, alpha, alpha_m
                 c_g = canvas[y, x, 1]
                 c_b = canvas[y, x, 2]
                 
-                count += 1
-                sum_t_r += t_r
-                sum_t_g += t_g
-                sum_t_b += t_b
+                # Regional Error Weighting & Uncovered Priority Weighting
+                w = np.float32(1.0)
+                if use_weight:
+                    w = weight_map[y, x]
+                if use_uncovered:
+                    w = w * uncovered_map[y, x]
                 
-                sum_c_r += c_r
-                sum_c_g += c_g
-                sum_c_b += c_b
+                count += w
+                sum_t_r += t_r * w
+                sum_t_g += t_g * w
+                sum_t_b += t_b * w
                 
-                sum_c2_r += c_r * c_r
-                sum_c2_g += c_g * c_g
-                sum_c2_b += c_b * c_b
+                sum_c_r += c_r * w
+                sum_c_g += c_g * w
+                sum_c_b += c_b * w
                 
-                sum_ct_r += c_r * t_r
-                sum_ct_g += c_g * t_g
-                sum_ct_b += c_b * t_b
+                sum_c2_r += (c_r * c_r) * w
+                sum_c2_g += (c_g * c_g) * w
+                sum_c2_b += (c_b * c_b) * w
+                
+                sum_ct_r += (c_r * t_r) * w
+                sum_ct_g += (c_g * t_g) * w
+                sum_ct_b += (c_b * t_b) * w
                 
             # Linear increment of rx and ry (Strength Reduction)
             rx += cos_t
@@ -178,16 +194,133 @@ def draw_ellipse(canvas, x_c, y_c, r_x, r_y, theta, r, g, b, alpha):
             rx += cos_t
             ry -= sin_t
 
+# --- Numba JIT Uncovered Priority Weighting Helpers ---
+@numba.jit(nopython=True, fastmath=True, cache=True)
+def init_uncovered_map(width, height, has_alpha, alpha_mask, bias):
+    """Initializes the uncovered weight map. Foreground pixels are prioritized with higher weight bias."""
+    uncovered_map = np.ones((height, width), dtype=np.float32)
+    if has_alpha:
+        for y in range(height):
+            for x in range(width):
+                if alpha_mask[y, x] > 10.0:
+                    uncovered_map[y, x] = np.float32(bias)
+    else:
+        uncovered_map[:] = np.float32(bias)
+    return uncovered_map
+
+@numba.jit(nopython=True, fastmath=True, cache=True)
+def update_uncovered_mask(uncovered_map, x_c, y_c, r_x, r_y, theta):
+    """Updates the uncovered map when a new shape is drawn, resetting covered pixels to 1.0 weight."""
+    height = uncovered_map.shape[0]
+    width = uncovered_map.shape[1]
+    
+    cos_t = np.float32(math.cos(theta))
+    sin_t = np.float32(math.sin(theta))
+    
+    x_half = math.sqrt(r_x*r_x * cos_t*cos_t + r_y*r_y * sin_t*sin_t)
+    y_half = math.sqrt(r_x*r_x * sin_t*sin_t + r_y*r_y * cos_t*cos_t)
+    
+    min_x = max(0, int(x_c - x_half))
+    max_x = min(width - 1, int(x_c + x_half))
+    min_y = max(0, int(y_c - y_half))
+    max_y = min(height - 1, int(y_c + y_half))
+    
+    inv_rx2 = np.float32(1.0 / (r_x * r_x) if r_x > 0 else 0.0)
+    inv_ry2 = np.float32(1.0 / (r_y * r_y) if r_y > 0 else 0.0)
+    
+    for y in range(min_y, max_y + 1):
+        dy = np.float32(y - y_c)
+        dx_start = np.float32(min_x - x_c)
+        rx = dx_start * cos_t + dy * sin_t
+        ry = -dx_start * sin_t + dy * cos_t
+        
+        for x in range(min_x, max_x + 1):
+            if (rx * rx) * inv_rx2 + (ry * ry) * inv_ry2 <= 1.0:
+                uncovered_map[y, x] = np.float32(1.0)
+            
+            rx += cos_t
+            ry -= sin_t
+
+def rebuild_uncovered_map_from_shapes(width, height, has_alpha, alpha_mask, bias, shapes_list):
+    """Rebuilds the uncovered map by drawing all active shapes onto a fresh mask."""
+    uncovered_map = init_uncovered_map(width, height, has_alpha, alpha_mask, bias)
+    for s in shapes_list:
+        if s["type"] == 32:
+            data = s["data"]
+            x_c, y_c, r_x, r_y, theta_deg = data
+            theta = math.radians(theta_deg)
+            update_uncovered_mask(uncovered_map, x_c, y_c, r_x, r_y, theta)
+    return uncovered_map
+
+def get_boundary_weight_map(alpha_mask, bias):
+    """Computes a 2-pixel wide boundary weight map using pure standard NumPy."""
+    if alpha_mask is None:
+        return np.ones((1, 1), dtype=np.float32)
+    height, width = alpha_mask.shape
+    boundary_map = np.ones((height, width), dtype=np.float32)
+    
+    fg = (alpha_mask > 127.0)
+    
+    # 1-pixel shift
+    sh_up = np.zeros_like(fg)
+    sh_up[:-1, :] = fg[1:, :]
+    sh_down = np.zeros_like(fg)
+    sh_down[1:, :] = fg[:-1, :]
+    sh_left = np.zeros_like(fg)
+    sh_left[:, :-1] = fg[:, 1:]
+    sh_right = np.zeros_like(fg)
+    sh_right[:, 1:] = fg[:, :-1]
+    
+    # 2-pixel shift
+    sh_up2 = np.zeros_like(fg)
+    sh_up2[:-2, :] = fg[2:, :]
+    sh_down2 = np.zeros_like(fg)
+    sh_down2[2:, :] = fg[:-2, :]
+    sh_left2 = np.zeros_like(fg)
+    sh_left2[:, :-2] = fg[:, 2:]
+    sh_right2 = np.zeros_like(fg)
+    sh_right2[:, 2:] = fg[:, :-2]
+    
+    # Boundary is foreground pixels adjacent to background (within 2 pixels)
+    boundary = fg & (~sh_up | ~sh_down | ~sh_left | ~sh_right | ~sh_up2 | ~sh_down2 | ~sh_left2 | ~sh_right2)
+    
+    boundary_map[boundary] = np.float32(bias)
+    return boundary_map
+
 # --- Numba Parallel Random Search ---
 @numba.jit(nopython=True, parallel=True, fastmath=True, cache=True)
-def parallel_random_search(target, canvas, num_candidates, width, height, max_r, alpha_mask, check_contour):
+def parallel_random_search(target, canvas, num_candidates, width, height, max_r, alpha_mask, check_contour, use_importance, error_prob, use_freeze=False, freeze_mask=None, use_weight=False, weight_map=None, use_uncovered=False, uncovered_map=None):
     # Pre-generate random parameters using NumPy's fast JIT random generator as float32
-    x_c_arr = np.random.uniform(0.0, float(width), num_candidates).astype(np.float32)
-    y_c_arr = np.random.uniform(0.0, float(height), num_candidates).astype(np.float32)
+    if use_importance and error_prob.shape[0] > 1:
+        # Rejection sampling for x_c and y_c based on error probability map
+        x_c_arr = np.zeros(num_candidates, dtype=np.float32)
+        y_c_arr = np.zeros(num_candidates, dtype=np.float32)
+        for i in numba.prange(num_candidates):
+            keep = False
+            # limit to 100 attempts to avoid hanging
+            for att in range(100):
+                x = np.float32(np.random.uniform(0.0, float(width)))
+                y = np.float32(np.random.uniform(0.0, float(height)))
+                ix = int(x)
+                iy = int(y)
+                if ix >= 0 and ix < width and iy >= 0 and iy < height:
+                    prob = error_prob[iy, ix]
+                    if np.random.uniform(0.0, 1.0) < prob:
+                        x_c_arr[i] = x
+                        y_c_arr[i] = y
+                        keep = True
+                        break
+            if not keep:
+                x_c_arr[i] = np.float32(np.random.uniform(0.0, float(width)))
+                y_c_arr[i] = np.float32(np.random.uniform(0.0, float(height)))
+    else:
+        x_c_arr = np.random.uniform(0.0, float(width), num_candidates).astype(np.float32)
+        y_c_arr = np.random.uniform(0.0, float(height), num_candidates).astype(np.float32)
+        
     r_x_arr = np.random.uniform(2.0, max_r, num_candidates).astype(np.float32)
     r_y_arr = np.random.uniform(2.0, max_r, num_candidates).astype(np.float32)
     theta_arr = np.random.uniform(0.0, 2.0 * math.pi, num_candidates).astype(np.float32)
-    alpha_arr = np.random.uniform(15.0, 180.0, num_candidates).astype(np.float32)
+    alpha_arr = np.full(num_candidates, 255.0, dtype=np.float32)
     
     deltas = np.zeros(num_candidates, dtype=np.float32)
     colors = np.zeros((num_candidates, 3), dtype=np.float32)
@@ -199,7 +332,9 @@ def parallel_random_search(target, canvas, num_candidates, width, height, max_r,
             x_c_arr[i], y_c_arr[i], 
             r_x_arr[i], r_y_arr[i], 
             theta_arr[i], int(alpha_arr[i]),
-            alpha_mask, check_contour
+            alpha_mask, check_contour,
+            use_freeze, freeze_mask, use_weight, weight_map,
+            use_uncovered, uncovered_map
         )
         deltas[i] = np.float32(delta)
         colors[i, 0] = np.float32(r)
@@ -218,7 +353,7 @@ def parallel_random_search(target, canvas, num_candidates, width, height, max_r,
 
 # --- Numba Serial Hill-Climbing ---
 @numba.jit(nopython=True, fastmath=True, cache=True)
-def serial_hill_climb(target, canvas, x_c, y_c, r_x, r_y, theta, alpha, r, g, b, best_delta, optimization_steps, alpha_mask, check_contour):
+def serial_hill_climb(target, canvas, x_c, y_c, r_x, r_y, theta, alpha, r, g, b, best_delta, optimization_steps, alpha_mask, check_contour, sa_enabled=False, initial_temp=5000.0, cooling_rate=0.95, max_r=999.0, use_freeze=False, freeze_mask=None, use_weight=False, weight_map=None, use_uncovered=False, uncovered_map=None):
     curr_x_c = np.float32(x_c)
     curr_y_c = np.float32(y_c)
     curr_r_x = np.float32(r_x)
@@ -230,19 +365,33 @@ def serial_hill_climb(target, canvas, x_c, y_c, r_x, r_y, theta, alpha, r, g, b,
     curr_b = np.float32(b)
     curr_delta = np.float32(best_delta)
     
+    T = np.float32(initial_temp)
+    c_rate = np.float32(cooling_rate)
+    max_r_f = np.float32(max_r)
+    
     for step in range(optimization_steps):
         scale = np.float32(1.0 - (step / optimization_steps))
         
         # Mutation step sizes using numpy JIT normal distribution as float32
         nx_c = curr_x_c + np.float32(np.random.normal(0.0, 8.0 * scale))
         ny_c = curr_y_c + np.float32(np.random.normal(0.0, 8.0 * scale))
-        nr_x = max(np.float32(2.0), curr_r_x + np.float32(np.random.normal(0.0, 6.0 * scale)))
-        nr_y = max(np.float32(2.0), curr_r_y + np.float32(np.random.normal(0.0, 6.0 * scale)))
+        nr_x = max(np.float32(2.0), min(max_r_f, curr_r_x + np.float32(np.random.normal(0.0, 6.0 * scale))))
+        nr_y = max(np.float32(2.0), min(max_r_f, curr_r_y + np.float32(np.random.normal(0.0, 6.0 * scale))))
         ntheta = curr_theta + np.float32(np.random.normal(0.0, 0.25 * scale))
-        nalpha = max(10, min(255, int(curr_alpha + np.random.normal(0.0, 8.0 * scale))))
+        nalpha = 255
         
-        nr, ng, nb, delta = evaluate_candidate(target, canvas, nx_c, ny_c, nr_x, nr_y, ntheta, nalpha, alpha_mask, check_contour)
-        if delta < curr_delta:
+        nr, ng, nb, delta = evaluate_candidate(target, canvas, nx_c, ny_c, nr_x, nr_y, ntheta, nalpha, alpha_mask, check_contour, use_freeze, freeze_mask, use_weight, weight_map, use_uncovered, uncovered_map)
+        
+        diff = delta - curr_delta
+        accept = False
+        if diff < 0:
+            accept = True
+        elif sa_enabled:
+            P = math.exp(-float(diff) / float(T))
+            if np.random.uniform(0.0, 1.0) < P:
+                accept = True
+                
+        if accept:
             curr_delta = np.float32(delta)
             curr_x_c = nx_c
             curr_y_c = ny_c
@@ -254,25 +403,53 @@ def serial_hill_climb(target, canvas, x_c, y_c, r_x, r_y, theta, alpha, r, g, b,
             curr_g = np.float32(ng)
             curr_b = np.float32(nb)
             
+        if sa_enabled:
+            T = T * c_rate
+            
     return (float(curr_x_c), float(curr_y_c), float(curr_r_x), float(curr_r_y), float(curr_theta), int(curr_r), int(curr_g), int(curr_b), curr_alpha, float(curr_delta))
 
 # --- Hill-Climbing Search ---
-def find_best_ellipse(target, canvas, num_candidates=200, optimization_steps=50, alpha_mask=None, check_contour=False):
+def find_best_ellipse(target, canvas, num_candidates=200, optimization_steps=50, alpha_mask=None, check_contour=False, use_importance=False, error_prob=None, sa_enabled=False, initial_temp=5000.0, cooling_rate=0.95, current_max_r=None, use_freeze=False, freeze_mask=None, use_weight=False, weight_map=None, use_uncovered=False, uncovered_map=None):
     height, width, _ = target.shape
     max_r = max(10.0, min(width, height) / 3.0)
+    if current_max_r is not None:
+        max_r = min(max_r, current_max_r)
     
     if alpha_mask is None:
         alpha_mask = np.zeros((1, 1), dtype=np.float32)
         check_contour = False
         
+    if error_prob is None:
+        error_prob = np.zeros((1, 1), dtype=np.float32)
+    
+    # Prepare freeze_mask, weight_map, and uncovered_map defaults for JIT compatibility
+    if freeze_mask is None:
+        freeze_mask = np.zeros((1, 1), dtype=np.uint8)
+    if weight_map is None:
+        weight_map = np.ones((1, 1), dtype=np.float32)
+    if uncovered_map is None:
+        uncovered_map = np.ones((1, 1), dtype=np.float32)
+        
     # 1. Parallel Random Search Phase
     x_c, y_c, r_x, r_y, theta, alpha, r, g, b, delta = parallel_random_search(
-        target, canvas, num_candidates, width, height, max_r, alpha_mask, check_contour
+        target, canvas, num_candidates, width, height, max_r, alpha_mask, check_contour, use_importance, error_prob,
+        use_freeze, freeze_mask, use_weight, weight_map, use_uncovered, uncovered_map
     )
     
+    # Graceful Fallback: If all candidates hit the freeze mask, disable freeze restrictions for this step to prevent solid black patches.
+    fallback_active = False
+    if use_freeze and delta >= 90000000.0:
+        fallback_active = True
+        x_c, y_c, r_x, r_y, theta, alpha, r, g, b, delta = parallel_random_search(
+            target, canvas, num_candidates, width, height, max_r, alpha_mask, check_contour, use_importance, error_prob,
+            False, freeze_mask, use_weight, weight_map, use_uncovered, uncovered_map
+        )
+    
     # 2. Local JIT Hill-Climbing Optimization Phase
+    hill_climb_freeze = use_freeze if not fallback_active else False
     x_c, y_c, r_x, r_y, theta, r, g, b, alpha, delta = serial_hill_climb(
-        target, canvas, x_c, y_c, r_x, r_y, theta, alpha, r, g, b, delta, optimization_steps, alpha_mask, check_contour
+        target, canvas, x_c, y_c, r_x, r_y, theta, alpha, r, g, b, delta, optimization_steps, alpha_mask, check_contour,
+        sa_enabled, initial_temp, cooling_rate, max_r, hill_climb_freeze, freeze_mask, use_weight, weight_map, use_uncovered, uncovered_map
     )
     
     return (x_c, y_c, r_x, r_y, theta, r, g, b, alpha, delta)
@@ -435,18 +612,18 @@ def optimize_redundant_shapes_final(shapes_list, width, height):
         if visible_mask[i]:
             final_shapes.append(s)
         else:
-            # 冗餘形狀，將其重置為左上角極小全透明
+            # 冗餘形狀，將其重置為極小且置於畫布外的完全不透明形狀，確保在遊戲和預覽中均不顯示並保持不透明特質
             reset_shape = {
                 "type": 32,
-                "data": [0.0, 0.0, 2.0, 2.0, 0.0],
-                "color": [0, 0, 0, 0],
+                "data": [-1000.0, -1000.0, 0.01, 0.01, 0.0],
+                "color": [0, 0, 0, 255],
                 "score": 0.0
             }
             final_shapes.append(reset_shape)
             reset_count += 1
             
     if reset_count > 0:
-        print(f"\n[Optimization] Final check: reset {reset_count} redundant shapes to top-left (0,0) with 100% transparency.")
+        print(f"\n[Optimization] Final check: reset {reset_count} redundant shapes to off-screen microscopic opaque shapes.")
         
     return final_shapes
 
@@ -507,13 +684,24 @@ def rebuild_canvas_from_shapes(canvas, shapes_list, avg_r, avg_g, avg_b):
             shapes_color[idx, 0] = color[0]
             shapes_color[idx, 1] = color[1]
             shapes_color[idx, 2] = color[2]
-            shapes_color[idx, 3] = color[3]
+            shapes_color[idx, 3] = color[3] if len(color) >= 4 else 255
             idx += 1
             
     rebuild_canvas_jit(canvas, avg_r, avg_g, avg_b, avg_a, shapes_data, shapes_color)
 
-
 # --- Helper Functions ---
+def scale_shapes_list(shapes, factor):
+    """等比例縮放形狀清單內所有圖案的座標與半徑"""
+    for s in shapes:
+        if s["type"] == 32:
+            s["data"][0] = float(s["data"][0] * factor) # X
+            s["data"][1] = float(s["data"][1] * factor) # Y
+            s["data"][2] = float(s["data"][2] * factor) # rX
+            s["data"][3] = float(s["data"][3] * factor) # rY
+        elif s["type"] == 1:
+            s["data"][2] = float(s["data"][2] * factor) # w
+            s["data"][3] = float(s["data"][3] * factor) # h
+
 def load_profile(profile_path):
     """Parses custom .ini profile files from the settings directory."""
     params = {}
@@ -533,7 +721,7 @@ def load_profile(profile_path):
     return params
 
 # --- Main Logic ---
-def run_generator(image_path, output_path=None, profile_path=None, layers_limit=None, candidates_limit=None, steps_limit=None, progress_callback=None):
+def run_generator(image_path, output_path=None, profile_path=None, layers_limit=None, candidates_limit=None, steps_limit=None, progress_callback=None, opt_settings=None):
     if not os.path.exists(image_path):
         print(f"ERROR: Image not found: {image_path}", file=sys.stderr)
         return 1
@@ -580,6 +768,52 @@ def run_generator(image_path, output_path=None, profile_path=None, layers_limit=
     candidates = candidates_limit if candidates_limit is not None else profile_candidates
     steps = steps_limit if steps_limit is not None else profile_steps
     
+    # --- Load Optimization Settings ---
+    if opt_settings is None:
+        opt_settings = {}
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        project_root = os.path.dirname(script_dir)
+        opt_path = os.path.join(project_root, "optimization_settings.json")
+        if os.path.exists(opt_path):
+            try:
+                with open(opt_path, "r", encoding="utf-8") as f:
+                    opt_settings = json.load(f)
+            except Exception as e:
+                print(f"Warning: Failed to load optimization settings: {e}", file=sys.stderr)
+
+    # 影像金字塔設定
+    opt_pyramid = opt_settings.get("image_pyramid", {})
+    pyramid_enabled = opt_pyramid.get("enabled", False)
+    pyramid_layers_threshold = opt_pyramid.get("pyramid_layers_threshold", 500)
+    pyramid_stagnation = opt_pyramid.get("stagnation_threshold", 0.005)
+
+    # 重點採樣設定
+    opt_importance = opt_settings.get("importance_sampling", {})
+    importance_enabled = opt_importance.get("enabled", False)
+    importance_interval = opt_importance.get("update_interval", 10)
+
+    # 模擬退火設定
+    opt_sa = opt_settings.get("simulated_annealing", {})
+    sa_enabled = opt_sa.get("enabled", False)
+    sa_initial_temp = opt_sa.get("initial_temperature", 5000.0)
+    sa_cooling_rate = opt_sa.get("cooling_rate", 0.95)
+
+    # 動態凍結遮罩設定
+    opt_freeze = opt_settings.get("dynamic_freeze", {})
+    freeze_enabled = opt_freeze.get("enabled", False)
+    freeze_update_interval = opt_freeze.get("update_interval", 100)
+    freeze_error_threshold = opt_freeze.get("error_threshold", 3)
+
+    # 區域誤差加權設定
+    opt_weight = opt_settings.get("error_weighting", {})
+    weight_enabled = opt_weight.get("enabled", False)
+    weight_update_interval = opt_weight.get("update_interval", 100)
+
+    # 衰減式形狀限縮設定
+    opt_decay = opt_settings.get("decaying_shape", {})
+    decay_enabled = opt_decay.get("enabled", False)
+    decay_min_max_r = opt_decay.get("min_max_r", 5.0)
+
     print(f"Optimized Python Generator Core: Numba JIT Compiler Enabled")
     if profile_path:
         print(f"Profile: {os.path.basename(profile_path)}")
@@ -623,10 +857,11 @@ def run_generator(image_path, output_path=None, profile_path=None, layers_limit=
     if has_alpha:
         # Extract RGB channels and Alpha channel
         target_rgb = target[:, :, :3]
-        alpha_mask = target[:, :, 3]
+        # Binarize original alpha mask to make edges extremely sharp (Scheme 1)
+        alpha_mask = (target[:, :, 3] > 127.0).astype(np.float32) * 255.0
         
-        # Create foreground mask (opacity > 10)
-        fg_mask = alpha_mask > 10.0
+        # Create foreground mask (opacity > 127)
+        fg_mask = alpha_mask > 127.0
         
         # Calculate foreground average color to avoid background contamination
         if np.any(fg_mask):
@@ -650,6 +885,72 @@ def run_generator(image_path, output_path=None, profile_path=None, layers_limit=
         avg_g = np.mean(target[:, :, 1])
         avg_b = np.mean(target[:, :, 2])
     
+    # --- Image Pyramid Multi-Resolution Preparation ---
+    target_1_1 = target.copy()
+    alpha_mask_1_1 = None if alpha_mask is None else alpha_mask.copy()
+    w_1_1, h_1_1 = width, height
+    
+    current_pyramid_stage = "1/1"
+    
+    if pyramid_enabled:
+        # 1/2 resolution
+        w_1_2 = max(8, w_1_1 // 2)
+        h_1_2 = max(8, h_1_1 // 2)
+        img_1_2 = img.resize((w_1_2, h_1_2), Image.Resampling.LANCZOS)
+        target_1_2 = np.array(img_1_2, dtype=np.float32)
+        
+        # 1/4 resolution
+        w_1_4 = max(4, w_1_1 // 4)
+        h_1_4 = max(4, h_1_1 // 4)
+        img_1_4 = img.resize((w_1_4, h_1_4), Image.Resampling.LANCZOS)
+        target_1_4 = np.array(img_1_4, dtype=np.float32)
+        
+        if has_alpha:
+            # 1/2
+            target_1_2_rgb = target_1_2[:, :, :3]
+            # Binarize 1/2 scale alpha mask (Scheme 1)
+            alpha_mask_1_2 = (target_1_2[:, :, 3] > 127.0).astype(np.float32) * 255.0
+            fg_mask_1_2 = alpha_mask_1_2 > 127.0
+            if np.any(fg_mask_1_2):
+                avg_r_1_2 = np.mean(target_1_2_rgb[fg_mask_1_2, 0])
+                avg_g_1_2 = np.mean(target_1_2_rgb[fg_mask_1_2, 1])
+                avg_b_1_2 = np.mean(target_1_2_rgb[fg_mask_1_2, 2])
+            else:
+                avg_r_1_2, avg_g_1_2, avg_b_1_2 = avg_r, avg_g, avg_b
+            bg_mask_1_2 = ~fg_mask_1_2
+            target_1_2_rgb[bg_mask_1_2, 0] = avg_r_1_2
+            target_1_2_rgb[bg_mask_1_2, 1] = avg_g_1_2
+            target_1_2_rgb[bg_mask_1_2, 2] = avg_b_1_2
+            target_1_2 = target_1_2_rgb
+            
+            # 1/4
+            target_1_4_rgb = target_1_4[:, :, :3]
+            # Binarize 1/4 scale alpha mask (Scheme 1)
+            alpha_mask_1_4 = (target_1_4[:, :, 3] > 127.0).astype(np.float32) * 255.0
+            fg_mask_1_4 = alpha_mask_1_4 > 127.0
+            if np.any(fg_mask_1_4):
+                avg_r_1_4 = np.mean(target_1_4_rgb[fg_mask_1_4, 0])
+                avg_g_1_4 = np.mean(target_1_4_rgb[fg_mask_1_4, 1])
+                avg_b_1_4 = np.mean(target_1_4_rgb[fg_mask_1_4, 2])
+            else:
+                avg_r_1_4, avg_g_1_4, avg_b_1_4 = avg_r, avg_g, avg_b
+            bg_mask_1_4 = ~fg_mask_1_4
+            target_1_4_rgb[bg_mask_1_4, 0] = avg_r_1_4
+            target_1_4_rgb[bg_mask_1_4, 1] = avg_g_1_4
+            target_1_4_rgb[bg_mask_1_4, 2] = avg_b_1_4
+            target_1_4 = target_1_4_rgb
+        else:
+            alpha_mask_1_2 = None
+            alpha_mask_1_4 = None
+            
+        print(f"[Image Pyramid] 影像金字塔解析度已生成: 1/4 ({w_1_4}x{h_1_4}), 1/2 ({w_1_2}x{h_1_2}), 1/1 ({w_1_1}x{h_1_1})")
+        
+        # Start at Stage 1/4
+        current_pyramid_stage = "1/4"
+        target = target_1_4
+        alpha_mask = alpha_mask_1_4
+        width, height = w_1_4, h_1_4
+
     # Initialize canvas with target image average color
     canvas = np.zeros_like(target)
     canvas[:, :, 0] = avg_r
@@ -659,15 +960,54 @@ def run_generator(image_path, output_path=None, profile_path=None, layers_limit=
     # Construct shape array with canvas header shape
     shapes_list = []
     
-    # Header format: type=1, data=[0, 0, w, h], color=[avg_r, avg_g, avg_b, 0]
+    # Header format: type=1, data=[0, 0, w, h], color=[avg_r, avg_g, avg_b, 0 if has_alpha else 255]
+    # If the target image has transparent background, background is transparent (0); otherwise it is fully opaque (255)
     header = {
         "type": 1,
         "data": [0.0, 0.0, float(width), float(height)],
-        "color": [int(avg_r), int(avg_g), int(avg_b), 0],
+        "color": [int(avg_r), int(avg_g), int(avg_b), 0 if has_alpha else 255],
         "score": 0.0
     }
     shapes_list.append(header)
     
+    # Initialize error probability map for Importance Sampling
+    error_prob = None
+    if importance_enabled:
+        diff_mat = np.abs(target - canvas)
+        err_heatmap = np.mean(diff_mat, axis=2)
+        max_err = err_heatmap.max()
+        error_prob = (err_heatmap / max_err).astype(np.float32) if max_err > 0 else np.zeros(err_heatmap.shape, dtype=np.float32)
+
+    # Initialize freeze_mask and weight_map for Dynamic Freeze Masking & Error Weighting & Boundary Weighting
+    freeze_mask = np.zeros((height, width), dtype=np.uint8) if freeze_enabled else None
+    
+    # 邊界超加權設定 (Boundary Weighting) (Scheme 2)
+    opt_boundary = opt_settings.get("boundary_weighting", {})
+    boundary_enabled = opt_boundary.get("enabled", True)
+    boundary_bias = opt_boundary.get("bias", 3.0)
+    
+    boundary_weight_map = np.ones((height, width), dtype=np.float32)
+    if boundary_enabled and has_alpha and alpha_mask is not None:
+        boundary_weight_map = get_boundary_weight_map(alpha_mask, boundary_bias)
+        
+    use_weight_jit = weight_enabled or (boundary_enabled and has_alpha)
+    if use_weight_jit:
+        weight_map = boundary_weight_map.copy()
+    else:
+        weight_map = None
+    
+    # Initialize uncovered priority weighting settings (permanently integrated in core)
+    opt_uncovered = opt_settings.get("uncovered_bias", {})
+    uncovered_enabled = opt_uncovered.get("enabled", True)
+    uncovered_bias = opt_uncovered.get("bias", 5.0)
+    
+    uncovered_map = None
+    if uncovered_enabled:
+        uncovered_map = init_uncovered_map(width, height, has_alpha, alpha_mask, uncovered_bias)
+    
+    # Base max_r for Decaying Shape Constraints
+    base_max_r = max(10.0, min(width, height) / 3.0)
+
     # Disable automatic garbage collection to eliminate overhead from many dict allocations in loop
     gc.disable()
     
@@ -678,17 +1018,46 @@ def run_generator(image_path, output_path=None, profile_path=None, layers_limit=
     max_attempts = layers * 3
     total_generated_so_far = 0
     
+    recent_deltas = []
+    stage_1_4_limit = pyramid_layers_threshold
+    stage_1_2_limit = pyramid_layers_threshold * 2
+    if layers <= pyramid_layers_threshold * 2:
+        stage_1_4_limit = max(10, int(layers * 0.25))
+        stage_1_2_limit = max(20, int(layers * 0.50))
+        
     while (len(shapes_list) - 1 < layers) and (attempts < max_attempts):
 
         attempts += 1
-        result = find_best_ellipse(target, canvas, candidates, steps, alpha_mask=alpha_mask, check_contour=has_alpha)
-        if not result:
-            continue
-            
+        
+        # Decaying Shape Constraints: dynamically shrink max radius as layers progress
+        current_max_r = None
+        if decay_enabled:
+            progress_ratio = (len(shapes_list) - 1) / layers
+            current_max_r = max(decay_min_max_r, base_max_r * (1.0 - progress_ratio ** 2))
+        
+        result = find_best_ellipse(
+            target, canvas, candidates, steps, 
+            alpha_mask=alpha_mask, check_contour=has_alpha,
+            use_importance=importance_enabled, error_prob=error_prob,
+            sa_enabled=sa_enabled, initial_temp=sa_initial_temp, cooling_rate=sa_cooling_rate,
+            current_max_r=current_max_r,
+            use_freeze=freeze_enabled, freeze_mask=freeze_mask,
+            use_weight=use_weight_jit, weight_map=weight_map,
+            use_uncovered=uncovered_enabled, uncovered_map=uncovered_map
+        )
         x_c, y_c, r_x, r_y, theta, r, g, b, alpha, delta = result
+        
+        if delta >= 90000000.0:
+            # Reject invalid shapes to avoid rendering solid black patches on the canvas
+            print(f"\n[Warning] Layer {len(shapes_list)}: Candidate shape rejected due to hard boundary/freeze conflict (delta={delta:.1f}). Skipping...")
+            continue
         
         # Draw on canvas
         draw_ellipse(canvas, x_c, y_c, r_x, r_y, theta, r, g, b, alpha)
+        
+        # Update uncovered mask with the newly drawn shape
+        if uncovered_enabled and uncovered_map is not None:
+            update_uncovered_mask(uncovered_map, x_c, y_c, r_x, r_y, theta)
         
         # Save shape
         shapes_list.append({
@@ -701,8 +1070,110 @@ def run_generator(image_path, output_path=None, profile_path=None, layers_limit=
         total_generated_so_far += 1
         current_layer = len(shapes_list) - 1
         
+        # Stagnation tracking
+        mse_change = -delta / (canvas.shape[0] * canvas.shape[1])
+        recent_deltas.append(mse_change)
+        if len(recent_deltas) > 30:
+            recent_deltas.pop(0)
+            
+        stagnated = False
+        if len(recent_deltas) >= 20:
+            avg_recent = sum(recent_deltas[-10:]) / 10.0
+            avg_older = sum(recent_deltas[:-10]) / (len(recent_deltas) - 10)
+            if avg_older > 0 and (avg_recent / avg_older) < pyramid_stagnation:
+                stagnated = True
+                
+        # Image Pyramid stage transition
+        if pyramid_enabled:
+            if current_pyramid_stage == "1/4":
+                if current_layer >= stage_1_4_limit or stagnated:
+                    print(f"\n[Image Pyramid] 1/4 解析度階段完成於層數 {current_layer} (停滯={stagnated})。正在切換至 1/2 解析度...")
+                    scale_shapes_list(shapes_list, 2.0)
+                    target = target_1_2
+                    alpha_mask = alpha_mask_1_2
+                    width, height = w_1_2, h_1_2
+                    canvas = np.zeros_like(target)
+                    rebuild_canvas_from_shapes(canvas, shapes_list, avg_r, avg_g, avg_b)
+                    if uncovered_enabled:
+                        uncovered_map = rebuild_uncovered_map_from_shapes(width, height, has_alpha, alpha_mask, uncovered_bias, shapes_list)
+                    current_pyramid_stage = "1/2"
+                    recent_deltas = []
+                    # Recalculate error map for new resolution
+                    if importance_enabled:
+                        diff_mat = np.abs(target - canvas)
+                        err_heatmap = np.mean(diff_mat, axis=2)
+                        max_err = err_heatmap.max()
+                        error_prob = (err_heatmap / max_err).astype(np.float32) if max_err > 0 else np.zeros(err_heatmap.shape, dtype=np.float32)
+                    # Reinitialize freeze_mask and weight_map for new resolution
+                    if freeze_enabled:
+                        freeze_mask = np.zeros((h_1_2, w_1_2), dtype=np.uint8)
+                    if boundary_enabled and has_alpha:
+                        boundary_weight_map = get_boundary_weight_map(alpha_mask, boundary_bias)
+                    if use_weight_jit:
+                        weight_map = boundary_weight_map.copy()
+                    base_max_r = max(10.0, min(w_1_2, h_1_2) / 3.0)
+            elif current_pyramid_stage == "1/2":
+                if current_layer >= stage_1_2_limit or stagnated:
+                    print(f"\n[Image Pyramid] 1/2 解析度階段完成於層數 {current_layer} (停滯={stagnated})。正在切換至 1/1 解析度 (Fine Phase)...")
+                    scale_shapes_list(shapes_list, 2.0)
+                    target = target_1_1
+                    alpha_mask = alpha_mask_1_1
+                    width, height = w_1_1, h_1_1
+                    canvas = np.zeros_like(target)
+                    rebuild_canvas_from_shapes(canvas, shapes_list, avg_r, avg_g, avg_b)
+                    if uncovered_enabled:
+                        uncovered_map = rebuild_uncovered_map_from_shapes(width, height, has_alpha, alpha_mask, uncovered_bias, shapes_list)
+                    current_pyramid_stage = "1/1"
+                    recent_deltas = []
+                    # Recalculate error map for new resolution
+                    if importance_enabled:
+                        diff_mat = np.abs(target - canvas)
+                        err_heatmap = np.mean(diff_mat, axis=2)
+                        max_err = err_heatmap.max()
+                        error_prob = (err_heatmap / max_err).astype(np.float32) if max_err > 0 else np.zeros(err_heatmap.shape, dtype=np.float32)
+                    # Reinitialize freeze_mask and weight_map for new resolution
+                    if freeze_enabled:
+                        freeze_mask = np.zeros((h_1_1, w_1_1), dtype=np.uint8)
+                    if boundary_enabled and has_alpha:
+                        boundary_weight_map = get_boundary_weight_map(alpha_mask, boundary_bias)
+                    if use_weight_jit:
+                        weight_map = boundary_weight_map.copy()
+                    base_max_r = max(10.0, min(w_1_1, h_1_1) / 3.0)
+
+        # Update importance sampling error probability map every N layers
+        if importance_enabled and total_generated_so_far % importance_interval == 0:
+            diff_mat = np.abs(target - canvas)
+            err_heatmap = np.mean(diff_mat, axis=2)
+            max_err = err_heatmap.max()
+            error_prob = (err_heatmap / max_err).astype(np.float32) if max_err > 0 else np.zeros(err_heatmap.shape, dtype=np.float32)
+
+        # Periodically update Dynamic Freeze Mask & Error Weight Map
+        freeze_update_needed = freeze_enabled and total_generated_so_far > 0 and total_generated_so_far % freeze_update_interval == 0
+        weight_update_needed = weight_enabled and total_generated_so_far > 0 and total_generated_so_far % weight_update_interval == 0
+        if freeze_update_needed or weight_update_needed:
+            diff_mat = np.abs(target - canvas)
+            per_pixel_err = np.mean(diff_mat[:, :, :3], axis=2)  # Average RGB error per pixel
+            
+            if freeze_update_needed:
+                # Freeze pixels where all RGB channels are within threshold
+                freeze_mask = np.where(per_pixel_err < freeze_error_threshold, np.uint8(1), np.uint8(0)).astype(np.uint8)
+                frozen_pct = np.sum(freeze_mask) * 100.0 / (freeze_mask.shape[0] * freeze_mask.shape[1])
+                print(f"\n[Freeze Mask] 層數 {current_layer}: 凍結了 {frozen_pct:.1f}% 的像素 (閾值={freeze_error_threshold})")
+            
+            if weight_update_needed:
+                # Exponential weighting: high error pixels get much higher weight
+                max_err = per_pixel_err.max()
+                if max_err > 0:
+                    normalized_err = per_pixel_err / max_err  # [0, 1]
+                    dynamic_weights = (1.0 + normalized_err * 9.0).astype(np.float32)  # [1, 10]
+                    if boundary_enabled and has_alpha:
+                        weight_map = (dynamic_weights * boundary_weight_map).astype(np.float32)
+                    else:
+                        weight_map = dynamic_weights
+                else:
+                    weight_map = boundary_weight_map.copy() if (boundary_enabled and has_alpha) else np.ones((height, width), dtype=np.float32)
+
         # --- Midway Redundancy Check & Canvas Rebuilding ---
-        # Golden rule: Trigger every 500 layers, starting from layer 500 (applying under 1000 layers too).
         # Test mode fallback: If layers < 500, trigger every 10 layers starting at 10.
         is_normal_trigger = (total_generated_so_far > 0 and total_generated_so_far % 500 == 0)
         is_test_trigger = (layers < 500 and total_generated_so_far >= 10 and (total_generated_so_far - 10) % 10 == 0)
@@ -712,6 +1183,8 @@ def run_generator(image_path, output_path=None, profile_path=None, layers_limit=
             shapes_list = optimize_redundant_shapes(shapes_list, width, height)
             # Rebuild canvas from stable ordered remaining shapes
             rebuild_canvas_from_shapes(canvas, shapes_list, avg_r, avg_g, avg_b)
+            if uncovered_enabled:
+                uncovered_map = rebuild_uncovered_map_from_shapes(width, height, has_alpha, alpha_mask, uncovered_bias, shapes_list)
             current_layer = len(shapes_list) - 1
         
         # Check if we should save intermediate JSON
@@ -737,9 +1210,13 @@ def run_generator(image_path, output_path=None, profile_path=None, layers_limit=
                 canvas_rgba = np.zeros((height, width, 4), dtype=np.float32)
                 canvas_rgba[:, :, :3] = canvas
                 canvas_rgba[:, :, 3] = alpha_mask
-                progress_callback(current_layer, layers, speed, eta, canvas_rgba)
+                cb_res = progress_callback(current_layer, layers, speed, eta, canvas_rgba)
             else:
-                progress_callback(current_layer, layers, speed, eta, canvas)
+                cb_res = progress_callback(current_layer, layers, speed, eta, canvas)
+                
+            if cb_res is False or cb_res == "ABORT":
+                print("\n[Engine] Shape generation aborted by progress callback cancellation request.")
+                break
             
         if now - last_print >= 1.0 or current_layer == layers:
             pct = current_layer * 100.0 / layers
@@ -757,6 +1234,21 @@ def run_generator(image_path, output_path=None, profile_path=None, layers_limit=
 
     print(f"Shape generation completed in {total_time:.2f} seconds!")
     
+    # If we finished but are still in a low resolution stage, upscale to 1/1
+    if pyramid_enabled and current_pyramid_stage != "1/1":
+        if current_pyramid_stage == "1/4":
+            print("\n[Image Pyramid] 正在從 1/4 直接升級至 1/1 解析度...")
+            scale_shapes_list(shapes_list, 4.0)
+        elif current_pyramid_stage == "1/2":
+            print("\n[Image Pyramid] 正在從 1/2 升級至 1/1 解析度...")
+            scale_shapes_list(shapes_list, 2.0)
+        target = target_1_1
+        alpha_mask = alpha_mask_1_1
+        width, height = w_1_1, h_1_1
+        canvas = np.zeros_like(target)
+        rebuild_canvas_from_shapes(canvas, shapes_list, avg_r, avg_g, avg_b)
+        current_pyramid_stage = "1/1"
+        
     # --- Final Redundancy Check: Reset redundant layers to top-left transparent shapes ---
     print("\n[Engine] Running final redundancy check to reserve layer count and reset occluded shapes...")
     shapes_list = optimize_redundant_shapes_final(shapes_list, width, height)

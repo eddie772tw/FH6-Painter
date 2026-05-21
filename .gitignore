@@ -49,3 +49,4 @@ README_FH6_READY.md
 # Development configurations
 .vscode/
 .idea/
+*.png

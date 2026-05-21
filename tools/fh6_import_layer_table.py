@@ -132,15 +132,15 @@ if HAS_NUMBA:
         """High-performance JIT-compiled scanner that runs at native C speed."""
         indices = []
         n = len(data)
-        for i in range(n - 1):
-            if data[i] == pattern_lo and data[i+1] == pattern_hi:
+        for i in range(n - 3):
+            if data[i] == pattern_lo and data[i+1] == pattern_hi and data[i+2] == 0 and data[i+3] == 0:
                 indices.append(i)
         return indices
 else:
     def python_scan_chunk(data, pattern_lo, pattern_hi):
         """Optimized fallback scanner utilizing native C implementation of bytes.find()."""
         indices = []
-        pattern = bytes([pattern_lo, pattern_hi])
+        pattern = bytes([pattern_lo, pattern_hi, 0, 0])
         pos = data.find(pattern)
         while pos != -1:
             indices.append(pos)
@@ -303,7 +303,7 @@ def scan_region_task(handle, region, pattern_lo, pattern_hi):
         to_read = min(CHUNK_SIZE, size - offset)
         chunk_base = base + offset
         data = try_read(handle, chunk_base, to_read)
-        if data and len(data) >= 2:
+        if data and len(data) >= 4:
             matches = scan_func(data, pattern_lo, pattern_hi)
             for pos in matches:
                 candidates.append(chunk_base + pos)
@@ -337,6 +337,7 @@ def pick_best_perfect(handle, perfect, layer_count):
     return pointers
 
 def locate_layer_pointers(handle, layer_count, max_candidates):
+    import threading
     regions = enumerate_regions(handle)
     regions.sort(key=lambda r: r["Size"], reverse=True)
     print(f"Scanning writable private regions={len(regions)}")
@@ -346,6 +347,12 @@ def locate_layer_pointers(handle, layer_count, max_candidates):
     
     perfect = []
     candidates_count = 0
+    non_user_ptr_count = 0
+    validation_failed_count = 0
+    sample_failures = []
+    
+    scan_lock = threading.Lock()
+    
     total_bytes = sum(r["Size"] for r in regions)
     scanned_bytes = 0
     last_progress_time = time.time()
@@ -363,16 +370,74 @@ def locate_layer_pointers(handle, layer_count, max_candidates):
                 for count_addr in matches:
                     if count_addr < GROUP_COUNT_OFFSET:
                         continue
-                    candidates_count += 1
+                    
+                    with scan_lock:
+                        candidates_count += 1
                     
                     group_addr = count_addr - GROUP_COUNT_OFFSET
                     table_addr = read_u64(handle, group_addr + GROUP_TABLE_OFFSET)
                     if not is_user_ptr(table_addr):
+                        with scan_lock:
+                            non_user_ptr_count += 1
                         continue
                         
-                    if first_sample_is_perfect(handle, table_addr, layer_count):
-                        perfect.append((group_addr, table_addr))
+                    # Validate first few layers to see if it is a perfect match
+                    sample = min(layer_count, 16)
+                    is_perfect = True
+                    failure_detail = None
+                    for i in range(sample):
+                        ptr = read_u64(handle, table_addr + i * 8)
+                        if not is_user_ptr(ptr):
+                            is_perfect = False
+                            failure_detail = f"Layer {i} ptr=0x{ptr:X} is not a valid user pointer"
+                            break
                         
+                        pos = read_2_floats(handle, ptr + LAYER_POS_OFFSET)
+                        scale = read_2_floats(handle, ptr + LAYER_SCALE_OFFSET)
+                        color = try_read(handle, ptr + LAYER_COLOR_OFFSET, 4)
+                        shape = try_read(handle, ptr + LAYER_SHAPE_ID_OFFSET, 1)
+                        mask = try_read(handle, ptr + LAYER_MASK_OFFSET, 1)
+                        
+                        score = 0
+                        reasons = []
+                        if pos is not None and is_finite_in_range(pos[0], -8192.0, 8192.0) and is_finite_in_range(pos[1], -8192.0, 8192.0):
+                            score += 1
+                        else:
+                            reasons.append(f"pos={pos}")
+                        if scale is not None and is_finite_in_range(abs(scale[0]), 0.00001, 64.0) and is_finite_in_range(abs(scale[1]), 0.00001, 64.0):
+                            score += 1
+                        else:
+                            reasons.append(f"scale={scale}")
+                        if color is not None and len(color) == 4:
+                            score += 1
+                        else:
+                            reasons.append("color missing/invalid")
+                        if shape is not None and len(shape) == 1 and (shape[0] == SHAPE_ID_OTHER or shape[0] == SHAPE_ID_ELLIPSE):
+                            score += 1
+                        else:
+                            reasons.append(f"shape_id={shape[0] if shape else None}")
+                        if mask is not None and len(mask) == 1 and (mask[0] == 0 or mask[0] == 1):
+                            score += 1
+                        else:
+                            reasons.append(f"mask={mask[0] if mask else None}")
+                            
+                        if score < 5:
+                            is_perfect = False
+                            failure_detail = f"Layer {i} failed score check (score={score}/5). Failed fields: {', '.join(reasons)}"
+                            break
+                    
+                    with scan_lock:
+                        if is_perfect:
+                            perfect.append((group_addr, table_addr))
+                        else:
+                            validation_failed_count += 1
+                            if len(sample_failures) < 5:
+                                sample_failures.append({
+                                    "group_addr": group_addr,
+                                    "table_addr": table_addr,
+                                    "detail": failure_detail
+                                })
+                                
             except Exception:
                 pass
                 
@@ -384,6 +449,19 @@ def locate_layer_pointers(handle, layer_count, max_candidates):
                 
             if len(perfect) >= 1 or candidates_count > max_candidates:
                 break
+                
+    if not perfect:
+        print("\n=== Memory Scan Diagnostic Summary ===")
+        print(f"Scanned layer count pattern: {layer_count} (lo=0x{pattern_lo:02X}, hi=0x{pattern_hi:02X})")
+        print(f"Total candidate matches for this layer count in memory: {candidates_count}")
+        print(f"  - Candidates with invalid table pointers: {non_user_ptr_count}")
+        print(f"  - Candidates failing layer validation: {validation_failed_count}")
+        if sample_failures:
+            print("Detailed validation failures for first few candidates:")
+            for idx, fail in enumerate(sample_failures):
+                print(f"  Candidate #{idx+1} (group=0x{fail['group_addr']:X}, table=0x{fail['table_addr']:X}):")
+                print(f"    {fail['detail']}")
+        print("======================================\n")
                 
     return pick_best_perfect(handle, perfect, layer_count)
 
