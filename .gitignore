@@ -20,6 +20,32 @@ fh6-layer-table.cache
 test_img/
 output/
 
+# Old C++ executables and toolchains
+forza-painter.exe
+forza-painter-fh6-ready.exe
+tools/Fh6ImportLayerTable.exe
+
+# Old C# and C++ decompiled/intermediate source files
+tools/Fh6ImportLayerTable.cs
+tools/Fh6PainterLauncher.cs
+output_exe/
+
+# Ghidra / IDA reverse engineering project folders & files
+Forza Painter.rep/
+update-codes.dat
+
+# Old windows batch files & scripts for C++ version
+_dump_vinyl_group_by_running_this.bat
+_redundancy_check_by_dragging_here.bat
+_resume_json_by_dragging_here.bat
+
+# Old markdown documentations unrelated to Python version
+README_ORIGINAL_FORZA_PAINTER.md
+ATTRIBUTION_FH6_READY.md
+FH6_LAYER_TABLE_IMPORT.md
+RELEASE_NOTES_FH6_READY.md
+README_FH6_READY.md
+
 # Development configurations
 .vscode/
 .idea/
