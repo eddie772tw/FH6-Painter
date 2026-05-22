@@ -242,54 +242,124 @@ def enumerate_regions(handle):
         address = next_addr
     return regions
 
-# --- Layer Assessment Logic ---
-def score_layer(handle, layer_ptr):
+# --- Layer Assessment Logic & Heuristics Manager ---
+class StrictnessLevel:
+    PERFECT = 1
+    RELAXED = 2
+    MINIMAL = 3
+
+class HeuristicsManager:
+    def __init__(self, filepath):
+        self.filepath = filepath
+        self.data = self.load()
+
+    def load(self):
+        if os.path.exists(self.filepath):
+            try:
+                with open(self.filepath, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception:
+                pass
+        return {"successful_regions": [], "last_success_addr": None}
+
+    def save(self):
+        try:
+            with open(self.filepath, "w", encoding="utf-8") as f:
+                json.dump(self.data, f, indent=4)
+        except Exception as e:
+            print(f"[Heuristics] 無法儲存啟發式規則: {e}")
+
+    def record_success(self, group_addr, region):
+        self.data["last_success_addr"] = group_addr
+        region_info = {
+            "size": region["Size"],
+            "protect": region["Protect"],
+            "offset_ratio": group_addr - region["Base"]
+        }
+        # 避免重複記錄相同的特徵，保持最近 5 次記錄
+        if region_info not in self.data["successful_regions"]:
+            self.data["successful_regions"].append(region_info)
+            if len(self.data["successful_regions"]) > 5:
+                self.data["successful_regions"].pop(0)
+        self.save()
+
+def score_layer_adaptive(handle, layer_ptr, level=StrictnessLevel.PERFECT):
     if not is_user_ptr(layer_ptr):
         return 0
     score = 0
+    
+    # 1. 座標驗證 (完美模式限制 8192，寬鬆/極簡放寬至 32768)
     pos = read_2_floats(handle, layer_ptr + LAYER_POS_OFFSET)
-    if pos is not None and is_finite_in_range(pos[0], -8192.0, 8192.0) and is_finite_in_range(pos[1], -8192.0, 8192.0):
+    coord_limit = 8192.0 if level == StrictnessLevel.PERFECT else 32768.0
+    if pos is not None and is_finite_in_range(pos[0], -coord_limit, coord_limit) and is_finite_in_range(pos[1], -coord_limit, coord_limit):
         score += 1
+        
+    # 2. 縮放驗證 (完美限制 64.0，寬鬆/極簡放寬至 256.0)
     scale = read_2_floats(handle, layer_ptr + LAYER_SCALE_OFFSET)
-    if scale is not None and is_finite_in_range(abs(scale[0]), 0.00001, 64.0) and is_finite_in_range(abs(scale[1]), 0.00001, 64.0):
+    scale_limit = 64.0 if level == StrictnessLevel.PERFECT else 256.0
+    if scale is not None and is_finite_in_range(abs(scale[0]), 0.00001, scale_limit) and is_finite_in_range(abs(scale[1]), 0.00001, scale_limit):
         score += 1
+        
+    # 3. 顏色驗證
     color = try_read(handle, layer_ptr + LAYER_COLOR_OFFSET, 4)
     if color is not None and len(color) == 4:
         score += 1
+        
+    # 4. 形狀 ID 驗證
     shape = try_read(handle, layer_ptr + LAYER_SHAPE_ID_OFFSET, 1)
-    if shape is not None and len(shape) == 1 and (shape[0] == SHAPE_ID_OTHER or shape[0] == SHAPE_ID_ELLIPSE):
-        score += 1
+    if shape is not None and len(shape) == 1:
+        if level == StrictnessLevel.PERFECT:
+            if shape[0] == SHAPE_ID_OTHER or shape[0] == SHAPE_ID_ELLIPSE:
+                score += 1
+        else:
+            if shape[0] != 0:
+                score += 1
+            else:
+                score += 1 # 依然計分以提高寬鬆容錯
+                
+    # 5. 遮罩遮罩驗證
     mask = try_read(handle, layer_ptr + LAYER_MASK_OFFSET, 1)
-    if mask is not None and len(mask) == 1 and (mask[0] == 0 or mask[0] == 1):
-        score += 1
+    if mask is not None and len(mask) == 1:
+        if level == StrictnessLevel.PERFECT:
+            if mask[0] == 0 or mask[0] == 1:
+                score += 1
+        else:
+            score += 1
+            
     return score
+
+# 保留原 score_layer 接口相容性
+def score_layer(handle, layer_ptr):
+    return score_layer_adaptive(handle, layer_ptr, StrictnessLevel.PERFECT)
 
 def first_sample_is_perfect(handle, table_addr, layer_count):
     sample = min(layer_count, 16)
     for i in range(sample):
         ptr = read_u64(handle, table_addr + i * 8)
-        if score_layer(handle, ptr) < 5:
+        if score_layer_adaptive(handle, ptr, StrictnessLevel.PERFECT) < 5:
             return False
     return True
 
-def count_valid_layers(handle, table_addr, layer_count):
-    # Optimize using a bulk read for the entire pointer table (24KB for 3000 layers)
+def count_valid_layers_adaptive(handle, table_addr, layer_count, level):
+    required_score = 5 if level == StrictnessLevel.PERFECT else (3 if level == StrictnessLevel.RELAXED else 2)
     table_data = try_read(handle, table_addr, layer_count * 8)
     if not table_data or len(table_data) != layer_count * 8:
-        # Fallback to individual reads if bulk read fails
         valid = 0
         for i in range(layer_count):
             ptr = read_u64(handle, table_addr + i * 8)
-            if score_layer(handle, ptr) >= 5:
+            if score_layer_adaptive(handle, ptr, level) >= required_score:
                 valid += 1
         return valid
         
     ptrs = struct.unpack(f'<{layer_count}Q', table_data)
     valid = 0
     for ptr in ptrs:
-        if score_layer(handle, ptr) >= 5:
+        if score_layer_adaptive(handle, ptr, level) >= required_score:
             valid += 1
     return valid
+
+def count_valid_layers(handle, table_addr, layer_count):
+    return count_valid_layers_adaptive(handle, table_addr, layer_count, StrictnessLevel.PERFECT)
 
 # --- Memory Scanning Workers ---
 def scan_region_task(handle, region, pattern_lo, pattern_hi):
@@ -310,42 +380,111 @@ def scan_region_task(handle, region, pattern_lo, pattern_hi):
         offset += to_read
     return candidates
 
-def pick_best_perfect(handle, perfect, layer_count):
-    if not perfect:
-        raise ValueError(f"No confident LiveryGroup match. Open FH6 vinyl editor with a fresh ungrouped {layer_count}-sphere template.")
-        
-    best_table = 0
-    best_valid = -1
-    for group_addr, table_addr in perfect:
-        valid = count_valid_layers(handle, table_addr, layer_count)
-        print(f"candidate group=0x{group_addr:X} table=0x{table_addr:X} valid={valid}/{layer_count}")
-        if valid > best_valid:
-            best_valid = valid
-            best_table = table_addr
+def pick_best_adaptive(handle, perfect, relaxed, minimal, layer_count):
+    # 1. 優先從 perfect 挑選
+    if perfect:
+        best_table = 0
+        best_valid = -1
+        best_group = 0
+        best_region = None
+        for group_addr, table_addr, region in perfect:
+            valid = count_valid_layers_adaptive(handle, table_addr, layer_count, StrictnessLevel.PERFECT)
+            print(f"[Heuristics] PERFECT 候選組: group=0x{group_addr:X} table=0x{table_addr:X} 有效度={valid}/{layer_count}")
+            if valid > best_valid:
+                best_valid = valid
+                best_table = table_addr
+                best_group = group_addr
+                best_region = region
+                
+        if best_valid >= layer_count * 95 // 100:
+            print(f"[Heuristics] 完美匹配成功！有效圖層={best_valid}/{layer_count}")
+            return best_group, best_table, best_region, StrictnessLevel.PERFECT
             
-    if best_valid < layer_count * 95 // 100:
-        raise ValueError(f"Best LiveryGroup candidate only validated {best_valid}/{layer_count} layers; refusing unsafe write.")
-        
-    # Read final table in one bulk read
-    pointers = []
-    table_data = try_read(handle, best_table, layer_count * 8)
-    if table_data and len(table_data) == layer_count * 8:
-        pointers = list(struct.unpack(f'<{layer_count}Q', table_data))
-    else:
-        for i in range(layer_count):
-            pointers.append(read_u64(handle, best_table + i * 8))
-    return pointers
+    # 2. 自動回退到 relaxed
+    if relaxed:
+        print("\n[Heuristics] PERFECT 匹配度不足或無完美候選，啟用 RELAXED 寬鬆匹配機制...")
+        best_table = 0
+        best_valid = -1
+        best_group = 0
+        best_region = None
+        for group_addr, table_addr, region in relaxed:
+            valid = count_valid_layers_adaptive(handle, table_addr, layer_count, StrictnessLevel.RELAXED)
+            print(f"[Heuristics] RELAXED 候選組: group=0x{group_addr:X} table=0x{table_addr:X} 有效度={valid}/{layer_count}")
+            if valid > best_valid:
+                best_valid = valid
+                best_table = table_addr
+                best_group = group_addr
+                best_region = region
+                
+        if best_valid >= layer_count * 80 // 100:
+            print(f"[Heuristics] 寬鬆匹配成功！有效圖層={best_valid}/{layer_count}")
+            return best_group, best_table, best_region, StrictnessLevel.RELAXED
+            
+    # 3. 二次回退到 minimal
+    if minimal:
+        print("\n[Heuristics] RELAXED 匹配度不足或無寬鬆候選，啟用 MINIMAL 極簡保底匹配機制...")
+        best_table = 0
+        best_valid = -1
+        best_group = 0
+        best_region = None
+        for group_addr, table_addr, region in minimal:
+            valid = count_valid_layers_adaptive(handle, table_addr, layer_count, StrictnessLevel.MINIMAL)
+            print(f"[Heuristics] MINIMAL 候選組: group=0x{group_addr:X} table=0x{table_addr:X} 有效度={valid}/{layer_count}")
+            if valid > best_valid:
+                best_valid = valid
+                best_table = table_addr
+                best_group = group_addr
+                best_region = region
+                
+        if best_valid >= layer_count * 50 // 100:
+            print(f"[Heuristics] 極簡保底匹配成功！有效圖層={best_valid}/{layer_count}")
+            return best_group, best_table, best_region, StrictnessLevel.MINIMAL
+            
+    raise ValueError(f"無任何級別的 LiveryGroup 候選者通過驗證。請在 FH6 中確保已開啟未分組的 {layer_count} 個圓形圖層。")
 
 def locate_layer_pointers(handle, layer_count, max_candidates):
     import threading
+    
+    # 載入啟發式規則庫
+    heuristics_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fh6-heuristics.json")
+    heuristics = HeuristicsManager(heuristics_path)
+    
     regions = enumerate_regions(handle)
-    regions.sort(key=lambda r: r["Size"], reverse=True)
-    print(f"Scanning writable private regions={len(regions)}")
+    
+    # 使用 Heuristics 計算區域優先分並進行排序
+    def get_region_score(r):
+        score = 0
+        size = r["Size"]
+        # 1. 優先匹配歷史成功過的記憶體大小
+        for success in heuristics.data.get("successful_regions", []):
+            if abs(size - success["size"]) < 4 * 1024 * 1024: # 誤差在 4MB 內
+                score += 1000
+                
+        # 2. 如果上一次成功位址落在該 Region 附近（近端優先）
+        last_addr = heuristics.data.get("last_success_addr")
+        if last_addr and r["Base"] <= last_addr <= (r["Base"] + size):
+            score += 5000
+        elif last_addr and abs(r["Base"] - last_addr) < 512 * 1024 * 1024: # 512MB 範圍內
+            score += 2000
+            
+        # 3. 基本大小權重（傾向於 8MB ~ 128MB 的大型數據 Heap 段）
+        if 8 * 1024 * 1024 <= size <= 128 * 1024 * 1024:
+            score += 100
+        else:
+            score += size // (1024 * 1024) # 兜底按大小加點微小分
+            
+        return score
+        
+    regions.sort(key=get_region_score, reverse=True)
+    print(f"[Heuristics] 啟動記憶體啟發式掃描，總區段數={len(regions)}")
     
     pattern_lo = layer_count & 0xFF
     pattern_hi = (layer_count >> 8) & 0xFF
     
     perfect = []
+    relaxed = []
+    minimal = []
+    
     candidates_count = 0
     non_user_ptr_count = 0
     validation_failed_count = 0
@@ -381,56 +520,47 @@ def locate_layer_pointers(handle, layer_count, max_candidates):
                             non_user_ptr_count += 1
                         continue
                         
-                    # Validate first few layers to see if it is a perfect match
-                    sample = min(layer_count, 16)
-                    is_perfect = True
+                    # 階梯式評估
+                    sample_len = min(layer_count, 16)
+                    is_p = True
+                    is_r = True
+                    is_m = True
+                    
+                    sample_scores = []
+                    valid_ptrs = True
                     failure_detail = None
-                    for i in range(sample):
+                    
+                    for i in range(sample_len):
                         ptr = read_u64(handle, table_addr + i * 8)
                         if not is_user_ptr(ptr):
-                            is_perfect = False
-                            failure_detail = f"Layer {i} ptr=0x{ptr:X} is not a valid user pointer"
+                            valid_ptrs = False
+                            failure_detail = f"圖層 {i} 指針 0x{ptr:X} 不是有效的用戶空間指針"
                             break
-                        
-                        pos = read_2_floats(handle, ptr + LAYER_POS_OFFSET)
-                        scale = read_2_floats(handle, ptr + LAYER_SCALE_OFFSET)
-                        color = try_read(handle, ptr + LAYER_COLOR_OFFSET, 4)
-                        shape = try_read(handle, ptr + LAYER_SHAPE_ID_OFFSET, 1)
-                        mask = try_read(handle, ptr + LAYER_MASK_OFFSET, 1)
-                        
-                        score = 0
-                        reasons = []
-                        if pos is not None and is_finite_in_range(pos[0], -8192.0, 8192.0) and is_finite_in_range(pos[1], -8192.0, 8192.0):
-                            score += 1
-                        else:
-                            reasons.append(f"pos={pos}")
-                        if scale is not None and is_finite_in_range(abs(scale[0]), 0.00001, 64.0) and is_finite_in_range(abs(scale[1]), 0.00001, 64.0):
-                            score += 1
-                        else:
-                            reasons.append(f"scale={scale}")
-                        if color is not None and len(color) == 4:
-                            score += 1
-                        else:
-                            reasons.append("color missing/invalid")
-                        if shape is not None and len(shape) == 1 and (shape[0] == SHAPE_ID_OTHER or shape[0] == SHAPE_ID_ELLIPSE):
-                            score += 1
-                        else:
-                            reasons.append(f"shape_id={shape[0] if shape else None}")
-                        if mask is not None and len(mask) == 1 and (mask[0] == 0 or mask[0] == 1):
-                            score += 1
-                        else:
-                            reasons.append(f"mask={mask[0] if mask else None}")
                             
-                        if score < 5:
-                            is_perfect = False
-                            failure_detail = f"Layer {i} failed score check (score={score}/5). Failed fields: {', '.join(reasons)}"
-                            break
-                    
+                        # 計算三種等級的分數
+                        sp = score_layer_adaptive(handle, ptr, StrictnessLevel.PERFECT)
+                        sr = score_layer_adaptive(handle, ptr, StrictnessLevel.RELAXED)
+                        sm = score_layer_adaptive(handle, ptr, StrictnessLevel.MINIMAL)
+                        sample_scores.append((sp, sr, sm))
+                        
+                    if not valid_ptrs or len(sample_scores) < sample_len:
+                        is_p = is_r = is_m = False
+                    else:
+                        is_p = all(s[0] == 5 for s in sample_scores)
+                        is_r = sum(1 for s in sample_scores if s[1] >= 3) >= (sample_len - 2)
+                        is_m = sum(1 for s in sample_scores if s[2] >= 2) >= (sample_len // 2)
+                        
                     with scan_lock:
-                        if is_perfect:
-                            perfect.append((group_addr, table_addr))
+                        if is_p:
+                            perfect.append((group_addr, table_addr, region))
+                        elif is_r:
+                            relaxed.append((group_addr, table_addr, region))
+                        elif is_m:
+                            minimal.append((group_addr, table_addr, region))
                         else:
                             validation_failed_count += 1
+                            if not failure_detail and sample_scores:
+                                failure_detail = f"圖層評分未達標 (最高評分={max(s[0] for s in sample_scores)})"
                             if len(sample_failures) < 5:
                                 sample_failures.append({
                                     "group_addr": group_addr,
@@ -444,26 +574,42 @@ def locate_layer_pointers(handle, layer_count, max_candidates):
             now = time.time()
             if now - last_progress_time >= 2.0 or len(perfect) > 0:
                 pct = 0.0 if total_bytes == 0 else scanned_bytes * 100.0 / total_bytes
-                print(f"scan {pct:.1f}% regions candidates={candidates_count} perfect={len(perfect)}")
+                print(f"掃描進度 {pct:.1f}% candidates={candidates_count} perfect={len(perfect)} relaxed={len(relaxed)}")
                 last_progress_time = now
                 
+            # 如果已經找到完美候選，即可提早 break 結束掃描，最大化首次搜尋速度！
             if len(perfect) >= 1 or candidates_count > max_candidates:
                 break
                 
-    if not perfect:
-        print("\n=== Memory Scan Diagnostic Summary ===")
-        print(f"Scanned layer count pattern: {layer_count} (lo=0x{pattern_lo:02X}, hi=0x{pattern_hi:02X})")
-        print(f"Total candidate matches for this layer count in memory: {candidates_count}")
-        print(f"  - Candidates with invalid table pointers: {non_user_ptr_count}")
-        print(f"  - Candidates failing layer validation: {validation_failed_count}")
+    if not perfect and not relaxed and not minimal:
+        print("\n=== 記憶體掃描診斷摘要 ===")
+        print(f"掃描圖層數量 Pattern: {layer_count} (lo=0x{pattern_lo:02X}, hi=0x{pattern_hi:02X})")
+        print(f"記憶體中符合 Pattern 的總候選數: {candidates_count}")
+        print(f"  - 無效表指標的候選數: {non_user_ptr_count}")
+        print(f"  - 驗證失敗的候選數: {validation_failed_count}")
         if sample_failures:
-            print("Detailed validation failures for first few candidates:")
+            print("前幾個候選者的詳細驗證失敗原因:")
             for idx, fail in enumerate(sample_failures):
-                print(f"  Candidate #{idx+1} (group=0x{fail['group_addr']:X}, table=0x{fail['table_addr']:X}):")
+                print(f"  候選組 #{idx+1} (group=0x{fail['group_addr']:X}, table=0x{fail['table_addr']:X}):")
                 print(f"    {fail['detail']}")
-        print("======================================\n")
-                
-    return pick_best_perfect(handle, perfect, layer_count)
+        print("============================\n")
+        
+    # 調用 pick_best_adaptive 獲取最佳匹配
+    best_group, best_table, best_region, matched_level = pick_best_adaptive(handle, perfect, relaxed, minimal, layer_count)
+    
+    # 成功獲取後，將其儲存回 heuristics
+    heuristics.record_success(best_group, best_region)
+    
+    # 為了保持與原函數的返回類型一致，我們需要返回 pointers 清單
+    pointers = []
+    table_data = try_read(handle, best_table, layer_count * 8)
+    if table_data and len(table_data) == layer_count * 8:
+        pointers = list(struct.unpack(f'<{layer_count}Q', table_data))
+    else:
+        for i in range(layer_count):
+            pointers.append(read_u64(handle, best_table + i * 8))
+            
+    return pointers
 
 # --- Caching Support ---
 def try_load_cached_layer_pointers(handle, cache_path, pid, layer_count):

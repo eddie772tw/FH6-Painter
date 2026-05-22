@@ -415,8 +415,9 @@ def find_best_ellipse(target, canvas, num_candidates=200, optimization_steps=50,
     if current_max_r is not None:
         max_r = min(max_r, current_max_r)
     
-    if alpha_mask is None:
-        alpha_mask = np.zeros((1, 1), dtype=np.float32)
+    if alpha_mask is None or alpha_mask.shape == (1, 1):
+        if alpha_mask is None:
+            alpha_mask = np.zeros((1, 1), dtype=np.float32)
         check_contour = False
         
     if error_prob is None:
@@ -853,7 +854,7 @@ def run_generator(image_path, output_path=None, profile_path=None, layers_limit=
         else:
             target = np.round(target / factor) * factor
     
-    alpha_mask = None
+    alpha_mask = np.zeros((1, 1), dtype=np.float32)
     if has_alpha:
         # Extract RGB channels and Alpha channel
         target_rgb = target[:, :, :3]
@@ -887,7 +888,7 @@ def run_generator(image_path, output_path=None, profile_path=None, layers_limit=
     
     # --- Image Pyramid Multi-Resolution Preparation ---
     target_1_1 = target.copy()
-    alpha_mask_1_1 = None if alpha_mask is None else alpha_mask.copy()
+    alpha_mask_1_1 = alpha_mask.copy()
     w_1_1, h_1_1 = width, height
     
     current_pyramid_stage = "1/1"
@@ -940,8 +941,8 @@ def run_generator(image_path, output_path=None, profile_path=None, layers_limit=
             target_1_4_rgb[bg_mask_1_4, 2] = avg_b_1_4
             target_1_4 = target_1_4_rgb
         else:
-            alpha_mask_1_2 = None
-            alpha_mask_1_4 = None
+            alpha_mask_1_2 = np.zeros((1, 1), dtype=np.float32)
+            alpha_mask_1_4 = np.zeros((1, 1), dtype=np.float32)
             
         print(f"[Image Pyramid] 影像金字塔解析度已生成: 1/4 ({w_1_4}x{h_1_4}), 1/2 ({w_1_2}x{h_1_2}), 1/1 ({w_1_1}x{h_1_1})")
         
