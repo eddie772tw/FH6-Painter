@@ -55,6 +55,12 @@ def evaluate_candidate(target, canvas, x_c, y_c, r_x, r_y, theta, alpha, alpha_m
     inv_rx2 = np.float32(1.0 / (r_x * r_x) if r_x > 0 else 0.0)
     inv_ry2 = np.float32(1.0 / (r_y * r_y) if r_y > 0 else 0.0)
     
+    A = np.float32(cos_t*cos_t * inv_rx2 + sin_t*sin_t * inv_ry2)
+    B_coef = np.float32(2.0 * cos_t * sin_t * (inv_rx2 - inv_ry2))
+    C_coef = np.float32(sin_t*sin_t * inv_rx2 + cos_t*cos_t * inv_ry2)
+
+    inv_2A = np.float32(1.0 / (2.0 * A)) if A > 0.0 else np.float32(0.0)
+
     # Initialize statistical accumulators for Loop Fusion
     count = 0
     
@@ -76,13 +82,22 @@ def evaluate_candidate(target, canvas, x_c, y_c, r_x, r_y, theta, alpha, alpha_m
     
     for y in range(min_y, max_y + 1):
         dy = np.float32(y - y_c)
-        # Apply Strength Reduction: precalculate initial rx and ry for the row
-        dx_start = np.float32(min_x - x_c)
-        rx = dx_start * cos_t + dy * sin_t
-        ry = -dx_start * sin_t + dy * cos_t
+        B = B_coef * dy
+        C = C_coef * dy * dy - np.float32(1.0)
+        D = B * B - np.float32(4.0) * A * C
         
-        for x in range(min_x, max_x + 1):
-            if (rx * rx) * inv_rx2 + (ry * ry) * inv_ry2 <= 1.0:
+        if D >= 0.0:
+            sqrt_D = np.float32(math.sqrt(D))
+            dx1 = (-B - sqrt_D) * inv_2A
+            dx2 = (-B + sqrt_D) * inv_2A
+
+            x_start = int(math.ceil(x_c + dx1))
+            x_end = int(math.floor(x_c + dx2))
+
+            row_min_x = max(min_x, x_start)
+            row_max_x = min(max_x, x_end)
+
+            for x in range(row_min_x, row_max_x + 1):
                 # Strictly enforce shape boundaries inside target contour
                 if check_contour:
                     if alpha_mask[y, x] <= 10.0:
@@ -124,10 +139,6 @@ def evaluate_candidate(target, canvas, x_c, y_c, r_x, r_y, theta, alpha, alpha_m
                 sum_ct_r += (c_r * t_r) * w
                 sum_ct_g += (c_g * t_g) * w
                 sum_ct_b += (c_b * t_b) * w
-                
-            # Linear increment of rx and ry (Strength Reduction)
-            rx += cos_t
-            ry -= sin_t
             
     if count == 0:
         return np.float32(0.0), np.float32(0.0), np.float32(0.0), np.float32(99999999.0)
@@ -170,6 +181,12 @@ def draw_ellipse(canvas, x_c, y_c, r_x, r_y, theta, r, g, b, alpha):
     inv_rx2 = np.float32(1.0 / (r_x * r_x) if r_x > 0 else 0.0)
     inv_ry2 = np.float32(1.0 / (r_y * r_y) if r_y > 0 else 0.0)
     
+    A = np.float32(cos_t*cos_t * inv_rx2 + sin_t*sin_t * inv_ry2)
+    B_coef = np.float32(2.0 * cos_t * sin_t * (inv_rx2 - inv_ry2))
+    C_coef = np.float32(sin_t*sin_t * inv_rx2 + cos_t*cos_t * inv_ry2)
+
+    inv_2A = np.float32(1.0 / (2.0 * A)) if A > 0.0 else np.float32(0.0)
+
     a_f = np.float32(alpha / 255.0)
     one_minus_a = np.float32(1.0 - a_f)
     
@@ -179,20 +196,27 @@ def draw_ellipse(canvas, x_c, y_c, r_x, r_y, theta, r, g, b, alpha):
     
     for y in range(min_y, max_y + 1):
         dy = np.float32(y - y_c)
-        dx_start = np.float32(min_x - x_c)
-        rx = dx_start * cos_t + dy * sin_t
-        ry = -dx_start * sin_t + dy * cos_t
+        B = B_coef * dy
+        C = C_coef * dy * dy - np.float32(1.0)
+        D = B * B - np.float32(4.0) * A * C
         
-        for x in range(min_x, max_x + 1):
-            if (rx * rx) * inv_rx2 + (ry * ry) * inv_ry2 <= 1.0:
+        if D >= 0.0:
+            sqrt_D = np.float32(math.sqrt(D))
+            dx1 = (-B - sqrt_D) * inv_2A
+            dx2 = (-B + sqrt_D) * inv_2A
+
+            x_start = int(math.ceil(x_c + dx1))
+            x_end = int(math.floor(x_c + dx2))
+
+            row_min_x = max(min_x, x_start)
+            row_max_x = min(max_x, x_end)
+
+            for x in range(row_min_x, row_max_x + 1):
                 canvas[y, x, 0] = canvas[y, x, 0] * one_minus_a + r_val * a_f
                 canvas[y, x, 1] = canvas[y, x, 1] * one_minus_a + g_val * a_f
                 canvas[y, x, 2] = canvas[y, x, 2] * one_minus_a + b_val * a_f
                 if canvas.shape[2] == 4:
                     canvas[y, x, 3] = canvas[y, x, 3] * one_minus_a + np.float32(alpha)
-            
-            rx += cos_t
-            ry -= sin_t
 
 # --- Numba JIT Uncovered Priority Weighting Helpers ---
 @numba.jit(nopython=True, fastmath=True, cache=True)
@@ -228,18 +252,31 @@ def update_uncovered_mask(uncovered_map, x_c, y_c, r_x, r_y, theta):
     inv_rx2 = np.float32(1.0 / (r_x * r_x) if r_x > 0 else 0.0)
     inv_ry2 = np.float32(1.0 / (r_y * r_y) if r_y > 0 else 0.0)
     
+    A = np.float32(cos_t*cos_t * inv_rx2 + sin_t*sin_t * inv_ry2)
+    B_coef = np.float32(2.0 * cos_t * sin_t * (inv_rx2 - inv_ry2))
+    C_coef = np.float32(sin_t*sin_t * inv_rx2 + cos_t*cos_t * inv_ry2)
+
+    inv_2A = np.float32(1.0 / (2.0 * A)) if A > 0.0 else np.float32(0.0)
+
     for y in range(min_y, max_y + 1):
         dy = np.float32(y - y_c)
-        dx_start = np.float32(min_x - x_c)
-        rx = dx_start * cos_t + dy * sin_t
-        ry = -dx_start * sin_t + dy * cos_t
+        B = B_coef * dy
+        C = C_coef * dy * dy - np.float32(1.0)
+        D = B * B - np.float32(4.0) * A * C
         
-        for x in range(min_x, max_x + 1):
-            if (rx * rx) * inv_rx2 + (ry * ry) * inv_ry2 <= 1.0:
-                uncovered_map[y, x] = np.float32(1.0)
+        if D >= 0.0:
+            sqrt_D = np.float32(math.sqrt(D))
+            dx1 = (-B - sqrt_D) * inv_2A
+            dx2 = (-B + sqrt_D) * inv_2A
             
-            rx += cos_t
-            ry -= sin_t
+            x_start = int(math.ceil(x_c + dx1))
+            x_end = int(math.floor(x_c + dx2))
+
+            row_min_x = max(min_x, x_start)
+            row_max_x = min(max_x, x_end)
+
+            for x in range(row_min_x, row_max_x + 1):
+                uncovered_map[y, x] = np.float32(1.0)
 
 def rebuild_uncovered_map_from_shapes(width, height, has_alpha, alpha_mask, bias, shapes_list):
     """Rebuilds the uncovered map by drawing all active shapes onto a fresh mask."""
@@ -509,23 +546,36 @@ def run_redundancy_check_jit(shapes_data, shapes_color, shapes_type, width, heig
         inv_rx2 = np.float32(1.0 / (r_x * r_x) if r_x > 0 else 0.0)
         inv_ry2 = np.float32(1.0 / (r_y * r_y) if r_y > 0 else 0.0)
         
+        A = np.float32(cos_t*cos_t * inv_rx2 + sin_t*sin_t * inv_ry2)
+        B_coef = np.float32(2.0 * cos_t * sin_t * (inv_rx2 - inv_ry2))
+        C_coef = np.float32(sin_t*sin_t * inv_rx2 + cos_t*cos_t * inv_ry2)
+
+        inv_2A = np.float32(1.0 / (2.0 * A)) if A > 0.0 else np.float32(0.0)
+
         # Check if shape contributes any visible pixel
         has_contribution = False
         
         for y in range(min_y, max_y + 1):
             dy = np.float32(y - y_c)
-            dx_start = np.float32(min_x - x_c)
-            rx = dx_start * cos_t + dy * sin_t
-            ry = -dx_start * sin_t + dy * cos_t
+            B = B_coef * dy
+            C = C_coef * dy * dy - np.float32(1.0)
+            D = B * B - np.float32(4.0) * A * C
             
-            for x in range(min_x, max_x + 1):
-                if (rx * rx) * inv_rx2 + (ry * ry) * inv_ry2 <= 1.0:
+            if D >= 0.0:
+                sqrt_D = np.float32(math.sqrt(D))
+                dx1 = (-B - sqrt_D) * inv_2A
+                dx2 = (-B + sqrt_D) * inv_2A
+
+                x_start = int(math.ceil(x_c + dx1))
+                x_end = int(math.floor(x_c + dx2))
+
+                row_min_x = max(min_x, x_start)
+                row_max_x = min(max_x, x_end)
+
+                for x in range(row_min_x, row_max_x + 1):
                     if occlusion[y, x] < 0.999:
                         has_contribution = True
                         occlusion[y, x] += (1.0 - occlusion[y, x]) * a_f
-                        
-                rx += cos_t
-                ry -= sin_t
                 
         if not has_contribution:
             visible_mask[i] = False
