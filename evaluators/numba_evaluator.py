@@ -27,7 +27,7 @@ class NumbaEvaluator(BaseEvaluator):
         if not HAS_NUMBA:
             raise RuntimeError("Numba is not installed or available.")
 
-        # 準備 JIT 調用所需的變數和預設值
+
         height, width, _ = self.target_image.shape
         max_r = max(10.0, min(width, height) / 3.0)
         current_max_r = params.get("current_max_r")
@@ -57,7 +57,7 @@ class NumbaEvaluator(BaseEvaluator):
         if uncovered_map is None:
             uncovered_map = np.ones((1, 1), dtype=np.float32)
 
-        # 1. Parallel Random Search Phase
+
         x_c, y_c, r_x, r_y, theta, alpha, r, g, b, delta = numba_kernels.parallel_random_search(
             self.target_image, current_canvas, batch_size, width, height, max_r, alpha_mask, check_contour,
             params.get("use_importance", False), error_prob,
@@ -66,7 +66,7 @@ class NumbaEvaluator(BaseEvaluator):
             params.get("use_uncovered", False), uncovered_map
         )
         
-        # Fallback active
+
         fallback_active = False
         if params.get("use_freeze", False) and delta >= 90000000.0:
             fallback_active = True
@@ -78,7 +78,7 @@ class NumbaEvaluator(BaseEvaluator):
                 params.get("use_uncovered", False), uncovered_map
             )
             
-        # 2. Local JIT Hill-Climbing Optimization Phase
+
         hill_climb_freeze = params.get("use_freeze", False) if not fallback_active else False
         x_c, y_c, r_x, r_y, theta, r, g, b, alpha, delta = numba_kernels.serial_hill_climb(
             self.target_image, current_canvas, x_c, y_c, r_x, r_y, theta, alpha, r, g, b, delta,
@@ -204,7 +204,7 @@ class NumbaEvaluator(BaseEvaluator):
     def init_uncovered_map(self, width: int, height: int, has_alpha: bool, bias: float) -> np.ndarray:
         if not HAS_NUMBA:
             raise RuntimeError("Numba is not installed or available.")
-        # 為了相容性，將 has_alpha 做布林值傳入
+
         alpha_mask = self.alpha_mask
         return numba_kernels.init_uncovered_map(width, height, has_alpha, alpha_mask, bias)
 

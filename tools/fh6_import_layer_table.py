@@ -276,7 +276,6 @@ class HeuristicsManager:
             "protect": region["Protect"],
             "offset_ratio": group_addr - region["Base"]
         }
-        # 避免重複記錄相同的特徵，保持最近 5 次記錄
         if region_info not in self.data["successful_regions"]:
             self.data["successful_regions"].append(region_info)
             if len(self.data["successful_regions"]) > 5:
@@ -287,25 +286,21 @@ def score_layer_adaptive(handle, layer_ptr, level=StrictnessLevel.PERFECT):
     if not is_user_ptr(layer_ptr):
         return 0
     score = 0
-    
-    # 1. 座標驗證 (完美模式限制 8192，寬鬆/極簡放寬至 32768)
+
     pos = read_2_floats(handle, layer_ptr + LAYER_POS_OFFSET)
     coord_limit = 8192.0 if level == StrictnessLevel.PERFECT else 32768.0
     if pos is not None and is_finite_in_range(pos[0], -coord_limit, coord_limit) and is_finite_in_range(pos[1], -coord_limit, coord_limit):
         score += 1
-        
-    # 2. 縮放驗證 (完美限制 64.0，寬鬆/極簡放寬至 256.0)
+
     scale = read_2_floats(handle, layer_ptr + LAYER_SCALE_OFFSET)
     scale_limit = 64.0 if level == StrictnessLevel.PERFECT else 256.0
     if scale is not None and is_finite_in_range(abs(scale[0]), 0.00001, scale_limit) and is_finite_in_range(abs(scale[1]), 0.00001, scale_limit):
         score += 1
-        
-    # 3. 顏色驗證
+
     color = try_read(handle, layer_ptr + LAYER_COLOR_OFFSET, 4)
     if color is not None and len(color) == 4:
         score += 1
-        
-    # 4. 形狀 ID 驗證
+
     shape = try_read(handle, layer_ptr + LAYER_SHAPE_ID_OFFSET, 1)
     if shape is not None and len(shape) == 1:
         if level == StrictnessLevel.PERFECT:
@@ -315,9 +310,8 @@ def score_layer_adaptive(handle, layer_ptr, level=StrictnessLevel.PERFECT):
             if shape[0] != 0:
                 score += 1
             else:
-                score += 1 # 依然計分以提高寬鬆容錯
+                score += 1 
                 
-    # 5. 遮罩遮罩驗證
     mask = try_read(handle, layer_ptr + LAYER_MASK_OFFSET, 1)
     if mask is not None and len(mask) == 1:
         if level == StrictnessLevel.PERFECT:
@@ -328,7 +322,6 @@ def score_layer_adaptive(handle, layer_ptr, level=StrictnessLevel.PERFECT):
             
     return score
 
-# 保留原 score_layer 接口相容性
 def score_layer(handle, layer_ptr):
     return score_layer_adaptive(handle, layer_ptr, StrictnessLevel.PERFECT)
 
@@ -381,7 +374,6 @@ def scan_region_task(handle, region, pattern_lo, pattern_hi):
     return candidates
 
 def pick_best_adaptive(handle, perfect, relaxed, minimal, layer_count):
-    # 1. 優先從 perfect 挑選
     if perfect:
         best_table = 0
         best_valid = -1
@@ -400,7 +392,6 @@ def pick_best_adaptive(handle, perfect, relaxed, minimal, layer_count):
             print(f"[Heuristics] 完美匹配成功！有效圖層={best_valid}/{layer_count}")
             return best_group, best_table, best_region, StrictnessLevel.PERFECT
             
-    # 2. 自動回退到 relaxed
     if relaxed:
         print("\n[Heuristics] PERFECT 匹配度不足或無完美候選，啟用 RELAXED 寬鬆匹配機制...")
         best_table = 0
@@ -420,7 +411,6 @@ def pick_best_adaptive(handle, perfect, relaxed, minimal, layer_count):
             print(f"[Heuristics] 寬鬆匹配成功！有效圖層={best_valid}/{layer_count}")
             return best_group, best_table, best_region, StrictnessLevel.RELAXED
             
-    # 3. 二次回退到 minimal
     if minimal:
         print("\n[Heuristics] RELAXED 匹配度不足或無寬鬆候選，啟用 MINIMAL 極簡保底匹配機制...")
         best_table = 0
@@ -444,34 +434,30 @@ def pick_best_adaptive(handle, perfect, relaxed, minimal, layer_count):
 
 def locate_layer_pointers(handle, layer_count, max_candidates):
     import threading
-    
-    # 載入啟發式規則庫
+
     heuristics_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fh6-heuristics.json")
     heuristics = HeuristicsManager(heuristics_path)
     
     regions = enumerate_regions(handle)
-    
-    # 使用 Heuristics 計算區域優先分並進行排序
+
     def get_region_score(r):
         score = 0
         size = r["Size"]
-        # 1. 優先匹配歷史成功過的記憶體大小
+
         for success in heuristics.data.get("successful_regions", []):
             if abs(size - success["size"]) < 4 * 1024 * 1024: # 誤差在 4MB 內
                 score += 1000
-                
-        # 2. 如果上一次成功位址落在該 Region 附近（近端優先）
+
         last_addr = heuristics.data.get("last_success_addr")
         if last_addr and r["Base"] <= last_addr <= (r["Base"] + size):
             score += 5000
         elif last_addr and abs(r["Base"] - last_addr) < 512 * 1024 * 1024: # 512MB 範圍內
             score += 2000
-            
-        # 3. 基本大小權重（傾向於 8MB ~ 128MB 的大型數據 Heap 段）
+
         if 8 * 1024 * 1024 <= size <= 128 * 1024 * 1024:
             score += 100
         else:
-            score += size // (1024 * 1024) # 兜底按大小加點微小分
+            score += size // (1024 * 1024) 
             
         return score
         
@@ -496,7 +482,6 @@ def locate_layer_pointers(handle, layer_count, max_candidates):
     scanned_bytes = 0
     last_progress_time = time.time()
     
-    # ThreadPool for parallel memory scanning across multiple CPU cores
     with ThreadPoolExecutor() as executor:
         futures = {executor.submit(scan_region_task, handle, r, pattern_lo, pattern_hi): r for r in regions}
         
@@ -519,8 +504,7 @@ def locate_layer_pointers(handle, layer_count, max_candidates):
                         with scan_lock:
                             non_user_ptr_count += 1
                         continue
-                        
-                    # 階梯式評估
+
                     sample_len = min(layer_count, 16)
                     is_p = True
                     is_r = True
@@ -536,8 +520,7 @@ def locate_layer_pointers(handle, layer_count, max_candidates):
                             valid_ptrs = False
                             failure_detail = f"圖層 {i} 指針 0x{ptr:X} 不是有效的用戶空間指針"
                             break
-                            
-                        # 計算三種等級的分數
+
                         sp = score_layer_adaptive(handle, ptr, StrictnessLevel.PERFECT)
                         sr = score_layer_adaptive(handle, ptr, StrictnessLevel.RELAXED)
                         sm = score_layer_adaptive(handle, ptr, StrictnessLevel.MINIMAL)
@@ -576,8 +559,7 @@ def locate_layer_pointers(handle, layer_count, max_candidates):
                 pct = 0.0 if total_bytes == 0 else scanned_bytes * 100.0 / total_bytes
                 print(f"掃描進度 {pct:.1f}% candidates={candidates_count} perfect={len(perfect)} relaxed={len(relaxed)}")
                 last_progress_time = now
-                
-            # 如果已經找到完美候選，即可提早 break 結束掃描，最大化首次搜尋速度！
+
             if len(perfect) >= 1 or candidates_count > max_candidates:
                 break
                 
@@ -593,14 +575,11 @@ def locate_layer_pointers(handle, layer_count, max_candidates):
                 print(f"  候選組 #{idx+1} (group=0x{fail['group_addr']:X}, table=0x{fail['table_addr']:X}):")
                 print(f"    {fail['detail']}")
         print("============================\n")
-        
-    # 調用 pick_best_adaptive 獲取最佳匹配
+
     best_group, best_table, best_region, matched_level = pick_best_adaptive(handle, perfect, relaxed, minimal, layer_count)
-    
-    # 成功獲取後，將其儲存回 heuristics
+
     heuristics.record_success(best_group, best_region)
-    
-    # 為了保持與原函數的返回類型一致，我們需要返回 pointers 清單
+
     pointers = []
     table_data = try_read(handle, best_table, layer_count * 8)
     if table_data and len(table_data) == layer_count * 8:
@@ -749,8 +728,7 @@ def print_preview(layer_pointers, shapes, canvas_w, canvas_h, options, count):
 
 def run_importer(json_path, layers=3000, dry_run=False, reverse=False, include_header=False, no_cache=False, scale_div=63.0, coord_scale=1.0, max_candidates=200000):
     print(f"Optimization Status: Numba acceleration = {'ENABLED' if HAS_NUMBA else 'DISABLED'}")
-    
-    # Wrap options in a simple container class to maintain compatibility
+
     class Options:
         def __init__(self):
             self.json_path = json_path

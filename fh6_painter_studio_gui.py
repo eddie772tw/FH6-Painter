@@ -497,6 +497,9 @@ class ForzaStudioGUI:
         if engine_code == "TAICHI":
             self.combo_taichi_arch.configure(state="readonly")
             self.combo_taichi_device.configure(state="readonly")
+        elif engine_code == "NUMBA":
+            self.combo_taichi_arch.configure(state="disabled")
+            self.combo_taichi_device.configure(state="disabled")
         else:
             self.combo_taichi_arch.configure(state="disabled")
             self.combo_taichi_device.configure(state="disabled")

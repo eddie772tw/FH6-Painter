@@ -1,36 +1,20 @@
 # FH6-Painter 🎨
-> **Forza Horizon 6 JIT-Accelerated Image-to-Livery Painter & Memory Importer**  
-> **基於 Numba JIT 加速的極速《極限競速：地平線 6》圖片轉車貼與記憶體匯入工具**
+> **Forza Horizon 6 Heterogeneous JIT-Accelerated Image-to-Livery Painter & Memory Importer**  
+> **基於JIT加速的極速《極限競速：地平線 6》車貼生成與記憶體匯入工具**
 
 [![Language](https://img.shields.io/badge/Language-Python%203.12%2B-blue.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Acceleration](https://img.shields.io/badge/JIT%20Acceleration-Numba-orange.svg)](https://numba.pydata.org/)
+[![Acceleration](https://img.shields.io/badge/JIT%20Acceleration-Numba%20%26%20Taichi-orange.svg)](https://numba.pydata.org/)
 
 ---
 
-## 🌟 核心特色 / Key Features
+## 簡介 / Introduction & Summary
+基本上就是一個用Python重新寫的forza-painter，但更快、更好而且支援Forza Horizon 6。
+支援透過Numba(CPU)或Taichi(GPU)加速，以及提供了GUI和更連貫的導入體驗。
+Basically a rebuild of forza-painter using Python, but much faster and support Forza Horizon 6.
+Support both CPU and GPU JIT acceleration, provide GUI & smooth import expierence.
 
-### 🇹🇼 中文說明
-1. **極致的 JIT 編譯效能**：全 Python 重構核心，利用 Numba 進行動態 JIT 編譯與多核心並行隨機搜尋（Parallel Random Search），生成速度比純 Python 快達數十倍，完全免除編譯 C++ 執行檔的繁瑣需求。
-2. **多功能平底化 GUI 介面**：提供專業的 Tkinter 圖形操作面板 (`fh6_painter_studio_gui.py`)，支援拖曳輸入、即時生成預覽、動態設定調整與一鍵智能匯入。
-3. **安全免管理員權限 (Bypass UAC)**：利用特殊環境變數繞過 Windows UAC 強制系統管理員權限的需求，保證執行安全且避免彈出權限提示。
-4. **JIT 記憶體雙向優化**：
-   - **中途冗餘消除**：生成過程中每 100 層自動進行一次「反向遮蔽遮罩 (Backward Alpha Occlusion)」運算，移除完全被蓋住的無用形狀。
-   - **末尾形狀保留**：最終將無用形狀重置為左上角 `(0,0)` 且 `100% 透明` 的極小圖形，既符合 Forza 遊戲車貼層數限制，又能保持畫面的絕對純淨。
-5. **智能記憶體掃描匯入**：利用 Windows API (`ReadProcessMemory`/`WriteProcessMemory`) 於背景安全定位 `LiveryGroup` 記憶體表，數秒內即可將複雜的數千層車貼無縫寫入《極限競速：地平線 6》中。
-
-### 🇬🇧 English Description
-1. **High-Performance JIT Compilation**: Core rewritten entirely in Python and JIT-compiled/parallel-optimized using Numba. Up to tens of times faster than standard python interpreters, bypassing any need for complex C++ toolchains.
-2. **Feature-Rich Tkinter GUI**: A beautiful, flat-design graphical studio (`fh6_painter_studio_gui.py`) featuring drag-and-drop input, real-time visual progress previews, interactive parameter settings, and one-click smart importing.
-3. **UAC Bypass & Secure Running**: Bypasses mandatory Windows administrator privileges via environment wrappers, preventing annoying prompt interruptions and keeping the execution secure.
-4. **Dual JIT-Powered Optimizations**:
-   - **Midway Redundancy Check**: Automatically scans shapes every 100 layers during generation using backward-tracing alpha occlusion filters to eliminate fully covered shapes.
-   - **Final Shape Reservation**: Resets occluded redundant shapes into microscopic, `100% transparent` ellipses located at `(0,0)`, preserving exact layer limits in game while guaranteeing canvas cleanliness.
-5. **Direct Memory Injector**: Safely scans game process RAM and writes vector data directly into the active `LiveryGroup` layers table within seconds using native win32 memory APIs.
-
----
-
-## 📂 專案架構 / Folder Layout
+## 專案架構 / Folder Layout
 
 ```text
 ├── fh6_painter_launcher.py    # 控制台拖曳啟動器 / Drag-and-drop CLI launcher
@@ -41,17 +25,23 @@
 ├── settings/                  # 各種生成速率與品質預設設定 / Generation presets
 │   ├── a. keemstar fast...ini
 │   ├── c. balanced...         # 預設平衡設定檔 / Default balanced configuration
-│   └── g. i hate my pc...ini
-├── test_img/                  # 測試圖片目錄 (Git已忽略) / Test images folder (Git-ignored)
-├── output/                    # 幾何JSON輸出目錄 (Git已忽略) / Vector JSON output (Git-ignored)
+│   └── g. i hate my pc...ini  
+├── evaluators/                # JIT 評估器核心組件目錄 / JIT Evaluator plugins
+│   ├── __init__.py            # 評估器載入工廠 / Evaluator Factory
+│   ├── taichi_evaluator.py    # GPU Vulkan 評估器 / GPU Taichi JIT Evaluator
+│   ├── numba_evaluator.py     # CPU 多線程評估器 / CPU Numba JIT Evaluator
+│   └── pure_python_evaluator.py # CPU 基準評估器 / Pure Python Evaluator Baseline
+├── test_img/                  # 測試圖片目錄 (Git已忽略) / Test images folder
+├── output/                    # 幾何JSON輸出目錄 (Git已忽略) / Vector JSON output
 └── tools/
     ├── fh_import_layer_table.py # 記憶體掃描與寫入核心 / Win32 RAM scanner & injector
-    └── fh_painter_generator.py  # Numba JIT 圖片轉形狀核心 / JIT shape generator core
+    ├── fh6_painter_generator.py # JIT 幾何生成器 / JIT shape generator tool
+    └── benchmark_taichi.py      # 跨解析度效能對決分析腳本 / Cross-res JIT Profiler
 ```
 
 ---
 
-## 🛠️ 安裝與依賴需求 / Prerequisites & Installation
+## 安裝與依賴需求 / Prerequisites & Installation
 
 本專案需要 **Python 3.12 或更高版本**。
 
@@ -61,14 +51,14 @@
    cd FH6-Painter
    ```
 
-2. **安裝 Python 依賴 / Install Python Dependencies**:
+2. **安裝依賴**:
    ```bash
    pip install -r requirements.txt
    ```
-
+	或直接啟動 `forza-painter-py.bat`也可以實現自動部署。
 ---
 
-## 🚀 使用指南 / How to Use
+## 使用指南 / How to Use
 
 ### 第一步：產生車貼幾何資料 / Step 1: Generate Vector JSON
 
@@ -78,9 +68,8 @@
    python fh6_painter_studio_gui.py
    ```
 2. 將要轉換的圖片拖曳至介面中的 **「選擇目標圖片」** 框。
-3. 選擇您想要的設定檔（例如預設的 `c. balanced`）。
-4. 點選 **「開始生成 (Start Generation)」**。您可以在右側看見高畫質的即時畫布生成預覽！
-5. 生成完成後，幾何 JSON 將自動保存在 `output/` 目錄中。
+3. 選擇使用的 JIT 引擎。
+4. 點選 **「開始生成 (Start Generation)」**。您可以在右側看見高畫質的即時畫布生成預覽！同時診斷主控台會實時輸出運算資訊。
 
 #### 🔵 方法 B：拖曳至啟動器（CLI 快速模式 / CLI Fast Mode）
 * 將您的圖片拖曳至 `fh6_painter_launcher.py` 或 `forza-painter-py.bat` 圖示上，隨後依提示選擇層數限制與設定檔，即會於背景自動執行生成。
@@ -98,10 +87,7 @@
 
 ---
 
-## ⚖️ 開源授權與致謝 / License & Credits
-
-本專案採用 **MIT 授權條款** 開源。  
-本專案為完全的 Python 重構版，核心幾何算法與匯入技術部分衍生並致謝自以下優秀的開源項目：
+##  開源授權與致謝 / License & Credits
 
 * **MIT License**：Copyright (c) 2026 罐頭 (eddie772tw) & 貢獻者。
 * **Original C++ forza-painter** by [AE (A-Dawg#0001)](https://github.com/forza-painter/forza-painter) — 提供原版 C++ 邏輯參考。

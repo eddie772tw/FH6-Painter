@@ -7,10 +7,9 @@ import json
 import argparse
 import gc
 
-# Ensure we can import from the parent folder (to find evaluators)
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# --- Check dependencies ---
+
 HAS_DEPENDENCIES = True
 try:
     from PIL import Image
@@ -23,7 +22,7 @@ if not HAS_DEPENDENCIES:
     print("Please install them by running: pip install pillow numpy", file=sys.stderr)
     sys.exit(1)
 
-# --- Helper Functions ---
+
 def get_boundary_weight_map(alpha_mask, bias):
     """Computes a 2-pixel wide boundary weight map using pure standard NumPy."""
     if alpha_mask is None or alpha_mask.shape == (1, 1):
@@ -60,7 +59,7 @@ def get_boundary_weight_map(alpha_mask, bias):
     return boundary_map
 
 def scale_shapes_list(shapes, factor):
-    """等比例縮放形狀清單內所有圖案的座標與半徑"""
+    """Scale all shape coordinates and radii by the given factor."""
     for s in shapes:
         if s["type"] == 32:
             s["data"][0] = float(s["data"][0] * factor) # X
@@ -101,13 +100,12 @@ def rebuild_uncovered_map_from_shapes(evaluator, width, height, has_alpha, alpha
     return uncovered_map
 
 
-# --- Main Generator Logic ---
 def run_generator(image_path, output_path=None, profile_path=None, layers_limit=None, candidates_limit=None, steps_limit=None, progress_callback=None, opt_settings=None, engine_name=None, taichi_arch=None, taichi_device_id=None):
     if not os.path.exists(image_path):
         print(f"ERROR: Image not found: {image_path}", file=sys.stderr)
         return 1
         
-    # --- Resolve default profile to c. balanced if not provided ---
+
     if not profile_path:
         script_dir = os.path.dirname(os.path.abspath(__file__))
         project_root = os.path.dirname(script_dir)  # parent of 'tools'
@@ -123,7 +121,7 @@ def run_generator(image_path, output_path=None, profile_path=None, layers_limit=
         output_dir = os.path.join(project_root, "output", img_base)
         output_path = os.path.join(output_dir, f"{img_base}.json")
         
-    # --- Load Settings from Profile ---
+    # Load settings from profile
     profile = load_profile(profile_path)
     
     max_res = int(profile.get("maxResolution", 2000))
@@ -143,12 +141,12 @@ def run_generator(image_path, output_path=None, profile_path=None, layers_limit=
         except Exception:
             pass
 
-    # Override defaults if explicitly provided
+
     layers = layers_limit if layers_limit is not None else profile_layers
     candidates = candidates_limit if candidates_limit is not None else profile_candidates
     steps = steps_limit if steps_limit is not None else profile_steps
     
-    # --- Load Optimization Settings ---
+    # Load optimization settings
     if opt_settings is None:
         opt_settings = {}
         script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -161,35 +159,35 @@ def run_generator(image_path, output_path=None, profile_path=None, layers_limit=
             except Exception as e:
                 print(f"Warning: Failed to load optimization settings: {e}", file=sys.stderr)
 
-    # 影像金字塔設定
+
     opt_pyramid = opt_settings.get("image_pyramid", {})
     pyramid_enabled = opt_pyramid.get("enabled", False)
     pyramid_layers_threshold = opt_pyramid.get("pyramid_layers_threshold", 500)
     pyramid_stagnation = opt_pyramid.get("stagnation_threshold", 0.005)
 
-    # 重點採樣設定
+
     opt_importance = opt_settings.get("importance_sampling", {})
     importance_enabled = opt_importance.get("enabled", False)
     importance_interval = opt_importance.get("update_interval", 10)
 
-    # 模擬退火設定
+
     opt_sa = opt_settings.get("simulated_annealing", {})
     sa_enabled = opt_sa.get("enabled", False)
     sa_initial_temp = opt_sa.get("initial_temperature", 5000.0)
     sa_cooling_rate = opt_sa.get("cooling_rate", 0.95)
 
-    # 動態凍結遮罩設定
+
     opt_freeze = opt_settings.get("dynamic_freeze", {})
     freeze_enabled = opt_freeze.get("enabled", False)
     freeze_update_interval = opt_freeze.get("update_interval", 100)
     freeze_error_threshold = opt_freeze.get("error_threshold", 3)
 
-    # 區域誤差加權設定
+
     opt_weight = opt_settings.get("error_weighting", {})
     weight_enabled = opt_weight.get("enabled", False)
     weight_update_interval = opt_weight.get("update_interval", 100)
 
-    # 衰減式形狀限縮設定
+
     opt_decay = opt_settings.get("decaying_shape", {})
     decay_enabled = opt_decay.get("enabled", False)
     decay_min_max_r = opt_decay.get("min_max_r", 5.0)
@@ -200,7 +198,7 @@ def run_generator(image_path, output_path=None, profile_path=None, layers_limit=
     print(f"Layers limit: {layers} | Candidates: {candidates} | Optim steps: {steps}")
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
     
-    # Load and preprocess image
+
     img_raw = Image.open(image_path)
     has_alpha = (img_raw.mode in ("RGBA", "LA") or (img_raw.mode == "P" and "transparency" in img_raw.info))
     if has_alpha:
@@ -252,7 +250,7 @@ def run_generator(image_path, output_path=None, profile_path=None, layers_limit=
         avg_g = np.mean(target[:, :, 1])
         avg_b = np.mean(target[:, :, 2])
     
-    # --- Image Pyramid Multi-Resolution Preparation ---
+    # Image pyramid multi-resolution preparation
     target_1_1 = target.copy()
     alpha_mask_1_1 = alpha_mask.copy()
     w_1_1, h_1_1 = width, height
@@ -305,23 +303,23 @@ def run_generator(image_path, output_path=None, profile_path=None, layers_limit=
             
         print(f"[Image Pyramid] 影像金字塔解析度已生成: 1/4 ({w_1_4}x{h_1_4}), 1/2 ({w_1_2}x{h_1_2}), 1/1 ({w_1_1}x{h_1_1})")
         
-        # Start at Stage 1/4
+
         current_pyramid_stage = "1/4"
         target = target_1_4
         alpha_mask = alpha_mask_1_4
         width, height = w_1_4, h_1_4
 
-    # Initialize canvas with target image average color
+
     canvas = np.zeros_like(target)
     canvas[:, :, 0] = avg_r
     canvas[:, :, 1] = avg_g
     canvas[:, :, 2] = avg_b
     
-    # --- Load Computational Engine Plugin ---
+    # Load computational engine
     from evaluators import EvaluatorFactory
     evaluator = EvaluatorFactory.create_evaluator(engine_name, target, alpha_mask, taichi_arch=taichi_arch, taichi_device_id=taichi_device_id)
     
-    # Construct shape array with canvas header shape
+
     shapes_list = []
     header = {
         "type": 1,
@@ -331,7 +329,7 @@ def run_generator(image_path, output_path=None, profile_path=None, layers_limit=
     }
     shapes_list.append(header)
     
-    # Initialize error probability map for Importance Sampling
+
     error_prob = None
     if importance_enabled:
         diff_mat = np.abs(target - canvas)
@@ -339,7 +337,7 @@ def run_generator(image_path, output_path=None, profile_path=None, layers_limit=
         max_err = err_heatmap.max()
         error_prob = (err_heatmap / max_err).astype(np.float32) if max_err > 0 else np.zeros(err_heatmap.shape, dtype=np.float32)
 
-    # Initialize freeze_mask and weight_map
+
     freeze_mask = np.zeros((height, width), dtype=np.uint8) if freeze_enabled else None
     
     opt_boundary = opt_settings.get("boundary_weighting", {})
@@ -366,7 +364,7 @@ def run_generator(image_path, output_path=None, profile_path=None, layers_limit=
     
     base_max_r = max(10.0, min(width, height) / 3.0)
 
-    # Disable automatic garbage collection
+
     gc.disable()
     
     start_time = time.time()
@@ -387,13 +385,13 @@ def run_generator(image_path, output_path=None, profile_path=None, layers_limit=
         while (len(shapes_list) - 1 < layers) and (attempts < max_attempts):
             attempts += 1
             
-            # Decaying Shape Constraints
+
             current_max_r = None
             if decay_enabled:
                 progress_ratio = (len(shapes_list) - 1) / layers
                 current_max_r = max(decay_min_max_r, base_max_r * (1.0 - progress_ratio ** 2))
             
-            # Pack all current settings into a parameters dict for evaluator
+
             eval_params = {
                 "optimization_steps": steps,
                 "check_contour": has_alpha,
@@ -411,24 +409,24 @@ def run_generator(image_path, output_path=None, profile_path=None, layers_limit=
                 "uncovered_map": uncovered_map
             }
             
-            # Delegate hard work entirely to current JIT/GPU evaluator plugin!
+
             best_shape_params, delta = evaluator.search_best_shape(canvas, candidates, eval_params)
             
             if delta >= 90000000.0:
                 print(f"\n[Warning] Layer {len(shapes_list)}: Candidate shape rejected due to hard boundary/freeze conflict (delta={delta:.1f}). Skipping...")
                 continue
             
-            # Unpack shape params
+
             x_c, y_c, r_x, r_y, theta, r, g, b, alpha = best_shape_params
             
-            # Render best shape on canvas using evaluator JIT draw method
+
             evaluator.draw_shape_on_canvas(canvas, x_c, y_c, r_x, r_y, theta, r, g, b, alpha)
             
-            # Update uncovered mask in VRAM
+
             if uncovered_enabled and uncovered_map is not None:
                 evaluator.update_uncovered_mask(uncovered_map, x_c, y_c, r_x, r_y, theta)
             
-            # Save shape representation
+
             shapes_list.append({
                 "type": 32,
                 "data": [x_c, y_c, r_x, r_y, float(math.degrees(theta))],
@@ -439,7 +437,7 @@ def run_generator(image_path, output_path=None, profile_path=None, layers_limit=
             total_generated_so_far += 1
             current_layer = len(shapes_list) - 1
             
-            # Stagnation tracking
+
             mse_change = -delta / (canvas.shape[0] * canvas.shape[1])
             recent_deltas.append(mse_change)
             if len(recent_deltas) > 30:
@@ -452,14 +450,14 @@ def run_generator(image_path, output_path=None, profile_path=None, layers_limit=
                 if avg_older > 0 and (avg_recent / avg_older) < pyramid_stagnation:
                     stagnated = True
                     
-            # Image Pyramid stage transition
+
             if pyramid_enabled:
                 if current_pyramid_stage == "1/4":
                     if current_layer >= stage_1_4_limit or stagnated:
                         print(f"\n[Image Pyramid] 1/4 解析度階段完成於層數 {current_layer} (停滯={stagnated})。正在切換至 1/2 解析度...")
                         scale_shapes_list(shapes_list, 2.0)
                         
-                        # Re-instantiate evaluator with new resolution target to resident VRAM
+
                         evaluator.cleanup()
                         target = target_1_2
                         alpha_mask = alpha_mask_1_2
@@ -489,7 +487,7 @@ def run_generator(image_path, output_path=None, profile_path=None, layers_limit=
                         print(f"\n[Image Pyramid] 1/2 解析度階段完成於層數 {current_layer} (停滯={stagnated})。正在切換至 1/1 解析度 (Fine Phase)...")
                         scale_shapes_list(shapes_list, 2.0)
                         
-                        # Re-instantiate evaluator with 1/1 full resolution
+
                         evaluator.cleanup()
                         target = target_1_1
                         alpha_mask = alpha_mask_1_1
@@ -515,14 +513,14 @@ def run_generator(image_path, output_path=None, profile_path=None, layers_limit=
                             weight_map = boundary_weight_map.copy()
                         base_max_r = max(10.0, min(w_1_1, h_1_1) / 3.0)
 
-            # Update importance sampling error probability map every N layers
+
             if importance_enabled and total_generated_so_far % importance_interval == 0:
                 diff_mat = np.abs(target - canvas)
                 err_heatmap = np.mean(diff_mat, axis=2)
                 max_err = err_heatmap.max()
                 error_prob = (err_heatmap / max_err).astype(np.float32) if max_err > 0 else np.zeros(err_heatmap.shape, dtype=np.float32)
 
-            # Periodically update Dynamic Freeze Mask & Error Weight Map
+
             freeze_update_needed = freeze_enabled and total_generated_so_far > 0 and total_generated_so_far % freeze_update_interval == 0
             weight_update_needed = weight_enabled and total_generated_so_far > 0 and total_generated_so_far % weight_update_interval == 0
             if freeze_update_needed or weight_update_needed:
@@ -546,7 +544,7 @@ def run_generator(image_path, output_path=None, profile_path=None, layers_limit=
                     else:
                         weight_map = boundary_weight_map.copy() if (boundary_enabled and has_alpha) else np.ones((height, width), dtype=np.float32)
 
-            # --- Midway Redundancy Check & Canvas Rebuilding ---
+            # Midway redundancy check & canvas rebuilding
             is_normal_trigger = (total_generated_so_far > 0 and total_generated_so_far % 500 == 0)
             is_test_trigger = (layers < 500 and total_generated_so_far >= 10 and (total_generated_so_far - 10) % 10 == 0)
             
@@ -558,7 +556,7 @@ def run_generator(image_path, output_path=None, profile_path=None, layers_limit=
                     uncovered_map = rebuild_uncovered_map_from_shapes(evaluator, width, height, has_alpha, alpha_mask, uncovered_bias, shapes_list)
                 current_layer = len(shapes_list) - 1
             
-            # Check if we should save intermediate JSON
+
             if current_layer in save_at or (save_every > 0 and current_layer % save_every == 0 and current_layer < layers):
                 base_dir = os.path.dirname(output_path) or "."
                 file_base, file_ext = os.path.splitext(os.path.basename(output_path))
@@ -569,7 +567,7 @@ def run_generator(image_path, output_path=None, profile_path=None, layers_limit=
                 except Exception as e:
                     print(f"\nWarning: Failed to save intermediate JSON to {inter_path}: {e}", file=sys.stderr)
             
-            # Progress Bar, Callback & Timing
+
             now = time.time()
             elapsed = now - start_time
             speed = current_layer / elapsed if elapsed > 0 else 0.0
@@ -604,7 +602,7 @@ def run_generator(image_path, output_path=None, profile_path=None, layers_limit=
 
         print(f"Shape generation completed in {total_time:.2f} seconds!")
         
-        # If we finished but are still in a low resolution stage, upscale to 1/1
+
         if pyramid_enabled and current_pyramid_stage != "1/1":
             if current_pyramid_stage == "1/4":
                 print("\n[Image Pyramid] 正在從 1/4 直接升級至 1/1 解析度...")
@@ -623,11 +621,11 @@ def run_generator(image_path, output_path=None, profile_path=None, layers_limit=
             evaluator.rebuild_canvas(canvas, shapes_list, avg_r, avg_g, avg_b)
             current_pyramid_stage = "1/1"
             
-        # --- Final Redundancy Check: Reset redundant layers ---
+        # Final redundancy check
         print("\n[Engine] Running final redundancy check to reserve layer count and reset occluded shapes...")
         shapes_list = evaluator.run_redundancy_check(shapes_list, width, height, final_check=True)
         
-        # Save to final JSON file
+
         os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
         with open(output_path, "w", encoding="utf-8") as f:
             json.dump({"shapes": shapes_list}, f, indent=2)
@@ -636,7 +634,7 @@ def run_generator(image_path, output_path=None, profile_path=None, layers_limit=
         return 0
         
     finally:
-        # Guarantee resource release in any exception
+
         evaluator.cleanup()
 
 

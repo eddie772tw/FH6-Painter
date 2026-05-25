@@ -3,7 +3,7 @@ import math
 import numpy as np
 import numba
 
-# --- Numba JIT Accelerated Core ---
+
 @numba.jit(nopython=True, fastmath=True, cache=True)
 def evaluate_candidate(target, canvas, x_c, y_c, r_x, r_y, theta, alpha, alpha_mask, check_contour, use_freeze=False, freeze_mask=None, use_weight=False, weight_map=None, use_uncovered=False, uncovered_map=None):
     """
@@ -18,12 +18,11 @@ def evaluate_candidate(target, canvas, x_c, y_c, r_x, r_y, theta, alpha, alpha_m
     cos_t = np.float32(math.cos(theta))
     sin_t = np.float32(math.sin(theta))
     
-    # Calculate exact bounding box of the rotated ellipse to limit pixel search area
+    # Bounding box of the rotated ellipse
     x_half = math.sqrt(r_x*r_x * cos_t*cos_t + r_y*r_y * sin_t*sin_t)
     y_half = math.sqrt(r_x*r_x * sin_t*sin_t + r_y*r_y * cos_t*cos_t)
     
-    # Strictly enforce image boundary constraints (Hard Boundary Constraints)
-    # If the ellipse goes beyond the outer canvas edges, reject it instantly
+
     if (x_c - x_half < 0.0) or (x_c + x_half > np.float32(width)) or (y_c - y_half < 0.0) or (y_c + y_half > np.float32(height)):
         return np.float32(0.0), np.float32(0.0), np.float32(0.0), np.float32(99999999.0)
         
@@ -35,7 +34,7 @@ def evaluate_candidate(target, canvas, x_c, y_c, r_x, r_y, theta, alpha, alpha_m
     inv_rx2 = np.float32(1.0 / (r_x * r_x) if r_x > 0 else 0.0)
     inv_ry2 = np.float32(1.0 / (r_y * r_y) if r_y > 0 else 0.0)
     
-    # Initialize statistical accumulators for Loop Fusion
+
     count = 0
     
     sum_t_r = np.float32(0.0)
@@ -56,20 +55,20 @@ def evaluate_candidate(target, canvas, x_c, y_c, r_x, r_y, theta, alpha, alpha_m
     
     for y in range(min_y, max_y + 1):
         dy = np.float32(y - y_c)
-        # Apply Strength Reduction: precalculate initial rx and ry for the row
+
         dx_start = np.float32(min_x - x_c)
         rx = dx_start * cos_t + dy * sin_t
         ry = -dx_start * sin_t + dy * cos_t
         
         for x in range(min_x, max_x + 1):
             if (rx * rx) * inv_rx2 + (ry * ry) * inv_ry2 <= 1.0:
-                # Strictly enforce shape boundaries inside target contour
+
                 if check_contour:
                     if alpha_mask[y, x] <= 10.0:
-                        # Reject this candidate immediately with infinite penalty
+
                         return np.float32(0.0), np.float32(0.0), np.float32(0.0), np.float32(99999999.0)
                 
-                # Dynamic Freeze Masking: reject shape if it touches any frozen pixel
+
                 if use_freeze and freeze_mask[y, x] == 1:
                     return np.float32(0.0), np.float32(0.0), np.float32(0.0), np.float32(99999999.0)
                         
@@ -81,7 +80,7 @@ def evaluate_candidate(target, canvas, x_c, y_c, r_x, r_y, theta, alpha, alpha_m
                 c_g = canvas[y, x, 1]
                 c_b = canvas[y, x, 2]
                 
-                # Regional Error Weighting & Uncovered Priority Weighting
+
                 w = np.float32(1.0)
                 if use_weight:
                     w = weight_map[y, x]
@@ -105,7 +104,7 @@ def evaluate_candidate(target, canvas, x_c, y_c, r_x, r_y, theta, alpha, alpha_m
                 sum_ct_g += (c_g * t_g) * w
                 sum_ct_b += (c_b * t_b) * w
                 
-            # Linear increment of rx and ry (Strength Reduction)
+            # Strength reduction: linear rx/ry increment
             rx += cos_t
             ry -= sin_t
             
@@ -121,7 +120,7 @@ def evaluate_candidate(target, canvas, x_c, y_c, r_x, r_y, theta, alpha, alpha_m
     two_a = np.float32(2.0 * a_f)
     two_a_one_minus_a = np.float32(2.0 * a_f * (1.0 - a_f))
     
-    # Calculate Delta MSE using O(1) loop fusion formula
+
     delta_r = a2_minus_2a * sum_c2_r + two_a * sum_ct_r + two_a_one_minus_a * avg_r * sum_c_r + a2_minus_2a * avg_r * sum_t_r
     delta_g = a2_minus_2a * sum_c2_g + two_a * sum_ct_g + two_a_one_minus_a * avg_g * sum_c_g + a2_minus_2a * avg_g * sum_t_g
     delta_b = a2_minus_2a * sum_c2_b + two_a * sum_ct_b + two_a_one_minus_a * avg_b * sum_c_b + a2_minus_2a * avg_b * sum_t_b
@@ -174,7 +173,7 @@ def draw_ellipse(canvas, x_c, y_c, r_x, r_y, theta, r, g, b, alpha):
             rx += cos_t
             ry -= sin_t
 
-# --- Numba JIT Uncovered Priority Weighting Helpers ---
+
 @numba.jit(nopython=True, fastmath=True, cache=True)
 def init_uncovered_map(width, height, has_alpha, alpha_mask, bias):
     """Initializes the uncovered weight map. Foreground pixels are prioritized with higher weight bias."""
@@ -221,12 +220,12 @@ def update_uncovered_mask(uncovered_map, x_c, y_c, r_x, r_y, theta):
             rx += cos_t
             ry -= sin_t
 
-# --- Numba Parallel Random Search ---
+
 @numba.jit(nopython=True, parallel=True, fastmath=True, cache=True)
 def parallel_random_search(target, canvas, num_candidates, width, height, max_r, alpha_mask, check_contour, use_importance, error_prob, use_freeze=False, freeze_mask=None, use_weight=False, weight_map=None, use_uncovered=False, uncovered_map=None):
-    # Pre-generate random parameters using NumPy's fast JIT random generator as float32
+
     if use_importance and error_prob.shape[0] > 1:
-        # Rejection sampling for x_c and y_c based on error probability map
+
         x_c_arr = np.zeros(num_candidates, dtype=np.float32)
         y_c_arr = np.zeros(num_candidates, dtype=np.float32)
         for i in numba.prange(num_candidates):
@@ -259,7 +258,7 @@ def parallel_random_search(target, canvas, num_candidates, width, height, max_r,
     deltas = np.zeros(num_candidates, dtype=np.float32)
     colors = np.zeros((num_candidates, 3), dtype=np.float32)
     
-    # Parallel loop across all CPU cores using numba.prange
+
     for i in numba.prange(num_candidates):
         r, g, b, delta = evaluate_candidate(
             target, canvas, 
@@ -285,7 +284,7 @@ def parallel_random_search(target, canvas, num_candidates, width, height, max_r,
         deltas[best_idx]
     )
 
-# --- Numba Serial Hill-Climbing ---
+
 @numba.jit(nopython=True, fastmath=True, cache=True)
 def serial_hill_climb(target, canvas, x_c, y_c, r_x, r_y, theta, alpha, r, g, b, best_delta, optimization_steps, alpha_mask, check_contour, sa_enabled=False, initial_temp=5000.0, cooling_rate=0.95, max_r=999.0, use_freeze=False, freeze_mask=None, use_weight=False, weight_map=None, use_uncovered=False, uncovered_map=None):
     curr_x_c = np.float32(x_c)
@@ -306,7 +305,7 @@ def serial_hill_climb(target, canvas, x_c, y_c, r_x, r_y, theta, alpha, r, g, b,
     for step in range(optimization_steps):
         scale = np.float32(1.0 - (step / optimization_steps))
         
-        # Mutation step sizes using numpy JIT normal distribution as float32
+
         nx_c = curr_x_c + np.float32(np.random.normal(0.0, 8.0 * scale))
         ny_c = curr_y_c + np.float32(np.random.normal(0.0, 8.0 * scale))
         nr_x = max(np.float32(2.0), min(max_r_f, curr_r_x + np.float32(np.random.normal(0.0, 6.0 * scale))))
@@ -342,7 +341,7 @@ def serial_hill_climb(target, canvas, x_c, y_c, r_x, r_y, theta, alpha, r, g, b,
             
     return (float(curr_x_c), float(curr_y_c), float(curr_r_x), float(curr_r_y), float(curr_theta), int(curr_r), int(curr_g), int(curr_b), curr_alpha, float(curr_delta))
 
-# --- JIT-compiled Backward Alpha Occlusion Redundancy Check ---
+
 @numba.jit(nopython=True, fastmath=True, cache=True)
 def run_redundancy_check_jit(shapes_data, shapes_color, shapes_type, width, height):
     """
@@ -351,23 +350,23 @@ def run_redundancy_check_jit(shapes_data, shapes_color, shapes_type, width, heig
     num_shapes = len(shapes_type)
     visible_mask = np.ones(num_shapes, dtype=np.bool_)
     
-    # 2D occlusion canvas initialized to 0.0
+
     occlusion = np.zeros((height, width), dtype=np.float32)
     
-    # Walk backward from top to bottom
+
     for i in range(num_shapes - 1, -1, -1):
         s_type = shapes_type[i]
         
-        # Background canvas header (type 1)
+
         if s_type == 1:
             visible_mask[i] = True
-            # Background is 100% opaque, fills the whole canvas
+
             for y in range(height):
                 for x in range(width):
                     occlusion[y, x] = 1.0
             continue
             
-        # Ellipse shape (type 32)
+
         x_c = np.float32(shapes_data[i, 0])
         y_c = np.float32(shapes_data[i, 1])
         r_x = np.float32(shapes_data[i, 2])
@@ -380,7 +379,7 @@ def run_redundancy_check_jit(shapes_data, shapes_color, shapes_type, width, heig
         cos_t = np.float32(math.cos(theta))
         sin_t = np.float32(math.sin(theta))
         
-        # Calculate exact bounding box of the rotated ellipse
+
         x_half = math.sqrt(r_x*r_x * cos_t*cos_t + r_y*r_y * sin_t*sin_t)
         y_half = math.sqrt(r_x*r_x * sin_t*sin_t + r_y*r_y * cos_t*cos_t)
         
@@ -392,7 +391,7 @@ def run_redundancy_check_jit(shapes_data, shapes_color, shapes_type, width, heig
         inv_rx2 = np.float32(1.0 / (r_x * r_x) if r_x > 0 else 0.0)
         inv_ry2 = np.float32(1.0 / (r_y * r_y) if r_y > 0 else 0.0)
         
-        # Check if shape contributes any visible pixel
+
         has_contribution = False
         
         for y in range(min_y, max_y + 1):
