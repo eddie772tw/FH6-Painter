@@ -2,7 +2,7 @@
 > **Forza Horizon 6 Heterogeneous JIT-Accelerated Image-to-Livery Painter & Memory Importer**  
 > **基於JIT加速的極速《極限競速：地平線 6》車貼生成與記憶體匯入工具**
 
-[![Language](https://img.shields.io/badge/Language-Python%203.12%2B-blue.svg)](https://www.python.org/)
+[![Language](https://img.shields.io/badge/Language-Python%203.13%20%2F%203.14%20(CPU)--blue.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Acceleration](https://img.shields.io/badge/JIT%20Acceleration-Numba%20%26%20Taichi-orange.svg)](https://numba.pydata.org/)
 
@@ -43,7 +43,7 @@ Support both CPU and GPU JIT acceleration, provide GUI & smooth import expierenc
 
 ## 安裝與依賴需求 / Prerequisites & Installation
 
-本專案需要 **Python 3.12 或更高版本**。
+本專案原生支援 **Python 3.13**（支援完整 CPU 與 GPU 雙引擎 JIT 加速），並相容於 **Python 3.14**（僅支援 Numba CPU JIT 加速，Taichi GPU 模式將自動停用）。
 
 1. **複製本儲存庫 / Clone the Repository**:
    ```bash

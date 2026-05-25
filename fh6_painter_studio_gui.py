@@ -279,7 +279,12 @@ class ForzaStudioGUI:
         tk.Label(params_body, text="JIT Engine Plugin:", font=("Microsoft JhengHei", 9), bg=self.bg_card, fg=self.fg_secondary).grid(row=4, column=0, sticky="w", pady=4)
         
         self.available_evaluators = EvaluatorFactory.get_available_evaluators()
-        evaluator_names = [e["name"] for e in self.available_evaluators]
+        evaluator_names = []
+        for e in self.available_evaluators:
+            if e["available"]:
+                evaluator_names.append(e["name"])
+            else:
+                evaluator_names.append(f"{e['name']} (Unavailable)")
         
         self.combo_engine = ttk.Combobox(params_body, values=evaluator_names, state="readonly", width=35)
         self.combo_engine.grid(row=4, column=1, sticky="we", pady=4, padx=(10, 0))
@@ -492,6 +497,25 @@ class ForzaStudioGUI:
     def on_engine_selected(self, event):
         """依據選取的引擎動態切換 Taichi 專用參數的啟用狀態"""
         engine_idx = self.combo_engine.current()
+        if 0 <= engine_idx < len(self.available_evaluators):
+            engine = self.available_evaluators[engine_idx]
+            if not engine["available"]:
+                import sys
+                ver_str = f"{sys.version_info.major}.{sys.version_info.minor}"
+                if sys.version_info >= (3, 14) and engine["code"] == "TAICHI":
+                    reason = f"在 Python {ver_str} 環境下，GPU 加速 (Taichi JIT) 已預設停用且不可選擇，因為 Taichi 官方尚未在 PyPI 發布相容於 Python 3.14 的 cp314 軟體套件。\n\n本專案已自動為您切換至效能極佳的 CPU 加速 (Numba JIT) 引擎！"
+                else:
+                    reason = f"計算引擎 '{engine['name']}' 在當前環境中不可用。系統已為您切換至 CPU 加速 (Numba JIT)。"
+                messagebox.showwarning("計算引擎不可用 / Engine Unavailable", reason)
+                
+                # 自動恢復成 Numba (若可用) 或 Pure Python
+                for idx, e in enumerate(self.available_evaluators):
+                    if e["code"] == "NUMBA" and e["available"]:
+                        self.combo_engine.current(idx)
+                        break
+                self.on_engine_selected(None)
+                return
+                
         engine_code = self.available_evaluators[engine_idx]["code"] if 0 <= engine_idx < len(self.available_evaluators) else "NUMBA"
         
         if engine_code == "TAICHI":

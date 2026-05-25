@@ -46,8 +46,12 @@ class EvaluatorFactory:
         })
         
 
+        import sys
+        # Disable Taichi JIT on Python 3.14+ due to lack of cp314 wheels on PyPI
+        is_python_314_or_newer = sys.version_info >= (3, 14)
+        
         from evaluators.taichi_evaluator import HAS_TAICHI
-        taichi_avail = HAS_TAICHI
+        taichi_avail = HAS_TAICHI and not is_python_314_or_newer
                 
         evaluators.append({
             "code": "TAICHI",

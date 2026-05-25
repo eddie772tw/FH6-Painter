@@ -2,8 +2,32 @@
 chcp 65001 >nul
 setlocal enabledelayedexpansion
 
-:: Check standard AppData location
+:: Check Python 3.13 standard location
+set "PY_EXE=%USERPROFILE%\AppData\Local\Programs\Python\Python313\python.exe"
+if exist "!PY_EXE!" (
+    goto :run
+)
+
+:: Check Python 3.14 standard location
+set "PY_EXE=%USERPROFILE%\AppData\Local\Programs\Python\Python314\python.exe"
+if exist "!PY_EXE!" (
+    goto :run
+)
+
+:: Check Python 3.12 standard location
 set "PY_EXE=%USERPROFILE%\AppData\Local\Programs\Python\Python312\python.exe"
+if exist "!PY_EXE!" (
+    goto :run
+)
+
+:: Check uv-managed Python 3.13 location
+set "PY_EXE=%USERPROFILE%\.local\bin\python3.13.exe"
+if exist "!PY_EXE!" (
+    goto :run
+)
+
+:: Check uv-managed Python 3.14 location
+set "PY_EXE=%USERPROFILE%\.local\bin\python3.14.exe"
 if exist "!PY_EXE!" (
     goto :run
 )
@@ -12,8 +36,10 @@ if exist "!PY_EXE!" (
 for /d %%d in ("%USERPROFILE%\AppData\Local\Programs\Python\Python*") do (
     if exist "%%d\python.exe" (
         set "PY_EXE=%%d\python.exe"
-        goto :run
     )
+)
+if exist "!PY_EXE!" (
+    goto :run
 )
 
 :: Check default path
