@@ -915,6 +915,10 @@ class ForzaStudioGUI:
                 self.latest_canvas_array = canvas_arr.copy()
                 self.latest_progress = (curr, total, speed, eta)
                 self.need_preview_update = True
+                
+            # 若為 Taichi 引擎，釋放 GIL 給 Tkinter 執行緒以保持 GUI 響應與終端機刷新
+            if engine_code == "TAICHI":
+                time.sleep(0.002)
             return True
                 
         # Determine JIT Engine to use
