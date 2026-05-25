@@ -49,7 +49,7 @@ def evaluate_candidate(
     
     # Validation Pass: Check contour and freeze mask first in a scalar loop with early return
     # This isolates early exits from the heavy accumulation loop so LLVM can vectorize
-    if check_contour or use_freeze:
+    if (check_contour or use_freeze) and a > 0.0:
         for y in range(min_y, max_y + 1):
             dy = np.float32(y - y_c)
             b_val = dy * b_coeff
@@ -87,49 +87,50 @@ def evaluate_candidate(
     sum_ct_b = np.float32(0.0)
     
     # Heavy Accumulation Loop: Contiguous memory access, zero branching, highly vectorizable (AVX2/FMA3)
-    for y in range(min_y, max_y + 1):
-        dy = np.float32(y - y_c)
-        b_val = dy * b_coeff
-        c_val = dy * dy * c_y_coeff - 1.0
-        discriminant = b_val * b_val - a * c_val
-        if discriminant >= 0.0:
-            sqrt_d = math.sqrt(discriminant)
-            dx_min = (-b_val - sqrt_d) / a
-            dx_max = (-b_val + sqrt_d) / a
-            x_start = max(min_x, int(math.ceil(x_c + dx_min)))
-            x_end = min(max_x, int(math.floor(x_c + dx_max)))
-            
-            for x in range(x_start, x_end + 1):
-                t_r = target_r[y, x]
-                t_g = target_g[y, x]
-                t_b = target_b[y, x]
+    if a > 0.0:
+        for y in range(min_y, max_y + 1):
+            dy = np.float32(y - y_c)
+            b_val = dy * b_coeff
+            c_val = dy * dy * c_y_coeff - 1.0
+            discriminant = b_val * b_val - a * c_val
+            if discriminant >= 0.0:
+                sqrt_d = math.sqrt(discriminant)
+                dx_min = (-b_val - sqrt_d) / a
+                dx_max = (-b_val + sqrt_d) / a
+                x_start = max(min_x, int(math.ceil(x_c + dx_min)))
+                x_end = min(max_x, int(math.floor(x_c + dx_max)))
                 
-                c_r = canvas_r[y, x]
-                c_g = canvas_g[y, x]
-                c_b = canvas_b[y, x]
-                
-                w = np.float32(1.0)
-                if use_weight:
-                    w = weight_map[y, x]
-                if use_uncovered:
-                    w = w * uncovered_map[y, x]
-                
-                count += w
-                sum_t_r += t_r * w
-                sum_t_g += t_g * w
-                sum_t_b += t_b * w
-                
-                sum_c_r += c_r * w
-                sum_c_g += c_g * w
-                sum_c_b += c_b * w
-                
-                sum_c2_r += (c_r * c_r) * w
-                sum_c2_g += (c_g * c_g) * w
-                sum_c2_b += (c_b * c_b) * w
-                
-                sum_ct_r += (c_r * t_r) * w
-                sum_ct_g += (c_g * t_g) * w
-                sum_ct_b += (c_b * t_b) * w
+                for x in range(x_start, x_end + 1):
+                    t_r = target_r[y, x]
+                    t_g = target_g[y, x]
+                    t_b = target_b[y, x]
+
+                    c_r = canvas_r[y, x]
+                    c_g = canvas_g[y, x]
+                    c_b = canvas_b[y, x]
+
+                    w = np.float32(1.0)
+                    if use_weight:
+                        w = weight_map[y, x]
+                    if use_uncovered:
+                        w = w * uncovered_map[y, x]
+
+                    count += w
+                    sum_t_r += t_r * w
+                    sum_t_g += t_g * w
+                    sum_t_b += t_b * w
+
+                    sum_c_r += c_r * w
+                    sum_c_g += c_g * w
+                    sum_c_b += c_b * w
+
+                    sum_c2_r += (c_r * c_r) * w
+                    sum_c2_g += (c_g * c_g) * w
+                    sum_c2_b += (c_b * c_b) * w
+
+                    sum_ct_r += (c_r * t_r) * w
+                    sum_ct_g += (c_g * t_g) * w
+                    sum_ct_b += (c_b * t_b) * w
             
     if count == 0:
         return np.float32(0.0), np.float32(0.0), np.float32(0.0), np.float32(99999999.0)
@@ -154,7 +155,7 @@ def evaluate_candidate(
 
 @numba.jit(nopython=True, fastmath=True, cache=True)
 def draw_ellipse(canvas, x_c, y_c, r_x, r_y, theta, r, g, b, alpha):
-    """Draws the selected best ellipse onto the canvas with Strength Reduction."""
+    """Draws the selected best ellipse onto the canvas using scanline bounding logic."""
     height = canvas.shape[0]
     width = canvas.shape[1]
     
@@ -175,26 +176,43 @@ def draw_ellipse(canvas, x_c, y_c, r_x, r_y, theta, r, g, b, alpha):
     a_f = np.float32(alpha / 255.0)
     one_minus_a = np.float32(1.0 - a_f)
     
-    r_val = np.float32(r)
-    g_val = np.float32(g)
-    b_val = np.float32(b)
+    r_val = np.float32(r) * a_f
+    g_val = np.float32(g) * a_f
+    b_val = np.float32(b) * a_f
     
-    for y in range(min_y, max_y + 1):
-        dy = np.float32(y - y_c)
-        dx_start = np.float32(min_x - x_c)
-        rx = dx_start * cos_t + dy * sin_t
-        ry = -dx_start * sin_t + dy * cos_t
-        
-        for x in range(min_x, max_x + 1):
-            if (rx * rx) * inv_rx2 + (ry * ry) * inv_ry2 <= 1.0:
-                canvas[y, x, 0] = canvas[y, x, 0] * one_minus_a + r_val * a_f
-                canvas[y, x, 1] = canvas[y, x, 1] * one_minus_a + g_val * a_f
-                canvas[y, x, 2] = canvas[y, x, 2] * one_minus_a + b_val * a_f
-                if canvas.shape[2] == 4:
-                    canvas[y, x, 3] = canvas[y, x, 3] * one_minus_a + np.float32(alpha)
-            
-            rx += cos_t
-            ry -= sin_t
+    sin_cos = sin_t * cos_t
+    a = inv_rx2 * cos_t * cos_t + inv_ry2 * sin_t * sin_t
+    b_coeff = sin_cos * (inv_rx2 - inv_ry2)
+    c_y_coeff = inv_rx2 * sin_t * sin_t + inv_ry2 * cos_t * cos_t
+
+    has_alpha_channel = canvas.shape[2] == 4
+    alpha_val = np.float32(alpha)
+
+    if a > 0.0:
+        for y in range(min_y, max_y + 1):
+            dy = np.float32(y - y_c)
+            b_val_y = dy * b_coeff
+            c_val = dy * dy * c_y_coeff - 1.0
+            discriminant = b_val_y * b_val_y - a * c_val
+            if discriminant >= 0.0:
+                sqrt_d = math.sqrt(discriminant)
+                dx_min = (-b_val_y - sqrt_d) / a
+                dx_max = (-b_val_y + sqrt_d) / a
+                x_start = max(min_x, int(math.ceil(x_c + dx_min)))
+                x_end = min(max_x, int(math.floor(x_c + dx_max)))
+
+                if x_end >= x_start:
+                    cr = canvas[y, x_start:x_end+1, 0]
+                    cg = canvas[y, x_start:x_end+1, 1]
+                    cb = canvas[y, x_start:x_end+1, 2]
+                    for i in range(x_end - x_start + 1):
+                        cr[i] = cr[i] * one_minus_a + r_val
+                        cg[i] = cg[i] * one_minus_a + g_val
+                        cb[i] = cb[i] * one_minus_a + b_val
+                    if has_alpha_channel:
+                        ca = canvas[y, x_start:x_end+1, 3]
+                        for i in range(x_end - x_start + 1):
+                            ca[i] = ca[i] * one_minus_a + alpha_val
 
 
 @numba.jit(nopython=True, fastmath=True, cache=True)
@@ -230,18 +248,28 @@ def update_uncovered_mask(uncovered_map, x_c, y_c, r_x, r_y, theta):
     inv_rx2 = np.float32(1.0 / (r_x * r_x) if r_x > 0 else 0.0)
     inv_ry2 = np.float32(1.0 / (r_y * r_y) if r_y > 0 else 0.0)
     
-    for y in range(min_y, max_y + 1):
-        dy = np.float32(y - y_c)
-        dx_start = np.float32(min_x - x_c)
-        rx = dx_start * cos_t + dy * sin_t
-        ry = -dx_start * sin_t + dy * cos_t
-        
-        for x in range(min_x, max_x + 1):
-            if (rx * rx) * inv_rx2 + (ry * ry) * inv_ry2 <= 1.0:
-                uncovered_map[y, x] = np.float32(1.0)
-            
-            rx += cos_t
-            ry -= sin_t
+    sin_cos = sin_t * cos_t
+    a = inv_rx2 * cos_t * cos_t + inv_ry2 * sin_t * sin_t
+    b_coeff = sin_cos * (inv_rx2 - inv_ry2)
+    c_y_coeff = inv_rx2 * sin_t * sin_t + inv_ry2 * cos_t * cos_t
+
+    if a > 0.0:
+        for y in range(min_y, max_y + 1):
+            dy = np.float32(y - y_c)
+            b_val_y = dy * b_coeff
+            c_val = dy * dy * c_y_coeff - 1.0
+            discriminant = b_val_y * b_val_y - a * c_val
+            if discriminant >= 0.0:
+                sqrt_d = math.sqrt(discriminant)
+                dx_min = (-b_val_y - sqrt_d) / a
+                dx_max = (-b_val_y + sqrt_d) / a
+                x_start = max(min_x, int(math.ceil(x_c + dx_min)))
+                x_end = min(max_x, int(math.floor(x_c + dx_max)))
+
+                if x_end >= x_start:
+                    u_map_row = uncovered_map[y, x_start:x_end+1]
+                    for i in range(x_end - x_start + 1):
+                        u_map_row[i] = np.float32(1.0)
 
 
 @numba.jit(nopython=True, parallel=True, fastmath=True, cache=True)
