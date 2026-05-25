@@ -51,3 +51,5 @@ README_FH6_READY.md
 .idea/
 *.png
 /.venv
+build/
+dist/

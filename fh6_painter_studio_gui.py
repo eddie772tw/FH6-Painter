@@ -21,6 +21,11 @@ except ImportError as e:
     HAS_LIBS = False
     IMPORT_ERROR = str(e)
 
+def get_project_root():
+    if getattr(sys, 'frozen', False):
+        return os.path.dirname(sys.executable)
+    return os.path.dirname(os.path.abspath(__file__))
+
 # --- Premium Dark Studio GUI Application ---
 class ForzaStudioGUI:
     def __init__(self, root, preload_file=None):
@@ -103,7 +108,7 @@ class ForzaStudioGUI:
     def scan_profiles(self):
         """Scans the 'settings' directory for available .ini configurations."""
         profiles = []
-        settings_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "settings")
+        settings_dir = os.path.join(get_project_root(), "settings")
         if os.path.exists(settings_dir):
             for f in os.listdir(settings_dir):
                 if f.endswith(".ini"):
@@ -895,7 +900,7 @@ class ForzaStudioGUI:
             
         # Determine output JSON name and create a structured output folder under the project root
         img_base = os.path.splitext(os.path.basename(img_path))[0]
-        project_root = os.path.dirname(os.path.abspath(__file__))
+        project_root = get_project_root()
         output_dir = os.path.join(project_root, "output", img_base)
         output_json = os.path.join(output_dir, f"{img_base}.json")
         self.auto_load_json_path = output_json
@@ -1071,7 +1076,7 @@ class ForzaStudioGUI:
 
     def load_optimization_settings(self):
         """載入或初始化優化設定 JSON 檔"""
-        self.settings_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "optimization_settings.json")
+        self.settings_path = os.path.join(get_project_root(), "optimization_settings.json")
         default_settings = {
             "window_geometry": "1200x820",
             "image_pyramid": {
