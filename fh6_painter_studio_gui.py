@@ -8,6 +8,32 @@ import threading
 import tkinter as tk
 from tkinter import ttk, filedialog, scrolledtext, messagebox
 
+# --- Real-time Log Redirector for GUI Diagnostics ---
+global_log_buffer = []
+
+class LogRedirector:
+    def __init__(self, buffer_list, original_stream=None):
+        self.buffer_list = buffer_list
+        self.original_stream = original_stream
+        
+    def write(self, string):
+        self.buffer_list.append(string)
+        if self.original_stream is not None:
+            try:
+                self.original_stream.write(string)
+            except Exception:
+                pass
+                
+    def flush(self):
+        if self.original_stream is not None:
+            try:
+                self.original_stream.flush()
+            except Exception:
+                pass
+
+sys.stdout = LogRedirector(global_log_buffer, sys.stdout)
+sys.stderr = LogRedirector(global_log_buffer, sys.stderr)
+
 # --- Ensure we can import from the tools directory ---
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "tools"))
 try:
@@ -218,6 +244,9 @@ class ForzaStudioGUI:
         
         self.status_lbl = tk.Label(header_frame, text="READY", font=("Consolas", 10, "bold"), bg=self.bg_card, fg="#888888", padx=10, pady=2, bd=1, relief="solid")
         self.status_lbl.pack(side="right")
+        
+        self.btn_show_logs = tk.Button(header_frame, text="診斷主控台 / Show Logs", font=("Microsoft JhengHei", 8, "bold"), bg=self.bg_card, fg=self.color_blue, activebackground=self.color_btn_default_hover, activeforeground=self.fg_primary, bd=1, relief="solid", highlightthickness=0, padx=8, pady=2, command=self.open_log_window)
+        self.btn_show_logs.pack(side="right", padx=(0, 10))
         
         # --- Workspace Splitting (Left Control vs Right Preview) ---
         workspace = tk.Frame(main_container, bg=self.bg_main)
@@ -565,6 +594,49 @@ class ForzaStudioGUI:
         if sys.stdout is not None:
             sys.stdout.write(text)
             sys.stdout.flush()
+
+    def open_log_window(self):
+        """Opens a scrollable Traditional Chinese & English bilingual diagnostic console window showing all captured stdout/stderr logs."""
+        log_win = tk.Toplevel(self.root)
+        log_win.title("FH6 Painter - Diagnostic Log Console")
+        log_win.geometry("820x560")
+        log_win.configure(bg=self.bg_main)
+        log_win.transient(self.root)
+        
+        hdr = tk.Frame(log_win, bg=self.bg_card)
+        hdr.pack(fill="x", padx=10, pady=(10, 5), ipady=4)
+        lbl = tk.Label(hdr, text="系統即時診斷主控台 / Real-time Diagnostic Log Console", font=("Microsoft JhengHei", 10, "bold"), bg=self.bg_card, fg=self.color_blue)
+        lbl.pack(side="left", padx=10)
+        
+        btn_clear = tk.Button(hdr, text="清除日誌 / Clear Logs", font=("Microsoft JhengHei", 8, "bold"), bg=self.bg_main, fg=self.fg_secondary, activebackground=self.color_btn_default_hover, activeforeground=self.fg_primary, bd=1, relief="solid", padx=12, command=lambda: self.clear_logs(txt_widget))
+        btn_clear.pack(side="right", padx=10)
+        
+        txt_widget = scrolledtext.ScrolledText(log_win, bg="#0A0A0A", fg="#00FF00", insertbackground="#00FF00", font=("Consolas", 9), bd=0, highlightthickness=1, highlightbackground=self.border_color)
+        txt_widget.pack(fill="both", expand=True, padx=10, pady=5)
+        
+        txt_widget.insert(tk.END, "".join(global_log_buffer))
+        txt_widget.see(tk.END)
+        txt_widget.configure(state="disabled")
+        
+        def update_log_view():
+            if log_win.winfo_exists():
+                txt_widget.configure(state="normal")
+                curr_len = len(txt_widget.get("1.0", tk.END)) - 1
+                full_log = "".join(global_log_buffer)
+                if len(full_log) > curr_len:
+                    txt_widget.insert(tk.END, full_log[curr_len:])
+                    txt_widget.see(tk.END)
+                txt_widget.configure(state="disabled")
+                log_win.after(200, update_log_view)
+                
+        update_log_view()
+        
+    def clear_logs(self, txt_widget):
+        global global_log_buffer
+        global_log_buffer.clear()
+        txt_widget.configure(state="normal")
+        txt_widget.delete("1.0", tk.END)
+        txt_widget.configure(state="disabled")
 
     def on_profile_selected(self, event):
         """Fires when user selects a profile; updates HUD descriptive elements and pre-populates overrides."""
@@ -982,7 +1054,8 @@ class ForzaStudioGUI:
             # 捕獲所有異常 (包括 Taichi 編譯、硬體相容性、CUDA/OpenGL 崩潰)
             import traceback
             tb = traceback.format_exc()
-            self.root.after(0, lambda: self.on_generation_failed(f"{e}\n\n[Traceback]\n{tb}"))
+            err_msg = f"{e}\n\n[Traceback]\n{tb}"
+            self.root.after(0, lambda msg=err_msg: self.on_generation_failed(msg))
 
     def on_generation_failed(self, error_message):
         """當生圖引擎異常崩潰時，優雅地通知使用者並完全重置 UI 狀態"""

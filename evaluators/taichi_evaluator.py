@@ -1,6 +1,17 @@
 #!/usr/bin/env python3
 import math
 import numpy as np
+import sys
+import os
+
+# PyInstaller environment source-inspect hook for Taichi Lang JIT
+if getattr(sys, 'frozen', False):
+    physical_py_file = os.path.join(sys._MEIPASS, "evaluators", "taichi_evaluator.py")
+    if os.path.exists(physical_py_file):
+        __file__ = physical_py_file
+        if "evaluators.taichi_evaluator" in sys.modules:
+            sys.modules["evaluators.taichi_evaluator"].__file__ = physical_py_file
+
 from evaluators.base_evaluator import BaseEvaluator
 
 try:
