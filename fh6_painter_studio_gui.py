@@ -562,8 +562,9 @@ class ForzaStudioGUI:
 
     def log_to_console(self, text):
         """Prints a diagnostic log line into the standard terminal console."""
-        sys.stdout.write(text)
-        sys.stdout.flush()
+        if sys.stdout is not None:
+            sys.stdout.write(text)
+            sys.stdout.flush()
 
     def on_profile_selected(self, event):
         """Fires when user selects a profile; updates HUD descriptive elements and pre-populates overrides."""
