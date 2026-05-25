@@ -96,16 +96,12 @@ def evaluate_candidate_ti(
         inv_ry2 = 1.0 / (r_y * r_y) if r_y > 0.0 else 0.0
         
         for y in range(min_y, max_y + 1):
-            if is_valid == 0:
-                break
             dy = ti.cast(y, ti.f32) - y_c
             dx_start = ti.cast(min_x, ti.f32) - x_c
             rx = dx_start * cos_t + dy * sin_t
             ry = -dx_start * sin_t + dy * cos_t
             
             for x in range(min_x, max_x + 1):
-                if is_valid == 0:
-                    break
                 if (rx * rx) * inv_rx2 + (ry * ry) * inv_ry2 <= 1.0:
                     # 輪廓約束
                     if check_contour == 1:
@@ -433,24 +429,25 @@ def find_best_candidate_gpu(
     best_candidate: ti.types.ndarray(),
     batch_size: ti.i32
 ):
-    best_idx = 0
-    min_delta = 999999999.0
-    for i in range(batch_size):
-        if results[i, 3] < min_delta:
-            min_delta = results[i, 3]
-            best_idx = i
-            
-    best_candidate[0, 0] = candidates[best_idx, 0]
-    best_candidate[0, 1] = candidates[best_idx, 1]
-    best_candidate[0, 2] = candidates[best_idx, 2]
-    best_candidate[0, 3] = candidates[best_idx, 3]
-    best_candidate[0, 4] = candidates[best_idx, 4]
-    best_candidate[0, 5] = candidates[best_idx, 5]
-    
-    best_candidate[0, 6] = results[best_idx, 0]
-    best_candidate[0, 7] = results[best_idx, 1]
-    best_candidate[0, 8] = results[best_idx, 2]
-    best_candidate[0, 9] = results[best_idx, 3]
+    for _ in range(1):
+        best_idx = 0
+        min_delta = 999999999.0
+        for i in range(batch_size):
+            if results[i, 3] < min_delta:
+                min_delta = results[i, 3]
+                best_idx = i
+                
+        best_candidate[0, 0] = candidates[best_idx, 0]
+        best_candidate[0, 1] = candidates[best_idx, 1]
+        best_candidate[0, 2] = candidates[best_idx, 2]
+        best_candidate[0, 3] = candidates[best_idx, 3]
+        best_candidate[0, 4] = candidates[best_idx, 4]
+        best_candidate[0, 5] = candidates[best_idx, 5]
+        
+        best_candidate[0, 6] = results[best_idx, 0]
+        best_candidate[0, 7] = results[best_idx, 1]
+        best_candidate[0, 8] = results[best_idx, 2]
+        best_candidate[0, 9] = results[best_idx, 3]
 
 @ti.kernel
 def parallel_hill_climb_gpu(
@@ -570,24 +567,25 @@ def select_final_best_gpu(
     climb_results: ti.types.ndarray(),
     best_candidate: ti.types.ndarray()
 ):
-    best_idx = 0
-    min_delta = 999999999.0
-    for i in range(128):
-        if climb_results[i, 3] < min_delta:
-            min_delta = climb_results[i, 3]
-            best_idx = i
-            
-    best_candidate[0, 0] = climb_candidates[best_idx, 0]
-    best_candidate[0, 1] = climb_candidates[best_idx, 1]
-    best_candidate[0, 2] = climb_candidates[best_idx, 2]
-    best_candidate[0, 3] = climb_candidates[best_idx, 3]
-    best_candidate[0, 4] = climb_candidates[best_idx, 4]
-    best_candidate[0, 5] = climb_candidates[best_idx, 5]
-    
-    best_candidate[0, 6] = climb_results[best_idx, 0]
-    best_candidate[0, 7] = climb_results[best_idx, 1]
-    best_candidate[0, 8] = climb_results[best_idx, 2]
-    best_candidate[0, 9] = climb_results[best_idx, 3]
+    for _ in range(1):
+        best_idx = 0
+        min_delta = 999999999.0
+        for i in range(128):
+            if climb_results[i, 3] < min_delta:
+                min_delta = climb_results[i, 3]
+                best_idx = i
+                
+        best_candidate[0, 0] = climb_candidates[best_idx, 0]
+        best_candidate[0, 1] = climb_candidates[best_idx, 1]
+        best_candidate[0, 2] = climb_candidates[best_idx, 2]
+        best_candidate[0, 3] = climb_candidates[best_idx, 3]
+        best_candidate[0, 4] = climb_candidates[best_idx, 4]
+        best_candidate[0, 5] = climb_candidates[best_idx, 5]
+        
+        best_candidate[0, 6] = climb_results[best_idx, 0]
+        best_candidate[0, 7] = climb_results[best_idx, 1]
+        best_candidate[0, 8] = climb_results[best_idx, 2]
+        best_candidate[0, 9] = climb_results[best_idx, 3]
 
 # --- Taichi GPU Evaluator Implementation ---
 class TaichiEvaluator(BaseEvaluator):
@@ -691,6 +689,11 @@ class TaichiEvaluator(BaseEvaluator):
     def search_best_shape(self, current_canvas: np.ndarray, batch_size: int, params: dict) -> tuple:
         if not self.is_available():
             raise RuntimeError("Taichi JIT Evaluator is not available or failed to initialize backend.")
+            
+        # 0. 首次呼叫時，將 CPU 畫布資料上傳至 GPU 顯存以完成初始化
+        if not hasattr(self, "canvas_initialized") or not self.canvas_initialized:
+            self.ti_canvas.from_numpy(current_canvas.astype(np.float32))
+            self.canvas_initialized = True
             
         height, width, _ = self.target_image.shape
         max_r = max(10.0, min(width, height) / 3.0)
@@ -854,6 +857,11 @@ class TaichiEvaluator(BaseEvaluator):
             from evaluators.pure_python_evaluator import PurePythonEvaluator
             py_eval = PurePythonEvaluator(self.target_image, self.alpha_mask)
             py_eval.rebuild_canvas(canvas, shapes_list, avg_r, avg_g, avg_b)
+            
+        # 同步更新 GPU 顯存中的畫布，並確保將 canvas_initialized 設為 True
+        if self.initialized:
+            self.ti_canvas.from_numpy(canvas.astype(np.float32))
+            self.canvas_initialized = True
 
     def run_redundancy_check(self, shapes_list: list, width: int, height: int, final_check: bool = False) -> list:
         try:
