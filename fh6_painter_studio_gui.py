@@ -11,8 +11,9 @@ from tkinter import ttk, filedialog, scrolledtext, messagebox
 # --- Ensure we can import from the tools directory ---
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "tools"))
 try:
-    from tools.fh6_painter_generator import run_generator, rebuild_canvas_from_shapes
+    from tools.fh6_painter_generator import run_generator
     from tools.fh6_import_layer_table import run_importer
+    from evaluators import EvaluatorFactory
     from PIL import Image, ImageTk, ImageDraw
     import numpy as np
     HAS_LIBS = True
@@ -255,10 +256,27 @@ class ForzaStudioGUI:
         lbl_limits_tip = tk.Label(params_body, text="FH6 Game Limits: Bumper up to 1000 | Left/Right/Top up to 3000", font=("Microsoft JhengHei", 8), bg=self.bg_card, fg=self.color_blue)
         lbl_limits_tip.grid(row=3, column=0, columnspan=2, sticky="w", pady=(2, 8))
         
+        # JIT Engine Plugin Dropdown
+        tk.Label(params_body, text="JIT Engine Plugin:", font=("Microsoft JhengHei", 9), bg=self.bg_card, fg=self.fg_secondary).grid(row=4, column=0, sticky="w", pady=4)
+        
+        self.available_evaluators = EvaluatorFactory.get_available_evaluators()
+        evaluator_names = [e["name"] for e in self.available_evaluators]
+        
+        self.combo_engine = ttk.Combobox(params_body, values=evaluator_names, state="readonly", width=35)
+        self.combo_engine.grid(row=4, column=1, sticky="we", pady=4, padx=(10, 0))
+        
+        # Default select Numba if available, else first available
+        default_idx = 0
+        for idx, e in enumerate(self.available_evaluators):
+            if e["code"] == "NUMBA" and e["available"]:
+                default_idx = idx
+                break
+        self.combo_engine.current(default_idx)
+
         # Advanced Overrides
         self.show_adv = tk.BooleanVar(value=False)
         self.chk_adv = tk.Checkbutton(params_body, text="Enable Advanced Sample Override (Use INI settings otherwise)", variable=self.show_adv, font=("Microsoft JhengHei", 9), bg=self.bg_card, fg=self.fg_secondary, selectcolor=self.bg_card, activebackground=self.bg_card, activeforeground=self.fg_primary, bd=0, command=self.toggle_advanced_panel)
-        self.chk_adv.grid(row=4, column=0, columnspan=2, sticky="w", pady=4)
+        self.chk_adv.grid(row=5, column=0, columnspan=2, sticky="w", pady=4)
         
         self.adv_frame = tk.Frame(params_body, bg=self.bg_card)
         
@@ -428,7 +446,7 @@ class ForzaStudioGUI:
     def toggle_advanced_panel(self):
         """Collapses or expands the advanced parameters override panel."""
         if self.show_adv.get():
-            self.adv_frame.grid(row=5, column=0, columnspan=2, sticky="we", pady=(5, 0))
+            self.adv_frame.grid(row=6, column=0, columnspan=2, sticky="we", pady=(5, 0))
         else:
             self.adv_frame.grid_forget()
 
@@ -592,7 +610,9 @@ class ForzaStudioGUI:
                         
                         # Generate premium RGBA preview canvas array to support checkerboard preview
                         canvas = np.zeros((height_high, width_high, 4), dtype=np.float32)
-                        rebuild_canvas_from_shapes(canvas, shapes_copied, avg_r, avg_g, avg_b)
+                        evaluator = EvaluatorFactory.create_evaluator("NUMBA", np.zeros((height_high, width_high, 3), dtype=np.float32), None)
+                        evaluator.rebuild_canvas(canvas, shapes_copied, avg_r, avg_g, avg_b)
+                        evaluator.cleanup()
                         
                         # Lock and update share preview array for live workbench repainting
                         with self.preview_image_lock:
@@ -610,6 +630,7 @@ class ForzaStudioGUI:
         """Disables controls during background executions to maintain stability."""
         self.entry_file_path.configure(state="disabled")
         self.combo_profile.configure(state="disabled")
+        self.combo_engine.configure(state="disabled")
         self.entry_layers.configure(state="disabled")
         self.entry_candidates.configure(state="disabled")
         self.entry_steps.configure(state="disabled")
@@ -641,6 +662,7 @@ class ForzaStudioGUI:
         """Enables UI elements once computing threads terminate."""
         self.entry_file_path.configure(state="normal")
         self.combo_profile.configure(state="readonly")
+        self.combo_engine.configure(state="readonly")
         self.entry_layers.configure(state="normal")
         self.entry_candidates.configure(state="normal")
         self.entry_steps.configure(state="normal")
@@ -844,10 +866,14 @@ class ForzaStudioGUI:
                 self.need_preview_update = True
             return True
                 
+        # Determine JIT Engine to use
+        engine_idx = self.combo_engine.current()
+        engine_code = self.available_evaluators[engine_idx]["code"] if 0 <= engine_idx < len(self.available_evaluators) else "NUMBA"
+
         # Launch Worker Thread
         self.active_thread = threading.Thread(
             target=run_generator,
-            args=(img_path, output_json, profile_path, layers, candidates, steps, generator_cb, self.opt_settings),
+            args=(img_path, output_json, profile_path, layers, candidates, steps, generator_cb, self.opt_settings, engine_code),
             daemon=True
         )
         self.active_thread.start()
