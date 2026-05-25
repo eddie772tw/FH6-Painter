@@ -55,8 +55,8 @@ if errorlevel 1 (
 :: 將 PY_EXE 切換為虛擬環境中的 Python 執行檔
 set "PY_EXE=%VENV_DIR%\Scripts\python.exe"
 
-:: 檢查是否缺少基礎依賴庫 (嘗試載入 pillow/PIL 和 numpy)
-"!PY_EXE!" -c "import PIL, numpy" >nul 2>nul
+:: 檢查是否缺少基礎依賴庫 (嘗試載入 pillow/PIL、numpy、numba 和 taichi)
+"!PY_EXE!" -c "import PIL, numpy, numba, taichi" >nul 2>nul
 if %errorlevel% equ 0 goto :dependencies_ok
 
 echo [INFO] 偵測到缺少依賴套件或首次啟動。正在安裝依賴套件...
@@ -70,9 +70,9 @@ if errorlevel 1 (
 
 :dependencies_ok
 echo ====================================================================
-echo      FORZA STUDIO - FH6 Livery Engine Startup Diagnostic
+echo      FH6 Painter - FH6 Livery Engine Startup Diagnostic
 echo ====================================================================
-"!PY_EXE!" -c "from evaluators import EvaluatorFactory; engines = EvaluatorFactory.get_available_evaluators(); print('\n[Diagnostic] Computational Engine Plugins Status:'); [print(' - %-32s | Code: %-12s | Status: %s' % (e['name'], e['code'], '[ENABLED]' if e['available'] else '[DISABLED] (Missing library, run: pip install ' + ('numba' if e['code']=='NUMBA' else 'taichi') + ' to enable)')) for e in engines]; print()"
+"!PY_EXE!" -c "from evaluators import EvaluatorFactory; engines = EvaluatorFactory.get_available_evaluators(); print('\n[Diagnostic] Computational Engine Plugins Status:'); [print(' - {:<32} | Code: {:<12} | Status: {}'.format(e['name'], e['code'], '[ENABLED]' if e['available'] else '[DISABLED] (Missing library, run: pip install ' + ('numba' if e['code']=='NUMBA' else 'taichi') + ' to enable)')) for e in engines]; print()"
 echo ====================================================================
 
 :: 啟動應用程式

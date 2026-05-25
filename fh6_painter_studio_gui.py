@@ -25,7 +25,7 @@ except ImportError as e:
 class ForzaStudioGUI:
     def __init__(self, root, preload_file=None):
         self.root = root
-        self.root.title("FORZA STUDIO - FH6 Shape Generator & Importer")
+        self.root.title("FH6 Painter - Shape Generator & Importer")
         self.root.geometry("1200x820")
         self.root.minsize(1100, 760)
         
@@ -69,6 +69,9 @@ class ForzaStudioGUI:
         # Scan profiles
         self.profiles = self.scan_profiles()
         
+        # Scan available GPU devices
+        self.gpu_list = self.scan_gpus()
+        
         # Load optimization settings
         self.load_optimization_settings()
         
@@ -90,7 +93,7 @@ class ForzaStudioGUI:
             self.on_file_changed()
             self.log_to_console(f"Successfully preloaded: {preload_file}\n")
         else:
-            self.log_to_console("Welcome to Forza Studio! Load an image or a geometry JSON file to begin.\n")
+            self.log_to_console("Welcome to FH6 Painter! Load an image or a geometry JSON file to begin.\n")
             
         if not HAS_LIBS:
             self.log_to_console(f"WARNING: Missing dependencies: {IMPORT_ERROR}\n")
@@ -153,6 +156,22 @@ class ForzaStudioGUI:
                 profiles.insert(0, default_item)
         return profiles
 
+    def scan_gpus(self):
+        """利用 Windows wmic 指令偵測系統中的顯示卡列表"""
+        gpus = []
+        try:
+            import subprocess
+            out = subprocess.check_output("wmic path win32_VideoController get name", shell=True).decode('utf-8', errors='ignore')
+            lines = [line.strip() for line in out.split('\n') if line.strip()]
+            if len(lines) > 1:
+                for l in lines[1:]:
+                    if l and "name" not in l.lower():
+                        gpus.append(l)
+        except Exception:
+            pass
+        if not gpus:
+            gpus = ["Default GPU (Device 0)"]
+        return gpus
 
     def apply_styles(self):
         """Set up standard TTK style properties for modern flat design."""
@@ -177,7 +196,7 @@ class ForzaStudioGUI:
         style.configure("Custom.Horizontal.TProgressbar", thickness=10, background=self.color_green, troughcolor=self.bg_input, borderwidth=0)
 
     def build_ui(self):
-        """Build the responsive layout of the Forza Studio GUI."""
+        """Build the responsive layout of the FH6 Painter GUI."""
         # Main layout frame
         main_container = tk.Frame(self.root, bg=self.bg_main)
         main_container.pack(fill="both", expand=True, padx=15, pady=10)
@@ -186,7 +205,7 @@ class ForzaStudioGUI:
         header_frame = tk.Frame(main_container, bg=self.bg_main)
         header_frame.pack(fill="x", pady=(0, 10))
         
-        title_label = tk.Label(header_frame, text="FORZA STUDIO", font=("Outfit", 18, "bold"), bg=self.bg_main, fg=self.color_green)
+        title_label = tk.Label(header_frame, text="FH6 Painter", font=("Outfit", 18, "bold"), bg=self.bg_main, fg=self.color_green)
         title_label.pack(side="left")
         
         subtitle_label = tk.Label(header_frame, text="  |  FH6 ONE-STOP LIVERY ENGINE", font=("Microsoft JhengHei", 10, "bold"), bg=self.bg_main, fg=self.fg_secondary)
@@ -272,11 +291,28 @@ class ForzaStudioGUI:
                 default_idx = idx
                 break
         self.combo_engine.current(default_idx)
+        self.combo_engine.bind("<<ComboboxSelected>>", self.on_engine_selected)
+        
+        # Taichi 後端模式 (Vulkan, CUDA, OpenGL, CPU)
+        self.lbl_taichi_arch = tk.Label(params_body, text="Taichi Arch GPU Mode:", font=("Microsoft JhengHei", 9), bg=self.bg_card, fg=self.fg_secondary)
+        self.lbl_taichi_arch.grid(row=5, column=0, sticky="w", pady=4)
+        
+        self.combo_taichi_arch = ttk.Combobox(params_body, values=["Vulkan", "CUDA", "OpenGL", "CPU"], state="readonly", width=35)
+        self.combo_taichi_arch.grid(row=5, column=1, sticky="we", pady=4, padx=(10, 0))
+        self.combo_taichi_arch.current(0)
+        
+        # Taichi 顯示卡選擇
+        self.lbl_taichi_device = tk.Label(params_body, text="Taichi GPU Device:", font=("Microsoft JhengHei", 9), bg=self.bg_card, fg=self.fg_secondary)
+        self.lbl_taichi_device.grid(row=6, column=0, sticky="w", pady=4)
+        
+        self.combo_taichi_device = ttk.Combobox(params_body, values=[f"({idx}) {gpu}" for idx, gpu in enumerate(self.gpu_list)], state="readonly", width=35)
+        self.combo_taichi_device.grid(row=6, column=1, sticky="we", pady=4, padx=(10, 0))
+        self.combo_taichi_device.current(0)
 
         # Advanced Overrides
         self.show_adv = tk.BooleanVar(value=False)
         self.chk_adv = tk.Checkbutton(params_body, text="Enable Advanced Sample Override (Use INI settings otherwise)", variable=self.show_adv, font=("Microsoft JhengHei", 9), bg=self.bg_card, fg=self.fg_secondary, selectcolor=self.bg_card, activebackground=self.bg_card, activeforeground=self.fg_primary, bd=0, command=self.toggle_advanced_panel)
-        self.chk_adv.grid(row=5, column=0, columnspan=2, sticky="w", pady=4)
+        self.chk_adv.grid(row=7, column=0, columnspan=2, sticky="w", pady=4)
         
         self.adv_frame = tk.Frame(params_body, bg=self.bg_card)
         
@@ -427,6 +463,9 @@ class ForzaStudioGUI:
         # Fluid progress bar
         self.progress_bar = ttk.Progressbar(preview_body, orient="horizontal", mode="determinate", style="Custom.Horizontal.TProgressbar")
         self.progress_bar.pack(fill="x", pady=(5, 5))
+        
+        # 初始化引擎下拉選單的連動狀態
+        self.on_engine_selected(None)
 
     def create_card_header(self, parent, title, subtitle):
         """Creates a standardized modern card header inside custom panels."""
@@ -446,9 +485,21 @@ class ForzaStudioGUI:
     def toggle_advanced_panel(self):
         """Collapses or expands the advanced parameters override panel."""
         if self.show_adv.get():
-            self.adv_frame.grid(row=6, column=0, columnspan=2, sticky="we", pady=(5, 0))
+            self.adv_frame.grid(row=8, column=0, columnspan=2, sticky="we", pady=(5, 0))
         else:
             self.adv_frame.grid_forget()
+
+    def on_engine_selected(self, event):
+        """依據選取的引擎動態切換 Taichi 專用參數的啟用狀態"""
+        engine_idx = self.combo_engine.current()
+        engine_code = self.available_evaluators[engine_idx]["code"] if 0 <= engine_idx < len(self.available_evaluators) else "NUMBA"
+        
+        if engine_code == "TAICHI":
+            self.combo_taichi_arch.configure(state="readonly")
+            self.combo_taichi_device.configure(state="readonly")
+        else:
+            self.combo_taichi_arch.configure(state="disabled")
+            self.combo_taichi_device.configure(state="disabled")
 
     def draw_cyber_placeholder(self, text="STUDIO READY"):
         """Draws a clean, dark tech cyberpunk graphic when no active simulation is running."""
@@ -870,10 +921,15 @@ class ForzaStudioGUI:
         engine_idx = self.combo_engine.current()
         engine_code = self.available_evaluators[engine_idx]["code"] if 0 <= engine_idx < len(self.available_evaluators) else "NUMBA"
 
+        # 獲取 Taichi GPU 與後端架構設定
+        taichi_arch = self.combo_taichi_arch.get()
+        taichi_device_id = self.combo_taichi_device.current()
+
         # Launch Worker Thread
         self.active_thread = threading.Thread(
             target=run_generator,
             args=(img_path, output_json, profile_path, layers, candidates, steps, generator_cb, self.opt_settings, engine_code),
+            kwargs={"taichi_arch": taichi_arch, "taichi_device_id": taichi_device_id},
             daemon=True
         )
         self.active_thread.start()

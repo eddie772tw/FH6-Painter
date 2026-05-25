@@ -102,7 +102,7 @@ def rebuild_uncovered_map_from_shapes(evaluator, width, height, has_alpha, alpha
 
 
 # --- Main Generator Logic ---
-def run_generator(image_path, output_path=None, profile_path=None, layers_limit=None, candidates_limit=None, steps_limit=None, progress_callback=None, opt_settings=None, engine_name=None):
+def run_generator(image_path, output_path=None, profile_path=None, layers_limit=None, candidates_limit=None, steps_limit=None, progress_callback=None, opt_settings=None, engine_name=None, taichi_arch=None, taichi_device_id=None):
     if not os.path.exists(image_path):
         print(f"ERROR: Image not found: {image_path}", file=sys.stderr)
         return 1
@@ -319,7 +319,7 @@ def run_generator(image_path, output_path=None, profile_path=None, layers_limit=
     
     # --- Load Computational Engine Plugin ---
     from evaluators import EvaluatorFactory
-    evaluator = EvaluatorFactory.create_evaluator(engine_name, target, alpha_mask)
+    evaluator = EvaluatorFactory.create_evaluator(engine_name, target, alpha_mask, taichi_arch=taichi_arch, taichi_device_id=taichi_device_id)
     
     # Construct shape array with canvas header shape
     shapes_list = []
@@ -464,7 +464,7 @@ def run_generator(image_path, output_path=None, profile_path=None, layers_limit=
                         target = target_1_2
                         alpha_mask = alpha_mask_1_2
                         width, height = w_1_2, h_1_2
-                        evaluator = EvaluatorFactory.create_evaluator(engine_name, target, alpha_mask)
+                        evaluator = EvaluatorFactory.create_evaluator(engine_name, target, alpha_mask, taichi_arch=taichi_arch, taichi_device_id=taichi_device_id)
                         
                         canvas = np.zeros_like(target)
                         evaluator.rebuild_canvas(canvas, shapes_list, avg_r, avg_g, avg_b)
@@ -494,7 +494,7 @@ def run_generator(image_path, output_path=None, profile_path=None, layers_limit=
                         target = target_1_1
                         alpha_mask = alpha_mask_1_1
                         width, height = w_1_1, h_1_1
-                        evaluator = EvaluatorFactory.create_evaluator(engine_name, target, alpha_mask)
+                        evaluator = EvaluatorFactory.create_evaluator(engine_name, target, alpha_mask, taichi_arch=taichi_arch, taichi_device_id=taichi_device_id)
                         
                         canvas = np.zeros_like(target)
                         evaluator.rebuild_canvas(canvas, shapes_list, avg_r, avg_g, avg_b)
@@ -617,7 +617,7 @@ def run_generator(image_path, output_path=None, profile_path=None, layers_limit=
             target = target_1_1
             alpha_mask = alpha_mask_1_1
             width, height = w_1_1, h_1_1
-            evaluator = EvaluatorFactory.create_evaluator(engine_name, target, alpha_mask)
+            evaluator = EvaluatorFactory.create_evaluator(engine_name, target, alpha_mask, taichi_arch=taichi_arch, taichi_device_id=taichi_device_id)
             
             canvas = np.zeros_like(target)
             evaluator.rebuild_canvas(canvas, shapes_list, avg_r, avg_g, avg_b)

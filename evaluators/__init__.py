@@ -48,13 +48,8 @@ class EvaluatorFactory:
         })
         
         # 2. Taichi GPU Vulkan JIT
-        taichi_avail = False
-        if TaichiEvaluator is not None:
-            try:
-                inst = TaichiEvaluator(np.zeros((2, 2, 3), dtype=np.float32))
-                taichi_avail = inst.is_available()
-            except Exception:
-                taichi_avail = False
+        from evaluators.taichi_evaluator import HAS_TAICHI
+        taichi_avail = HAS_TAICHI
                 
         evaluators.append({
             "code": "TAICHI",
@@ -76,7 +71,7 @@ class EvaluatorFactory:
         return evaluators
 
     @staticmethod
-    def create_evaluator(engine_name: str, target_image: np.ndarray, alpha_mask: np.ndarray = None) -> BaseEvaluator:
+    def create_evaluator(engine_name: str, target_image: np.ndarray, alpha_mask: np.ndarray = None, **kwargs) -> BaseEvaluator:
         """
         工廠方法：動態建立並回傳對應的評估器實例。
         核心安全性：在目標引擎不可用或載入失敗的最壞情況下，提供全自動的退級與安全回退。
@@ -84,6 +79,7 @@ class EvaluatorFactory:
         :param engine_name: 引擎代號 ("NUMBA", "TAICHI", "PURE_PYTHON")
         :param target_image: 目標影像矩陣
         :param alpha_mask: 目標 Alpha 遮罩
+        :param kwargs: 傳遞給具體評估器初始化的額外引數 (如 taichi_arch, taichi_device_id)
         :return: 實作 BaseEvaluator 介面的評估器對象
         """
         available_engines = EvaluatorFactory.get_available_evaluators()
@@ -112,7 +108,11 @@ class EvaluatorFactory:
         eval_class = selected_engine["class"]
         
         try:
-            evaluator_instance = eval_class(target_image, alpha_mask)
+            evaluator_instance = None
+            if selected_code == "TAICHI":
+                evaluator_instance = eval_class(target_image, alpha_mask, **kwargs)
+            else:
+                evaluator_instance = eval_class(target_image, alpha_mask)
             print(f"[Factory Engine Load] Success! Currently powered by: {selected_engine['name']} ({selected_engine['device']})")
             return evaluator_instance
         except Exception as e:
