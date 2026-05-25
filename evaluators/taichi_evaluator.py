@@ -34,6 +34,8 @@ except ImportError:
             return object
     ti = FakeTi()
 
+# --- Taichi Global Reduction Field (Moved to instance level to respect ti.init lifecycle) ---
+
 # --- Taichi GPU Accelerated Functions ---
 @ti.func
 def evaluate_candidate_ti(
@@ -214,6 +216,379 @@ def taichi_parallel_search(
         results[i, 2] = b
         results[i, 3] = delta
 
+# --- Taichi Full GPU Pipeline Accelerated Kernels ---
+@ti.kernel
+def compute_raw_error_and_max(
+    target: ti.types.ndarray(),
+    canvas: ti.types.ndarray(),
+    error_prob: ti.types.ndarray(),
+    max_err_arr: ti.types.ndarray(),
+    height: ti.i32,
+    width: ti.i32
+):
+    max_err_arr[0] = 0.0
+    for y, x in ti.ndrange(height, width):
+        diff = 0.0
+        for c in ti.static(range(3)):
+            diff += ti.math.abs(target[y, x, c] - canvas[y, x, c])
+        diff /= 3.0
+        ti.atomic_max(max_err_arr[0], diff)
+        error_prob[y, x] = diff
+
+@ti.kernel
+def normalize_error_prob(
+    error_prob: ti.types.ndarray(),
+    max_err_arr: ti.types.ndarray(),
+    height: ti.i32,
+    width: ti.i32
+):
+    max_val = max_err_arr[0]
+    for y, x in ti.ndrange(height, width):
+        if max_val > 0.0:
+            error_prob[y, x] = error_prob[y, x] / max_val
+        else:
+            error_prob[y, x] = 0.0
+
+@ti.kernel
+def update_freeze_mask_gpu(
+    target: ti.types.ndarray(),
+    canvas: ti.types.ndarray(),
+    freeze_mask: ti.types.ndarray(),
+    threshold: ti.f32,
+    height: ti.i32,
+    width: ti.i32
+):
+    for y, x in ti.ndrange(height, width):
+        diff = 0.0
+        for c in ti.static(range(3)):
+            diff += ti.math.abs(target[y, x, c] - canvas[y, x, c])
+        diff /= 3.0
+        if diff < threshold:
+            freeze_mask[y, x] = 1
+        else:
+            freeze_mask[y, x] = 0
+
+@ti.kernel
+def update_weights_gpu(
+    target: ti.types.ndarray(),
+    canvas: ti.types.ndarray(),
+    weight_map: ti.types.ndarray(),
+    boundary_weight: ti.types.ndarray(),
+    max_err_arr: ti.types.ndarray(),
+    has_boundary: ti.i32,
+    height: ti.i32,
+    width: ti.i32
+):
+    max_err_arr[0] = 0.0
+    for y, x in ti.ndrange(height, width):
+        diff = 0.0
+        for c in ti.static(range(3)):
+            diff += ti.math.abs(target[y, x, c] - canvas[y, x, c])
+        diff /= 3.0
+        ti.atomic_max(max_err_arr[0], diff)
+        weight_map[y, x] = diff
+
+    max_val = max_err_arr[0]
+    for y, x in ti.ndrange(height, width):
+        norm_err = 0.0
+        if max_val > 0.0:
+            norm_err = weight_map[y, x] / max_val
+        
+        dynamic_w = 1.0 + norm_err * 9.0
+        if has_boundary == 1:
+            weight_map[y, x] = dynamic_w * boundary_weight[y, x]
+        else:
+            weight_map[y, x] = dynamic_w
+
+@ti.kernel
+def update_uncovered_mask_gpu(
+    uncovered_map: ti.types.ndarray(),
+    best_candidate: ti.types.ndarray(),
+    height: ti.i32,
+    width: ti.i32
+):
+    x_c = best_candidate[0, 0]
+    y_c = best_candidate[0, 1]
+    r_x = best_candidate[0, 2]
+    r_y = best_candidate[0, 3]
+    theta = best_candidate[0, 4]
+    
+    cos_t = ti.math.cos(theta)
+    sin_t = ti.math.sin(theta)
+    
+    x_half = ti.math.sqrt(r_x*r_x * cos_t*cos_t + r_y*r_y * sin_t*sin_t)
+    y_half = ti.math.sqrt(r_x*r_x * sin_t*sin_t + r_y*r_y * cos_t*cos_t)
+    
+    min_x = ti.max(0, ti.cast(x_c - x_half, ti.i32))
+    max_x = ti.min(width - 1, ti.cast(x_c + x_half, ti.i32))
+    min_y = ti.max(0, ti.cast(y_c - y_half, ti.i32))
+    max_y = ti.min(height - 1, ti.cast(y_c + y_half, ti.i32))
+    
+    inv_rx2 = 1.0 / (r_x * r_x) if r_x > 0.0 else 0.0
+    inv_ry2 = 1.0 / (r_y * r_y) if r_y > 0.0 else 0.0
+    
+    for y, x in ti.ndrange((min_y, max_y + 1), (min_x, max_x + 1)):
+        dy = ti.cast(y, ti.f32) - y_c
+        dx = ti.cast(x, ti.f32) - x_c
+        rx = dx * cos_t + dy * sin_t
+        ry = -dx * sin_t + dy * cos_t
+        if (rx * rx) * inv_rx2 + (ry * ry) * inv_ry2 <= 1.0:
+            uncovered_map[y, x] = 1.0
+
+@ti.kernel
+def generate_candidates_gpu(
+    candidates: ti.types.ndarray(),
+    width: ti.f32,
+    height: ti.f32,
+    max_r: ti.f32,
+    use_importance: ti.i32,
+    error_prob: ti.types.ndarray(),
+    batch_size: ti.i32
+):
+    for i in range(batch_size):
+        x = 0.0
+        y = 0.0
+        
+        if use_importance == 1:
+            keep = 0
+            for att in range(100):
+                if keep == 0:
+                    tx = ti.random() * width
+                    ty = ti.random() * height
+                    ix = ti.cast(tx, ti.i32)
+                    iy = ti.cast(ty, ti.i32)
+                    if ix >= 0 and ix < ti.cast(width, ti.i32) and iy >= 0 and iy < ti.cast(height, ti.i32):
+                        if ti.random() < error_prob[iy, ix]:
+                            x = tx
+                            y = ty
+                            keep = 1
+            if keep == 0:
+                x = ti.random() * width
+                y = ti.random() * height
+        else:
+            x = ti.random() * width
+            y = ti.random() * height
+            
+        r_x = 2.0 + ti.random() * (max_r - 2.0)
+        r_y = 2.0 + ti.random() * (max_r - 2.0)
+        theta = ti.random() * 2.0 * ti.math.pi
+        alpha = 255.0
+        
+        candidates[i, 0] = x
+        candidates[i, 1] = y
+        candidates[i, 2] = r_x
+        candidates[i, 3] = r_y
+        candidates[i, 4] = theta
+        candidates[i, 5] = alpha
+
+@ti.kernel
+def draw_ellipse_gpu(
+    canvas: ti.types.ndarray(),
+    best_candidate: ti.types.ndarray(),
+    height: ti.i32,
+    width: ti.i32
+):
+    x_c = best_candidate[0, 0]
+    y_c = best_candidate[0, 1]
+    r_x = best_candidate[0, 2]
+    r_y = best_candidate[0, 3]
+    theta = best_candidate[0, 4]
+    
+    r = best_candidate[0, 6]
+    g = best_candidate[0, 7]
+    b = best_candidate[0, 8]
+    alpha = best_candidate[0, 5]
+    
+    cos_t = ti.math.cos(theta)
+    sin_t = ti.math.sin(theta)
+    
+    x_half = ti.math.sqrt(r_x*r_x * cos_t*cos_t + r_y*r_y * sin_t*sin_t)
+    y_half = ti.math.sqrt(r_x*r_x * sin_t*sin_t + r_y*r_y * cos_t*cos_t)
+    
+    min_x = ti.max(0, ti.cast(x_c - x_half, ti.i32))
+    max_x = ti.min(width - 1, ti.cast(x_c + x_half, ti.i32))
+    min_y = ti.max(0, ti.cast(y_c - y_half, ti.i32))
+    max_y = ti.min(height - 1, ti.cast(y_c + y_half, ti.i32))
+    
+    inv_rx2 = 1.0 / (r_x * r_x) if r_x > 0.0 else 0.0
+    inv_ry2 = 1.0 / (r_y * r_y) if r_y > 0.0 else 0.0
+    
+    a_f = alpha / 255.0
+    one_minus_a = 1.0 - a_f
+    
+    for y, x in ti.ndrange((min_y, max_y + 1), (min_x, max_x + 1)):
+        dy = ti.cast(y, ti.f32) - y_c
+        dx = ti.cast(x, ti.f32) - x_c
+        rx = dx * cos_t + dy * sin_t
+        ry = -dx * sin_t + dy * cos_t
+        if (rx * rx) * inv_rx2 + (ry * ry) * inv_ry2 <= 1.0:
+            canvas[y, x, 0] = canvas[y, x, 0] * one_minus_a + r * a_f
+            canvas[y, x, 1] = canvas[y, x, 1] * one_minus_a + g * a_f
+            canvas[y, x, 2] = canvas[y, x, 2] * one_minus_a + b * a_f
+
+@ti.kernel
+def find_best_candidate_gpu(
+    candidates: ti.types.ndarray(),
+    results: ti.types.ndarray(),
+    best_candidate: ti.types.ndarray(),
+    batch_size: ti.i32
+):
+    best_idx = 0
+    min_delta = 999999999.0
+    for i in range(batch_size):
+        if results[i, 3] < min_delta:
+            min_delta = results[i, 3]
+            best_idx = i
+            
+    best_candidate[0, 0] = candidates[best_idx, 0]
+    best_candidate[0, 1] = candidates[best_idx, 1]
+    best_candidate[0, 2] = candidates[best_idx, 2]
+    best_candidate[0, 3] = candidates[best_idx, 3]
+    best_candidate[0, 4] = candidates[best_idx, 4]
+    best_candidate[0, 5] = candidates[best_idx, 5]
+    
+    best_candidate[0, 6] = results[best_idx, 0]
+    best_candidate[0, 7] = results[best_idx, 1]
+    best_candidate[0, 8] = results[best_idx, 2]
+    best_candidate[0, 9] = results[best_idx, 3]
+
+@ti.kernel
+def parallel_hill_climb_gpu(
+    best_candidate: ti.types.ndarray(),
+    climb_candidates: ti.types.ndarray(),
+    climb_results: ti.types.ndarray(),
+    target: ti.types.ndarray(),
+    canvas: ti.types.ndarray(),
+    alpha_mask: ti.types.ndarray(),
+    check_contour: ti.i32,
+    use_freeze: ti.i32,
+    freeze_mask: ti.types.ndarray(),
+    use_weight: ti.i32,
+    weight_map: ti.types.ndarray(),
+    use_uncovered: ti.i32,
+    uncovered_map: ti.types.ndarray(),
+    height: ti.i32,
+    width: ti.i32,
+    max_r: ti.f32,
+    sa_enabled: ti.i32,
+    sa_initial_temp: ti.f32,
+    sa_cooling_rate: ti.f32,
+    optimization_steps: ti.i32
+):
+    for i in range(128):
+        curr_x_c = best_candidate[0, 0]
+        curr_y_c = best_candidate[0, 1]
+        curr_r_x = best_candidate[0, 2]
+        curr_r_y = best_candidate[0, 3]
+        curr_theta = best_candidate[0, 4]
+        curr_alpha = best_candidate[0, 5]
+        
+        curr_r = best_candidate[0, 6]
+        curr_g = best_candidate[0, 7]
+        curr_b = best_candidate[0, 8]
+        curr_delta = best_candidate[0, 9]
+        
+        T = sa_initial_temp
+        
+        for step in range(optimization_steps):
+            scale = 1.0 - (ti.cast(step, ti.f32) / ti.cast(optimization_steps, ti.f32))
+            
+            u1 = ti.random()
+            u2 = ti.random()
+            if u1 < 1e-6:
+                u1 = 1e-6
+            r_normal = ti.math.sqrt(-2.0 * ti.math.log(u1))
+            theta_normal = 2.0 * ti.math.pi * u2
+            
+            z0 = r_normal * ti.math.cos(theta_normal)
+            z1 = r_normal * ti.math.sin(theta_normal)
+            
+            u3 = ti.random()
+            u4 = ti.random()
+            if u3 < 1e-6:
+                u3 = 1e-6
+            r_normal2 = ti.math.sqrt(-2.0 * ti.math.log(u3))
+            theta_normal2 = 2.0 * ti.math.pi * u4
+            z2 = r_normal2 * ti.math.cos(theta_normal2)
+            z3 = r_normal2 * ti.math.sin(theta_normal2)
+            
+            nx_c = curr_x_c + z0 * 8.0 * scale
+            ny_c = curr_y_c + z1 * 8.0 * scale
+            nr_x = ti.max(2.0, ti.min(max_r, curr_r_x + z2 * 6.0 * scale))
+            nr_y = ti.max(2.0, ti.min(max_r, curr_r_y + z3 * 6.0 * scale))
+            ntheta = curr_theta + z1 * 0.25 * scale
+            nalpha = 255.0
+            
+            nr, ng, nb, delta = evaluate_candidate_ti(
+                target, canvas, nx_c, ny_c, nr_x, nr_y, ntheta, nalpha,
+                alpha_mask, check_contour,
+                use_freeze, freeze_mask,
+                use_weight, weight_map,
+                use_uncovered, uncovered_map,
+                height, width
+            )
+            
+            diff = delta - curr_delta
+            accept = 0
+            if diff < 0.0:
+                accept = 1
+            elif sa_enabled == 1:
+                P = ti.math.exp(-diff / T)
+                if ti.random() < P:
+                    accept = 1
+                    
+            if accept == 1:
+                curr_delta = delta
+                curr_x_c = nx_c
+                curr_y_c = ny_c
+                curr_r_x = nr_x
+                curr_r_y = nr_y
+                curr_theta = ntheta
+                curr_alpha = nalpha
+                curr_r = nr
+                curr_g = ng
+                curr_b = nb
+                
+            if sa_enabled == 1:
+                T = T * sa_cooling_rate
+                
+        climb_candidates[i, 0] = curr_x_c
+        climb_candidates[i, 1] = curr_y_c
+        climb_candidates[i, 2] = curr_r_x
+        climb_candidates[i, 3] = curr_r_y
+        climb_candidates[i, 4] = curr_theta
+        climb_candidates[i, 5] = curr_alpha
+        
+        climb_results[i, 0] = curr_r
+        climb_results[i, 1] = curr_g
+        climb_results[i, 2] = curr_b
+        climb_results[i, 3] = curr_delta
+
+@ti.kernel
+def select_final_best_gpu(
+    climb_candidates: ti.types.ndarray(),
+    climb_results: ti.types.ndarray(),
+    best_candidate: ti.types.ndarray()
+):
+    best_idx = 0
+    min_delta = 999999999.0
+    for i in range(128):
+        if climb_results[i, 3] < min_delta:
+            min_delta = climb_results[i, 3]
+            best_idx = i
+            
+    best_candidate[0, 0] = climb_candidates[best_idx, 0]
+    best_candidate[0, 1] = climb_candidates[best_idx, 1]
+    best_candidate[0, 2] = climb_candidates[best_idx, 2]
+    best_candidate[0, 3] = climb_candidates[best_idx, 3]
+    best_candidate[0, 4] = climb_candidates[best_idx, 4]
+    best_candidate[0, 5] = climb_candidates[best_idx, 5]
+    
+    best_candidate[0, 6] = climb_results[best_idx, 0]
+    best_candidate[0, 7] = climb_results[best_idx, 1]
+    best_candidate[0, 8] = climb_results[best_idx, 2]
+    best_candidate[0, 9] = climb_results[best_idx, 3]
+
 # --- Taichi GPU Evaluator Implementation ---
 class TaichiEvaluator(BaseEvaluator):
     def __init__(self, target_image: np.ndarray, alpha_mask: np.ndarray = None, taichi_arch: str = None, taichi_device_id: int = None):
@@ -287,12 +662,19 @@ class TaichiEvaluator(BaseEvaluator):
                     self.ti_freeze = ti.ndarray(dtype=ti.uint8, shape=(height, width))
                     self.ti_weight = ti.ndarray(dtype=ti.f32, shape=(height, width))
                     self.ti_uncovered = ti.ndarray(dtype=ti.f32, shape=(height, width))
+                    self.ti_error_prob = ti.ndarray(dtype=ti.f32, shape=(height, width))
                     
                     # 預置一個空的 (1, 1) 用於未使用時的佔位符，減少非必要拷貝與分配
                     self.ti_empty_u8 = ti.ndarray(dtype=ti.uint8, shape=(1, 1))
                     self.ti_empty_u8.from_numpy(np.zeros((1, 1), dtype=np.uint8))
                     self.ti_empty_f32 = ti.ndarray(dtype=ti.f32, shape=(1, 1))
                     self.ti_empty_f32.from_numpy(np.zeros((1, 1), dtype=np.float32))
+                    
+                    # 全 GPU 管道流特有的 VRAM 緩衝區
+                    self.ti_best_candidate = ti.ndarray(dtype=ti.f32, shape=(1, 10))
+                    self.ti_climb_candidates = ti.ndarray(dtype=ti.f32, shape=(128, 6))
+                    self.ti_climb_results = ti.ndarray(dtype=ti.f32, shape=(128, 4))
+                    self.ti_max_err = ti.ndarray(dtype=ti.f32, shape=1)
                 except Exception as e:
                     print(f"[Taichi JIT VRAM Allocation Error] {e}")
                     self.initialized = False
@@ -316,77 +698,56 @@ class TaichiEvaluator(BaseEvaluator):
         if current_max_r is not None:
             max_r = min(max_r, current_max_r)
             
-        # 1. 處理並生成隨機橢圓參數 (在 CPU 上使用 NumPy 高速產生)
+        # 1. 更新變動的遮罩與誤差 Map (純 GPU 運算，無 PCIe Overhead)
         use_importance = params.get("use_importance", False)
-        error_prob = params.get("error_prob")
+        error_prob_np = params.get("error_prob")
         
-        if use_importance and error_prob is not None and error_prob.shape[0] > 1:
-            x_c_arr = np.zeros(batch_size, dtype=np.float32)
-            y_c_arr = np.zeros(batch_size, dtype=np.float32)
-            # Rejection Sampling
-            for i in range(batch_size):
-                keep = False
-                for att in range(100):
-                    x = np.random.uniform(0.0, float(width))
-                    y = np.random.uniform(0.0, float(height))
-                    ix = int(x)
-                    iy = int(y)
-                    if 0 <= ix < width and 0 <= iy < height:
-                        if np.random.uniform(0.0, 1.0) < error_prob[iy, ix]:
-                            x_c_arr[i] = x
-                            y_c_arr[i] = y
-                            keep = True
-                            break
-                if not keep:
-                    x_c_arr[i] = np.random.uniform(0.0, float(width))
-                    y_c_arr[i] = np.random.uniform(0.0, float(height))
-        else:
-            x_c_arr = np.random.uniform(0.0, float(width), batch_size).astype(np.float32)
-            y_c_arr = np.random.uniform(0.0, float(height), batch_size).astype(np.float32)
+        # 動態更新重要性採樣誤差概率圖
+        if use_importance and error_prob_np is not None and error_prob_np.shape[0] > 1:
+            compute_raw_error_and_max(self.ti_target, self.ti_canvas, self.ti_error_prob, self.ti_max_err, height, width)
+            normalize_error_prob(self.ti_error_prob, self.ti_max_err, height, width)
             
-        r_x_arr = np.random.uniform(2.0, max_r, batch_size).astype(np.float32)
-        r_y_arr = np.random.uniform(2.0, max_r, batch_size).astype(np.float32)
-        theta_arr = np.random.uniform(0.0, 2.0 * math.pi, batch_size).astype(np.float32)
-        alpha_arr = np.full(batch_size, 255.0, dtype=np.float32)
-        
-        # 拼接成候選矩陣
-        candidates = np.stack([x_c_arr, y_c_arr, r_x_arr, r_y_arr, theta_arr, alpha_arr], axis=1).astype(np.float32)
-        
-        # 2. 上傳變動的 canvas 到 VRAM，直接重用 self.ti_canvas 緩衝區
-        self.ti_canvas.from_numpy(current_canvas)
-        
-        # 快取與動態調整 ti_candidates 和 ti_results，避免每次都重新分配
+        # 動態凍結遮罩更新
+        use_freeze = 1 if params.get("use_freeze", False) else 0
+        freeze_mask_np = params.get("freeze_mask")
+        ti_freeze_ref = self.ti_empty_u8
+        if use_freeze == 1 and freeze_mask_np is not None:
+            self.ti_freeze.from_numpy(freeze_mask_np)
+            ti_freeze_ref = self.ti_freeze
+            
+        # 動態權重更新
+        use_weight = 1 if params.get("use_weight", False) else 0
+        weight_map_np = params.get("weight_map")
+        ti_weight_ref = self.ti_empty_f32
+        if use_weight == 1 and weight_map_np is not None:
+            self.ti_weight.from_numpy(weight_map_np)
+            ti_weight_ref = self.ti_weight
+            
+        # 動態未覆蓋遮罩更新
+        use_uncovered = 1 if params.get("use_uncovered", False) else 0
+        uncovered_map_np = params.get("uncovered_map")
+        ti_uncovered_ref = self.ti_empty_f32
+        if use_uncovered == 1 and uncovered_map_np is not None:
+            self.ti_uncovered.from_numpy(uncovered_map_np)
+            ti_uncovered_ref = self.ti_uncovered
+            
+        # 2. GPU 端隨機生成橢圓候選者
         if not hasattr(self, "ti_candidates") or self.ti_candidates.shape[0] != batch_size:
             self.ti_candidates = ti.ndarray(dtype=ti.f32, shape=(batch_size, 6))
             self.ti_results = ti.ndarray(dtype=ti.f32, shape=(batch_size, 4))
             
-        self.ti_candidates.from_numpy(candidates)
+        generate_candidates_gpu(
+            self.ti_candidates,
+            float(width),
+            float(height),
+            float(max_r),
+            1 if (use_importance and error_prob_np is not None) else 0,
+            self.ti_error_prob,
+            batch_size
+        )
         
-        # 3. 處理其它遮罩與加權 Map 的 VRAM 更新 (重用機制)
+        # 3. GPU 並行搜尋與評估
         check_contour = 1 if (self.alpha_mask is not None and params.get("check_contour", False)) else 0
-        
-        use_freeze = 1 if params.get("use_freeze", False) else 0
-        freeze_mask = params.get("freeze_mask")
-        ti_freeze_ref = self.ti_empty_u8
-        if use_freeze == 1 and freeze_mask is not None:
-            self.ti_freeze.from_numpy(freeze_mask)
-            ti_freeze_ref = self.ti_freeze
-            
-        use_weight = 1 if params.get("use_weight", False) else 0
-        weight_map = params.get("weight_map")
-        ti_weight_ref = self.ti_empty_f32
-        if use_weight == 1 and weight_map is not None:
-            self.ti_weight.from_numpy(weight_map)
-            ti_weight_ref = self.ti_weight
-            
-        use_uncovered = 1 if params.get("use_uncovered", False) else 0
-        uncovered_map = params.get("uncovered_map")
-        ti_uncovered_ref = self.ti_empty_f32
-        if use_uncovered == 1 and uncovered_map is not None:
-            self.ti_uncovered.from_numpy(uncovered_map)
-            ti_uncovered_ref = self.ti_uncovered
-        
-        # 4. 啟動 GPU 並行搜尋核
         taichi_parallel_search(
             self.ti_target,
             self.ti_canvas,
@@ -405,46 +766,66 @@ class TaichiEvaluator(BaseEvaluator):
             batch_size
         )
         
-        # 5. 回讀 GPU 計算結果，並在 CPU 端以極速挑選最優解
-        results_np = self.ti_results.to_numpy()
-        deltas = results_np[:, 3]
-        best_idx = np.argmin(deltas)
+        # 4. GPU 內部 Reduction：挑選初篩最優解
+        find_best_candidate_gpu(self.ti_candidates, self.ti_results, self.ti_best_candidate, batch_size)
         
-        x_c = float(candidates[best_idx, 0])
-        y_c = float(candidates[best_idx, 1])
-        r_x = float(candidates[best_idx, 2])
-        r_y = float(candidates[best_idx, 3])
-        theta = float(candidates[best_idx, 4])
-        alpha = float(candidates[best_idx, 5])
+        # 5. GPU 並行局部模擬退火爬升 (取代原 CPU serial hill-climb，效能與精度雙重躍升！)
+        sa_enabled = 1 if params.get("sa_enabled", False) else 0
+        sa_initial_temp = float(params.get("sa_initial_temp", 5000.0))
+        sa_cooling_rate = float(params.get("sa_cooling_rate", 0.95))
+        optimization_steps = params.get("optimization_steps", 50)
         
-        r = float(results_np[best_idx, 0])
-        g = float(results_np[best_idx, 1])
-        b = float(results_np[best_idx, 2])
-        delta = float(deltas[best_idx])
+        parallel_hill_climb_gpu(
+            self.ti_best_candidate,
+            self.ti_climb_candidates,
+            self.ti_climb_results,
+            self.ti_target,
+            self.ti_canvas,
+            self.ti_alpha,
+            check_contour,
+            use_freeze,
+            ti_freeze_ref,
+            use_weight,
+            ti_weight_ref,
+            use_uncovered,
+            ti_uncovered_ref,
+            height,
+            width,
+            float(max_r),
+            sa_enabled,
+            sa_initial_temp,
+            sa_cooling_rate,
+            optimization_steps
+        )
         
-        # 6. Hill-Climbing 爬升優化 (優先與 CPU 版本的 Numba 爬升優化對接，確保極限精準度)
-        try:
-            from evaluators import numba_kernels
-            HAS_NUMBA_KERNELS = True
-        except ImportError:
-            HAS_NUMBA_KERNELS = False
+        # 6. GPU 內部 Reduction 挑選最終微調最優解
+        select_final_best_gpu(self.ti_climb_candidates, self.ti_climb_results, self.ti_best_candidate)
+        
+        # 7. 在 GPU 顯存中直接繪製當前最優解 (保持與 CPU 同步，省去下載重繪開銷)
+        draw_ellipse_gpu(self.ti_canvas, self.ti_best_candidate, height, width)
+        
+        # 8. 在 GPU 顯存中直接更新 uncovered 遮罩
+        if use_uncovered == 1:
+            update_uncovered_mask_gpu(self.ti_uncovered, self.ti_best_candidate, height, width)
             
-        if HAS_NUMBA_KERNELS:
-            # 傳遞給 CPU Numba JIT 完成最後精細的串行微調爬升
-            hill_climb_freeze = params.get("use_freeze", False)
-            freeze_mask_np = freeze_mask if freeze_mask is not None else np.zeros((1, 1), dtype=np.uint8)
-            weight_map_np = weight_map if weight_map is not None else np.ones((1, 1), dtype=np.float32)
-            uncovered_map_np = uncovered_map if uncovered_map is not None else np.ones((1, 1), dtype=np.float32)
-            alpha_mask_np = self.alpha_mask if self.alpha_mask is not None else np.zeros((1, 1), dtype=np.float32)
-            
-            x_c, y_c, r_x, r_y, theta, r, g, b, alpha, delta = numba_kernels.serial_hill_climb(
-                self.target_image, current_canvas, x_c, y_c, r_x, r_y, theta, alpha, r, g, b, delta,
-                params.get("optimization_steps", 50), alpha_mask_np, check_contour == 1,
-                params.get("sa_enabled", False), params.get("sa_initial_temp", 5000.0), params.get("sa_cooling_rate", 0.95),
-                max_r, hill_climb_freeze, freeze_mask_np,
-                use_weight == 1, weight_map_np,
-                use_uncovered == 1, uncovered_map_np
-            )
+        # 9. 下載最終最優解的結果 (只有 1 行數據，傳輸開銷趨近於 0！)
+        best_candidate_np = self.ti_best_candidate.to_numpy()
+        
+        x_c = float(best_candidate_np[0, 0])
+        y_c = float(best_candidate_np[0, 1])
+        r_x = float(best_candidate_np[0, 2])
+        r_y = float(best_candidate_np[0, 3])
+        theta = float(best_candidate_np[0, 4])
+        alpha = float(best_candidate_np[0, 5])
+        
+        r = float(best_candidate_np[0, 6])
+        g = float(best_candidate_np[0, 7])
+        b = float(best_candidate_np[0, 8])
+        delta = float(best_candidate_np[0, 9])
+        
+        # 同步回寫 uncovered_map_np 以便 generator 的 CPU 重建邏輯正常運作
+        if use_uncovered == 1 and uncovered_map_np is not None:
+            uncovered_map_np[:] = self.ti_uncovered.to_numpy()
             
         best_shape_params = [x_c, y_c, r_x, r_y, theta, r, g, b, alpha]
         return best_shape_params, delta
