@@ -114,11 +114,10 @@ def update_profiles_for_layer_count(root, layer_count):
     print(f"Updated generator profiles: stopAt={layer_count}, saveAt={save_at}")
 
 def check_python_dependencies():
-    """Checks if the required high-performance libraries are installed."""
+    """Checks if the required libraries are installed."""
     try:
         from PIL import Image
         import numpy as np
-        import numba
         return True
     except ImportError:
         return False
@@ -256,7 +255,7 @@ def main():
                     if not os.path.exists(py_generator):
                         raise FileNotFoundError(f"Python generator script not found at: {py_generator}")
                     if not has_py_deps:
-                        raise ImportError("Python shape generator requires 'pillow', 'numpy', and 'numba'. Please run: pip install pillow numpy numba")
+                        raise ImportError("Python shape generator requires 'pillow' and 'numpy'. Please run: pip install pillow numpy")
                         
                     profile_path = ask_profile(root)
                     
