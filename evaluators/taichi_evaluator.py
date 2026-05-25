@@ -37,8 +37,12 @@ except ImportError:
 
 @ti.func
 def evaluate_candidate_ti(
-    target: ti.types.ndarray(),
-    canvas: ti.types.ndarray(),
+    target_r: ti.types.ndarray(),
+    target_g: ti.types.ndarray(),
+    target_b: ti.types.ndarray(),
+    canvas_r: ti.types.ndarray(),
+    canvas_g: ti.types.ndarray(),
+    canvas_b: ti.types.ndarray(),
     x_c: ti.f32, y_c: ti.f32, r_x: ti.f32, r_y: ti.f32, theta: ti.f32, alpha: ti.f32,
     alpha_mask: ti.types.ndarray(),
     check_contour: ti.i32,
@@ -51,7 +55,7 @@ def evaluate_candidate_ti(
     height: ti.i32,
     width: ti.i32
 ):
-    """Evaluates a single ellipse candidate on GPU. Uses state flags instead of early-return/break for Taichi compliance."""
+    """Evaluates a single ellipse candidate on GPU using planar Target/Canvas channels and scanline solvers."""
     cos_t = ti.math.cos(theta)
     sin_t = ti.math.sin(theta)
     
@@ -60,7 +64,6 @@ def evaluate_candidate_ti(
     
     is_valid = 1
     
-
     if (x_c - x_half < 0.0) or (x_c + x_half > ti.cast(width, ti.f32)) or (y_c - y_half < 0.0) or (y_c + y_half > ti.cast(height, ti.f32)):
         is_valid = 0
         
@@ -90,34 +93,59 @@ def evaluate_candidate_ti(
         inv_rx2 = 1.0 / (r_x * r_x) if r_x > 0.0 else 0.0
         inv_ry2 = 1.0 / (r_y * r_y) if r_y > 0.0 else 0.0
         
-        y = min_y
-        while y <= max_y and is_valid == 1:
-            dy = ti.cast(y, ti.f32) - y_c
-            dx_start = ti.cast(min_x, ti.f32) - x_c
-            rx = dx_start * cos_t + dy * sin_t
-            ry = -dx_start * sin_t + dy * cos_t
-            
-            x = min_x
-            while x <= max_x and is_valid == 1:
-                if (rx * rx) * inv_rx2 + (ry * ry) * inv_ry2 <= 1.0:
-
-                    if check_contour == 1:
-                        if alpha_mask[y, x] <= 10.0:
+        sin_cos = sin_t * cos_t
+        a = inv_rx2 * cos_t * cos_t + inv_ry2 * sin_t * sin_t
+        b_coeff = sin_cos * (inv_rx2 - inv_ry2)
+        c_y_coeff = inv_rx2 * sin_t * sin_t + inv_ry2 * cos_t * cos_t
+        
+        # Validation Pass (Scalar constraints check)
+        if check_contour == 1 or use_freeze == 1:
+            y = min_y
+            while y <= max_y and is_valid == 1:
+                dy = ti.cast(y, ti.f32) - y_c
+                b_val = dy * b_coeff
+                c_val = dy * dy * c_y_coeff - 1.0
+                discriminant = b_val * b_val - a * c_val
+                if discriminant >= 0.0:
+                    sqrt_d = ti.math.sqrt(discriminant)
+                    dx_min = (-b_val - sqrt_d) / a
+                    dx_max = (-b_val + sqrt_d) / a
+                    x_start = ti.max(min_x, ti.cast(ti.math.ceil(x_c + dx_min), ti.i32))
+                    x_end = ti.min(max_x, ti.cast(ti.math.floor(x_c + dx_max), ti.i32))
+                    
+                    x = x_start
+                    while x <= x_end and is_valid == 1:
+                        if check_contour == 1 and alpha_mask[y, x] <= 10.0:
                             is_valid = 0
-                            
-
-                    if use_freeze == 1:
-                        if freeze_mask[y, x] == 1:
+                        if use_freeze == 1 and freeze_mask[y, x] == 1:
                             is_valid = 0
-                            
-                    if is_valid == 1:
-                        t_r = target[y, x, 0]
-                        t_g = target[y, x, 1]
-                        t_b = target[y, x, 2]
+                        x += 1
+                y += 1
+                
+        # Accumulation Pass (Perfect for coalesced parallel loads)
+        if is_valid == 1:
+            y = min_y
+            while y <= max_y:
+                dy = ti.cast(y, ti.f32) - y_c
+                b_val = dy * b_coeff
+                c_val = dy * dy * c_y_coeff - 1.0
+                discriminant = b_val * b_val - a * c_val
+                if discriminant >= 0.0:
+                    sqrt_d = ti.math.sqrt(discriminant)
+                    dx_min = (-b_val - sqrt_d) / a
+                    dx_max = (-b_val + sqrt_d) / a
+                    x_start = ti.max(min_x, ti.cast(ti.math.ceil(x_c + dx_min), ti.i32))
+                    x_end = ti.min(max_x, ti.cast(ti.math.floor(x_c + dx_max), ti.i32))
+                    
+                    x = x_start
+                    while x <= x_end:
+                        t_r = target_r[y, x]
+                        t_g = target_g[y, x]
+                        t_b = target_b[y, x]
                         
-                        c_r = canvas[y, x, 0]
-                        c_g = canvas[y, x, 1]
-                        c_b = canvas[y, x, 2]
+                        c_r = canvas_r[y, x]
+                        c_g = canvas_g[y, x]
+                        c_b = canvas_b[y, x]
                         
                         w = 1.0
                         if use_weight == 1:
@@ -141,11 +169,8 @@ def evaluate_candidate_ti(
                         sum_ct_r += (c_r * t_r) * w
                         sum_ct_g += (c_g * t_g) * w
                         sum_ct_b += (c_b * t_b) * w
-                        
-                rx += cos_t
-                ry -= sin_t
-                x += 1
-            y += 1
+                        x += 1
+                y += 1
                 
     avg_r = 0.0
     avg_g = 0.0
@@ -170,10 +195,15 @@ def evaluate_candidate_ti(
         
     return avg_r, avg_g, avg_b, total_delta_mse
 
+
 @ti.kernel
 def taichi_parallel_search(
-    target: ti.types.ndarray(),
-    canvas: ti.types.ndarray(),
+    target_r: ti.types.ndarray(),
+    target_g: ti.types.ndarray(),
+    target_b: ti.types.ndarray(),
+    canvas_r: ti.types.ndarray(),
+    canvas_g: ti.types.ndarray(),
+    canvas_b: ti.types.ndarray(),
     candidates: ti.types.ndarray(),  # Shape: (batch_size, 6) -> [x_c, y_c, r_x, r_y, theta, alpha]
     results: ti.types.ndarray(),     # Shape: (batch_size, 4) -> [r, g, b, delta_mse]
     alpha_mask: ti.types.ndarray(),
@@ -188,7 +218,6 @@ def taichi_parallel_search(
     width: ti.i32,
     batch_size: ti.i32
 ):
-
     for i in range(batch_size):
         x_c = candidates[i, 0]
         y_c = candidates[i, 1]
@@ -198,7 +227,9 @@ def taichi_parallel_search(
         alpha = candidates[i, 5]
         
         r, g, b, delta = evaluate_candidate_ti(
-            target, canvas, x_c, y_c, r_x, r_y, theta, alpha,
+            target_r, target_g, target_b,
+            canvas_r, canvas_g, canvas_b,
+            x_c, y_c, r_x, r_y, theta, alpha,
             alpha_mask, check_contour,
             use_freeze, freeze_mask,
             use_weight, weight_map,
@@ -243,6 +274,20 @@ def normalize_error_prob(
             error_prob[y, x] = error_prob[y, x] / max_val
         else:
             error_prob[y, x] = 0.0
+
+@ti.kernel
+def split_canvas_to_planar_gpu(
+    canvas: ti.types.ndarray(),
+    canvas_r: ti.types.ndarray(),
+    canvas_g: ti.types.ndarray(),
+    canvas_b: ti.types.ndarray(),
+    height: ti.i32,
+    width: ti.i32
+):
+    for y, x in ti.ndrange(height, width):
+        canvas_r[y, x] = canvas[y, x, 0]
+        canvas_g[y, x] = canvas[y, x, 1]
+        canvas_b[y, x] = canvas[y, x, 2]
 
 @ti.kernel
 def update_freeze_mask_gpu(
@@ -453,8 +498,12 @@ def parallel_hill_climb_gpu(
     best_candidate: ti.types.ndarray(),
     climb_candidates: ti.types.ndarray(),
     climb_results: ti.types.ndarray(),
-    target: ti.types.ndarray(),
-    canvas: ti.types.ndarray(),
+    target_r: ti.types.ndarray(),
+    target_g: ti.types.ndarray(),
+    target_b: ti.types.ndarray(),
+    canvas_r: ti.types.ndarray(),
+    canvas_g: ti.types.ndarray(),
+    canvas_b: ti.types.ndarray(),
     alpha_mask: ti.types.ndarray(),
     check_contour: ti.i32,
     use_freeze: ti.i32,
@@ -516,7 +565,9 @@ def parallel_hill_climb_gpu(
             nalpha = 255.0
             
             nr, ng, nb, delta = evaluate_candidate_ti(
-                target, canvas, nx_c, ny_c, nr_x, nr_y, ntheta, nalpha,
+                target_r, target_g, target_b,
+                canvas_r, canvas_g, canvas_b,
+                nx_c, ny_c, nr_x, nr_y, ntheta, nalpha,
                 alpha_mask, check_contour,
                 use_freeze, freeze_mask,
                 use_weight, weight_map,
@@ -639,12 +690,24 @@ class TaichiEvaluator(BaseEvaluator):
             
             if self.initialized:
                 try:
-                    # Pre-upload target image to VRAM
+                    # Pre-upload target image to VRAM (HWC)
                     self.ti_target = ti.ndarray(dtype=ti.f32, shape=target_image.shape)
                     self.ti_target.from_numpy(target_image.astype(np.float32))
                     
+                    # Pre-upload planar target channels to VRAM (R, G, B channels)
+                    self.ti_target_r = ti.ndarray(dtype=ti.f32, shape=self.target_r.shape)
+                    self.ti_target_g = ti.ndarray(dtype=ti.f32, shape=self.target_g.shape)
+                    self.ti_target_b = ti.ndarray(dtype=ti.f32, shape=self.target_b.shape)
+                    self.ti_target_r.from_numpy(self.target_r)
+                    self.ti_target_g.from_numpy(self.target_g)
+                    self.ti_target_b.from_numpy(self.target_b)
 
                     self.ti_canvas = ti.ndarray(dtype=ti.f32, shape=target_image.shape)
+                    
+                    # Pre-allocate planar canvas channels in VRAM (R, G, B channels)
+                    self.ti_canvas_r = ti.ndarray(dtype=ti.f32, shape=self.target_r.shape)
+                    self.ti_canvas_g = ti.ndarray(dtype=ti.f32, shape=self.target_g.shape)
+                    self.ti_canvas_b = ti.ndarray(dtype=ti.f32, shape=self.target_b.shape)
                     
                     if alpha_mask is not None:
                         self.ti_alpha = ti.ndarray(dtype=ti.f32, shape=alpha_mask.shape)
@@ -690,11 +753,14 @@ class TaichiEvaluator(BaseEvaluator):
             raise RuntimeError("Taichi JIT Evaluator is not available or failed to initialize backend.")
             
 
+        height, width, _ = self.target_image.shape
+
         if not hasattr(self, "canvas_initialized") or not self.canvas_initialized:
             self.ti_canvas.from_numpy(current_canvas.astype(np.float32))
             self.canvas_initialized = True
             
-        height, width, _ = self.target_image.shape
+        # GPU 端 VRAM 內部動態分拆 Canvas 通道 (HWC -> Planar)
+        split_canvas_to_planar_gpu(self.ti_canvas, self.ti_canvas_r, self.ti_canvas_g, self.ti_canvas_b, height, width)
         max_r = max(10.0, min(width, height) / 3.0)
         current_max_r = params.get("current_max_r")
         if current_max_r is not None:
@@ -755,8 +821,8 @@ class TaichiEvaluator(BaseEvaluator):
         check_contour_jit = 1 if check_contour else 0
         
         taichi_parallel_search(
-            self.ti_target,
-            self.ti_canvas,
+            self.ti_target_r, self.ti_target_g, self.ti_target_b,
+            self.ti_canvas_r, self.ti_canvas_g, self.ti_canvas_b,
             self.ti_candidates,
             self.ti_results,
             self.ti_alpha,
@@ -786,7 +852,9 @@ class TaichiEvaluator(BaseEvaluator):
         if use_pure_gpu:
             parallel_hill_climb_gpu(
                 self.ti_best_candidate, self.ti_climb_candidates, self.ti_climb_results,
-                self.ti_target, self.ti_canvas, self.ti_alpha, check_contour_jit,
+                self.ti_target_r, self.ti_target_g, self.ti_target_b,
+                self.ti_canvas_r, self.ti_canvas_g, self.ti_canvas_b,
+                self.ti_alpha, check_contour_jit,
                 use_freeze, ti_freeze_ref, use_weight, ti_weight_ref, use_uncovered, ti_uncovered_ref,
                 height, width, float(max_r), sa_enabled, sa_initial_temp, sa_cooling_rate, optimization_steps
             )
@@ -828,9 +896,17 @@ class TaichiEvaluator(BaseEvaluator):
             try:
                 from evaluators import numba_kernels
                 
+                canvas_r = np.ascontiguousarray(current_canvas[:, :, 0])
+                canvas_g = np.ascontiguousarray(current_canvas[:, :, 1])
+                canvas_b = np.ascontiguousarray(current_canvas[:, :, 2])
+                
                 x_c, y_c, r_x, r_y, theta, r, g, b, alpha, delta = numba_kernels.serial_hill_climb(
-                    self.target_image,
-                    current_canvas,
+                    self.target_r,
+                    self.target_g,
+                    self.target_b,
+                    canvas_r,
+                    canvas_g,
+                    canvas_b,
                     x_c, y_c, r_x, r_y, theta, int(alpha), r, g, b, delta,
                     optimization_steps,
                     self.alpha_mask if self.alpha_mask is not None else np.zeros((1, 1), dtype=np.float32),

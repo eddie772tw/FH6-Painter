@@ -13,6 +13,11 @@ class BaseEvaluator(ABC):
         """
         self.target_image = target_image
         self.alpha_mask = alpha_mask if alpha_mask is not None else np.zeros((1, 1), dtype=np.float32)
+        
+        # 靜態影像平面通道拆分，以支援 CPU 與 GPU 的向量化連續載入
+        self.target_r = np.ascontiguousarray(target_image[:, :, 0])
+        self.target_g = np.ascontiguousarray(target_image[:, :, 1])
+        self.target_b = np.ascontiguousarray(target_image[:, :, 2])
 
     @abstractmethod
     def get_name(self) -> str:

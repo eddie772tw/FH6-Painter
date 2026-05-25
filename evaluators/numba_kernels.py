@@ -5,15 +5,23 @@ import numba
 
 
 @numba.jit(nopython=True, fastmath=True, cache=True)
-def evaluate_candidate(target, canvas, x_c, y_c, r_x, r_y, theta, alpha, alpha_mask, check_contour, use_freeze=False, freeze_mask=None, use_weight=False, weight_map=None, use_uncovered=False, uncovered_map=None):
+def evaluate_candidate(
+    target_r, target_g, target_b,
+    canvas_r, canvas_g, canvas_b,
+    x_c, y_c, r_x, r_y, theta, alpha,
+    alpha_mask, check_contour,
+    use_freeze, freeze_mask,
+    use_weight, weight_map,
+    use_uncovered, uncovered_map
+):
     """
-    Evaluates a candidate rotated ellipse against the target image.
-    Calculates the optimal average color and the Delta Mean Squared Error (MSE).
-    Optimized via Loop Fusion (single-pass) and Strength Reduction.
-    If check_contour is True, guarantees the ellipse is strictly inside the target contour.
+    Evaluates a candidate rotated ellipse against the target image channels.
+    Uses separate contiguous planar target/canvas channels (unit stride) and an
+    analytical scanline solver to solve the boundary of the ellipse for each row y,
+    eliminating the inner loop 'if' condition and early returns to unlock AVX2 vectorization.
     """
-    height = target.shape[0]
-    width = target.shape[1]
+    height = target_r.shape[0]
+    width = target_r.shape[1]
     
     cos_t = np.float32(math.cos(theta))
     sin_t = np.float32(math.sin(theta))
@@ -22,7 +30,6 @@ def evaluate_candidate(target, canvas, x_c, y_c, r_x, r_y, theta, alpha, alpha_m
     x_half = math.sqrt(r_x*r_x * cos_t*cos_t + r_y*r_y * sin_t*sin_t)
     y_half = math.sqrt(r_x*r_x * sin_t*sin_t + r_y*r_y * cos_t*cos_t)
     
-
     if (x_c - x_half < 0.0) or (x_c + x_half > np.float32(width)) or (y_c - y_half < 0.0) or (y_c + y_half > np.float32(height)):
         return np.float32(0.0), np.float32(0.0), np.float32(0.0), np.float32(99999999.0)
         
@@ -34,9 +41,35 @@ def evaluate_candidate(target, canvas, x_c, y_c, r_x, r_y, theta, alpha, alpha_m
     inv_rx2 = np.float32(1.0 / (r_x * r_x) if r_x > 0 else 0.0)
     inv_ry2 = np.float32(1.0 / (r_y * r_y) if r_y > 0 else 0.0)
     
-
-    count = 0
+    # Precomputed constant terms for quadratic boundary solving
+    sin_cos = sin_t * cos_t
+    a = inv_rx2 * cos_t * cos_t + inv_ry2 * sin_t * sin_t
+    b_coeff = sin_cos * (inv_rx2 - inv_ry2)
+    c_y_coeff = inv_rx2 * sin_t * sin_t + inv_ry2 * cos_t * cos_t
     
+    # Validation Pass: Check contour and freeze mask first in a scalar loop with early return
+    # This isolates early exits from the heavy accumulation loop so LLVM can vectorize
+    if check_contour or use_freeze:
+        for y in range(min_y, max_y + 1):
+            dy = np.float32(y - y_c)
+            b_val = dy * b_coeff
+            c_val = dy * dy * c_y_coeff - 1.0
+            discriminant = b_val * b_val - a * c_val
+            if discriminant >= 0.0:
+                sqrt_d = math.sqrt(discriminant)
+                dx_min = (-b_val - sqrt_d) / a
+                dx_max = (-b_val + sqrt_d) / a
+                x_start = max(min_x, int(math.ceil(x_c + dx_min)))
+                x_end = min(max_x, int(math.floor(x_c + dx_max)))
+                
+                for x in range(x_start, x_end + 1):
+                    if check_contour and alpha_mask[y, x] <= 10.0:
+                        return np.float32(0.0), np.float32(0.0), np.float32(0.0), np.float32(99999999.0)
+                    if use_freeze and freeze_mask[y, x] == 1:
+                        return np.float32(0.0), np.float32(0.0), np.float32(0.0), np.float32(99999999.0)
+
+    # Accumulation Pass variables
+    count = 0.0
     sum_t_r = np.float32(0.0)
     sum_t_g = np.float32(0.0)
     sum_t_b = np.float32(0.0)
@@ -53,34 +86,28 @@ def evaluate_candidate(target, canvas, x_c, y_c, r_x, r_y, theta, alpha, alpha_m
     sum_ct_g = np.float32(0.0)
     sum_ct_b = np.float32(0.0)
     
+    # Heavy Accumulation Loop: Contiguous memory access, zero branching, highly vectorizable (AVX2/FMA3)
     for y in range(min_y, max_y + 1):
         dy = np.float32(y - y_c)
-
-        dx_start = np.float32(min_x - x_c)
-        rx = dx_start * cos_t + dy * sin_t
-        ry = -dx_start * sin_t + dy * cos_t
-        
-        for x in range(min_x, max_x + 1):
-            if (rx * rx) * inv_rx2 + (ry * ry) * inv_ry2 <= 1.0:
-
-                if check_contour:
-                    if alpha_mask[y, x] <= 10.0:
-
-                        return np.float32(0.0), np.float32(0.0), np.float32(0.0), np.float32(99999999.0)
+        b_val = dy * b_coeff
+        c_val = dy * dy * c_y_coeff - 1.0
+        discriminant = b_val * b_val - a * c_val
+        if discriminant >= 0.0:
+            sqrt_d = math.sqrt(discriminant)
+            dx_min = (-b_val - sqrt_d) / a
+            dx_max = (-b_val + sqrt_d) / a
+            x_start = max(min_x, int(math.ceil(x_c + dx_min)))
+            x_end = min(max_x, int(math.floor(x_c + dx_max)))
+            
+            for x in range(x_start, x_end + 1):
+                t_r = target_r[y, x]
+                t_g = target_g[y, x]
+                t_b = target_b[y, x]
                 
-
-                if use_freeze and freeze_mask[y, x] == 1:
-                    return np.float32(0.0), np.float32(0.0), np.float32(0.0), np.float32(99999999.0)
-                        
-                t_r = target[y, x, 0]
-                t_g = target[y, x, 1]
-                t_b = target[y, x, 2]
+                c_r = canvas_r[y, x]
+                c_g = canvas_g[y, x]
+                c_b = canvas_b[y, x]
                 
-                c_r = canvas[y, x, 0]
-                c_g = canvas[y, x, 1]
-                c_b = canvas[y, x, 2]
-                
-
                 w = np.float32(1.0)
                 if use_weight:
                     w = weight_map[y, x]
@@ -103,10 +130,6 @@ def evaluate_candidate(target, canvas, x_c, y_c, r_x, r_y, theta, alpha, alpha_m
                 sum_ct_r += (c_r * t_r) * w
                 sum_ct_g += (c_g * t_g) * w
                 sum_ct_b += (c_b * t_b) * w
-                
-            # Strength reduction: linear rx/ry increment
-            rx += cos_t
-            ry -= sin_t
             
     if count == 0:
         return np.float32(0.0), np.float32(0.0), np.float32(0.0), np.float32(99999999.0)
@@ -222,7 +245,15 @@ def update_uncovered_mask(uncovered_map, x_c, y_c, r_x, r_y, theta):
 
 
 @numba.jit(nopython=True, parallel=True, fastmath=True, cache=True)
-def parallel_random_search(target, canvas, num_candidates, width, height, max_r, alpha_mask, check_contour, use_importance, error_prob, use_freeze=False, freeze_mask=None, use_weight=False, weight_map=None, use_uncovered=False, uncovered_map=None):
+def parallel_random_search(
+    target_r, target_g, target_b,
+    canvas_r, canvas_g, canvas_b,
+    num_candidates, width, height, max_r, alpha_mask, check_contour,
+    use_importance, error_prob,
+    use_freeze=False, freeze_mask=None,
+    use_weight=False, weight_map=None,
+    use_uncovered=False, uncovered_map=None
+):
 
     if use_importance and error_prob.shape[0] > 1:
 
@@ -261,7 +292,8 @@ def parallel_random_search(target, canvas, num_candidates, width, height, max_r,
 
     for i in numba.prange(num_candidates):
         r, g, b, delta = evaluate_candidate(
-            target, canvas, 
+            target_r, target_g, target_b,
+            canvas_r, canvas_g, canvas_b,
             x_c_arr[i], y_c_arr[i], 
             r_x_arr[i], r_y_arr[i], 
             theta_arr[i], int(alpha_arr[i]),
@@ -286,7 +318,16 @@ def parallel_random_search(target, canvas, num_candidates, width, height, max_r,
 
 
 @numba.jit(nopython=True, fastmath=True, cache=True)
-def serial_hill_climb(target, canvas, x_c, y_c, r_x, r_y, theta, alpha, r, g, b, best_delta, optimization_steps, alpha_mask, check_contour, sa_enabled=False, initial_temp=5000.0, cooling_rate=0.95, max_r=999.0, use_freeze=False, freeze_mask=None, use_weight=False, weight_map=None, use_uncovered=False, uncovered_map=None):
+def serial_hill_climb(
+    target_r, target_g, target_b,
+    canvas_r, canvas_g, canvas_b,
+    x_c, y_c, r_x, r_y, theta, alpha, r, g, b, best_delta,
+    optimization_steps, alpha_mask, check_contour,
+    sa_enabled=False, initial_temp=5000.0, cooling_rate=0.95, max_r=999.0,
+    use_freeze=False, freeze_mask=None,
+    use_weight=False, weight_map=None,
+    use_uncovered=False, uncovered_map=None
+):
     curr_x_c = np.float32(x_c)
     curr_y_c = np.float32(y_c)
     curr_r_x = np.float32(r_x)
@@ -313,7 +354,14 @@ def serial_hill_climb(target, canvas, x_c, y_c, r_x, r_y, theta, alpha, r, g, b,
         ntheta = curr_theta + np.float32(np.random.normal(0.0, 0.25 * scale))
         nalpha = 255
         
-        nr, ng, nb, delta = evaluate_candidate(target, canvas, nx_c, ny_c, nr_x, nr_y, ntheta, nalpha, alpha_mask, check_contour, use_freeze, freeze_mask, use_weight, weight_map, use_uncovered, uncovered_map)
+        nr, ng, nb, delta = evaluate_candidate(
+            target_r, target_g, target_b,
+            canvas_r, canvas_g, canvas_b,
+            nx_c, ny_c, nr_x, nr_y, ntheta, nalpha,
+            alpha_mask, check_contour,
+            use_freeze, freeze_mask, use_weight, weight_map,
+            use_uncovered, uncovered_map
+        )
         
         diff = delta - curr_delta
         accept = False

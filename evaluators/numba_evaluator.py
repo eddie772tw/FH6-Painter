@@ -58,30 +58,39 @@ class NumbaEvaluator(BaseEvaluator):
             uncovered_map = np.ones((1, 1), dtype=np.float32)
 
 
+        # CPU 端動態平面拆分 Canvas 通道 (C-contiguous 2D planar arrays)
+        canvas_r = np.ascontiguousarray(current_canvas[:, :, 0])
+        canvas_g = np.ascontiguousarray(current_canvas[:, :, 1])
+        canvas_b = np.ascontiguousarray(current_canvas[:, :, 2])
+
         x_c, y_c, r_x, r_y, theta, alpha, r, g, b, delta = numba_kernels.parallel_random_search(
-            self.target_image, current_canvas, batch_size, width, height, max_r, alpha_mask, check_contour,
+            self.target_r, self.target_g, self.target_b,
+            canvas_r, canvas_g, canvas_b,
+            batch_size, width, height, max_r, alpha_mask, check_contour,
             params.get("use_importance", False), error_prob,
             params.get("use_freeze", False), freeze_mask,
             params.get("use_weight", False), weight_map,
             params.get("use_uncovered", False), uncovered_map
         )
         
-
         fallback_active = False
         if params.get("use_freeze", False) and delta >= 90000000.0:
             fallback_active = True
             x_c, y_c, r_x, r_y, theta, alpha, r, g, b, delta = numba_kernels.parallel_random_search(
-                self.target_image, current_canvas, batch_size, width, height, max_r, alpha_mask, check_contour,
+                self.target_r, self.target_g, self.target_b,
+                canvas_r, canvas_g, canvas_b,
+                batch_size, width, height, max_r, alpha_mask, check_contour,
                 params.get("use_importance", False), error_prob,
                 False, freeze_mask,
                 params.get("use_weight", False), weight_map,
                 params.get("use_uncovered", False), uncovered_map
             )
             
-
         hill_climb_freeze = params.get("use_freeze", False) if not fallback_active else False
         x_c, y_c, r_x, r_y, theta, r, g, b, alpha, delta = numba_kernels.serial_hill_climb(
-            self.target_image, current_canvas, x_c, y_c, r_x, r_y, theta, alpha, r, g, b, delta,
+            self.target_r, self.target_g, self.target_b,
+            canvas_r, canvas_g, canvas_b,
+            x_c, y_c, r_x, r_y, theta, alpha, r, g, b, delta,
             params.get("optimization_steps", 50), alpha_mask, check_contour,
             params.get("sa_enabled", False), params.get("sa_initial_temp", 5000.0), params.get("sa_cooling_rate", 0.95),
             max_r, hill_climb_freeze, freeze_mask,
