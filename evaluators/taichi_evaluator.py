@@ -747,14 +747,19 @@ class TaichiEvaluator(BaseEvaluator):
         )
         
         # 3. GPU 並行搜尋與評估
-        check_contour = 1 if (self.alpha_mask is not None and params.get("check_contour", False)) else 0
+        # 輪廓約束安全判定：若為 1x1 的佔位符或無效遮罩，則強行關閉輪廓約束以防止 GPU 越界判定錯誤
+        check_contour = params.get("check_contour", False)
+        if self.alpha_mask is None or self.alpha_mask.shape == (1, 1):
+            check_contour = False
+        check_contour_jit = 1 if check_contour else 0
+        
         taichi_parallel_search(
             self.ti_target,
             self.ti_canvas,
             self.ti_candidates,
             self.ti_results,
             self.ti_alpha,
-            check_contour,
+            check_contour_jit,
             use_freeze,
             ti_freeze_ref,
             use_weight,
@@ -782,7 +787,7 @@ class TaichiEvaluator(BaseEvaluator):
             self.ti_target,
             self.ti_canvas,
             self.ti_alpha,
-            check_contour,
+            check_contour_jit,
             use_freeze,
             ti_freeze_ref,
             use_weight,
