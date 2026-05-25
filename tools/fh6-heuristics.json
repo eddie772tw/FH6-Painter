@@ -1,0 +1,10 @@
+{
+    "successful_regions": [
+        {
+            "size": 11730944,
+            "protect": 4,
+            "offset_ratio": 10549120
+        }
+    ],
+    "last_success_addr": 2346950670208
+}

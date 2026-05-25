@@ -51,5 +51,12 @@ README_FH6_READY.md
 .idea/
 *.png
 /.venv
+/venv
+/.venv*/
 build/
 dist/
+*.spec
+
+# Keep key configuration JSONs tracked
+!optimization_settings.json
+!tools/fh6-heuristics.json
