@@ -94,56 +94,59 @@ def evaluate_candidate_ti(
         inv_ry2 = 1.0 / (r_y * r_y) if r_y > 0.0 else 0.0
         
         for y in range(min_y, max_y + 1):
+            if is_valid == 0:
+                break
             dy = ti.cast(y, ti.f32) - y_c
             dx_start = ti.cast(min_x, ti.f32) - x_c
             rx = dx_start * cos_t + dy * sin_t
             ry = -dx_start * sin_t + dy * cos_t
             
             for x in range(min_x, max_x + 1):
+                if is_valid == 0:
+                    break
                 if (rx * rx) * inv_rx2 + (ry * ry) * inv_ry2 <= 1.0:
+                    # 輪廓約束
+                    if check_contour == 1:
+                        if alpha_mask[y, x] <= 10.0:
+                            is_valid = 0
+                            
+                    # 動態凍結遮罩
+                    if use_freeze == 1:
+                        if freeze_mask[y, x] == 1:
+                            is_valid = 0
+                            
                     if is_valid == 1:
-                        # 輪廓約束
-                        if check_contour == 1:
-                            if alpha_mask[y, x] <= 10.0:
-                                is_valid = 0
-                                
-                        # 動態凍結遮罩
-                        if use_freeze == 1:
-                            if freeze_mask[y, x] == 1:
-                                is_valid = 0
-                                
-                        if is_valid == 1:
-                            t_r = target[y, x, 0]
-                            t_g = target[y, x, 1]
-                            t_b = target[y, x, 2]
+                        t_r = target[y, x, 0]
+                        t_g = target[y, x, 1]
+                        t_b = target[y, x, 2]
+                        
+                        c_r = canvas[y, x, 0]
+                        c_g = canvas[y, x, 1]
+                        c_b = canvas[y, x, 2]
+                        
+                        w = 1.0
+                        if use_weight == 1:
+                            w = weight_map[y, x]
+                        if use_uncovered == 1:
+                            w = w * uncovered_map[y, x]
                             
-                            c_r = canvas[y, x, 0]
-                            c_g = canvas[y, x, 1]
-                            c_b = canvas[y, x, 2]
-                            
-                            w = 1.0
-                            if use_weight == 1:
-                                w = weight_map[y, x]
-                            if use_uncovered == 1:
-                                w = w * uncovered_map[y, x]
-                                
-                            count += w
-                            sum_t_r += t_r * w
-                            sum_t_g += t_g * w
-                            sum_t_b += t_b * w
-                            
-                            sum_c_r += c_r * w
-                            sum_c_g += c_g * w
-                            sum_c_b += c_b * w
-                            
-                            sum_c2_r += (c_r * c_r) * w
-                            sum_c2_g += (c_g * c_g) * w
-                            sum_c2_b += (c_b * c_b) * w
-                            
-                            sum_ct_r += (c_r * t_r) * w
-                            sum_ct_g += (c_g * t_g) * w
-                            sum_ct_b += (c_b * t_b) * w
-                            
+                        count += w
+                        sum_t_r += t_r * w
+                        sum_t_g += t_g * w
+                        sum_t_b += t_b * w
+                        
+                        sum_c_r += c_r * w
+                        sum_c_g += c_g * w
+                        sum_c_b += c_b * w
+                        
+                        sum_c2_r += (c_r * c_r) * w
+                        sum_c2_g += (c_g * c_g) * w
+                        sum_c2_b += (c_b * c_b) * w
+                        
+                        sum_ct_r += (c_r * t_r) * w
+                        sum_ct_g += (c_g * t_g) * w
+                        sum_ct_b += (c_b * t_b) * w
+                        
                 rx += cos_t
                 ry -= sin_t
                 
@@ -268,6 +271,9 @@ class TaichiEvaluator(BaseEvaluator):
                     self.ti_target = ti.ndarray(dtype=ti.f32, shape=target_image.shape)
                     self.ti_target.from_numpy(target_image.astype(np.float32))
                     
+                    # 預先分配大體積且形狀固定的 canvas 緩衝區
+                    self.ti_canvas = ti.ndarray(dtype=ti.f32, shape=target_image.shape)
+                    
                     if alpha_mask is not None:
                         self.ti_alpha = ti.ndarray(dtype=ti.f32, shape=alpha_mask.shape)
                         self.ti_alpha.from_numpy(alpha_mask.astype(np.float32))
@@ -275,6 +281,18 @@ class TaichiEvaluator(BaseEvaluator):
                         # 傳入 1x1 的佔位 ndarray
                         self.ti_alpha = ti.ndarray(dtype=ti.f32, shape=(1, 1))
                         self.ti_alpha.from_numpy(np.zeros((1, 1), dtype=np.float32))
+                        
+                    # 預先分配其它畫布大小的 Map，避免每次 search_best_shape 都重新分配
+                    height, width, _ = target_image.shape
+                    self.ti_freeze = ti.ndarray(dtype=ti.uint8, shape=(height, width))
+                    self.ti_weight = ti.ndarray(dtype=ti.f32, shape=(height, width))
+                    self.ti_uncovered = ti.ndarray(dtype=ti.f32, shape=(height, width))
+                    
+                    # 預置一個空的 (1, 1) 用於未使用時的佔位符，減少非必要拷貝與分配
+                    self.ti_empty_u8 = ti.ndarray(dtype=ti.uint8, shape=(1, 1))
+                    self.ti_empty_u8.from_numpy(np.zeros((1, 1), dtype=np.uint8))
+                    self.ti_empty_f32 = ti.ndarray(dtype=ti.f32, shape=(1, 1))
+                    self.ti_empty_f32.from_numpy(np.zeros((1, 1), dtype=np.float32))
                 except Exception as e:
                     print(f"[Taichi JIT VRAM Allocation Error] {e}")
                     self.initialized = False
@@ -334,56 +352,61 @@ class TaichiEvaluator(BaseEvaluator):
         # 拼接成候選矩陣
         candidates = np.stack([x_c_arr, y_c_arr, r_x_arr, r_y_arr, theta_arr, alpha_arr], axis=1).astype(np.float32)
         
-        # 2. 上傳變動的 canvas 到 VRAM
-        ti_canvas = ti.ndarray(dtype=ti.f32, shape=current_canvas.shape)
-        ti_canvas.from_numpy(current_canvas.astype(np.float32))
+        # 2. 上傳變動的 canvas 到 VRAM，直接重用 self.ti_canvas 緩衝區
+        self.ti_canvas.from_numpy(current_canvas)
         
-        ti_candidates = ti.ndarray(dtype=ti.f32, shape=(batch_size, 6))
-        ti_candidates.from_numpy(candidates)
+        # 快取與動態調整 ti_candidates 和 ti_results，避免每次都重新分配
+        if not hasattr(self, "ti_candidates") or self.ti_candidates.shape[0] != batch_size:
+            self.ti_candidates = ti.ndarray(dtype=ti.f32, shape=(batch_size, 6))
+            self.ti_results = ti.ndarray(dtype=ti.f32, shape=(batch_size, 4))
+            
+        self.ti_candidates.from_numpy(candidates)
         
-        ti_results = ti.ndarray(dtype=ti.f32, shape=(batch_size, 4))
-        results_np = np.zeros((batch_size, 4), dtype=np.float32)
-        ti_results.from_numpy(results_np)
-        
-        # 3. 處理其它遮罩與加權 Map 的 VRAM 分配
+        # 3. 處理其它遮罩與加權 Map 的 VRAM 更新 (重用機制)
         check_contour = 1 if (self.alpha_mask is not None and params.get("check_contour", False)) else 0
         
         use_freeze = 1 if params.get("use_freeze", False) else 0
         freeze_mask = params.get("freeze_mask")
-        ti_freeze = ti.ndarray(dtype=ti.uint8, shape=freeze_mask.shape if freeze_mask is not None else (1, 1))
-        ti_freeze.from_numpy(freeze_mask if freeze_mask is not None else np.zeros((1, 1), dtype=np.uint8))
-        
+        ti_freeze_ref = self.ti_empty_u8
+        if use_freeze == 1 and freeze_mask is not None:
+            self.ti_freeze.from_numpy(freeze_mask)
+            ti_freeze_ref = self.ti_freeze
+            
         use_weight = 1 if params.get("use_weight", False) else 0
         weight_map = params.get("weight_map")
-        ti_weight = ti.ndarray(dtype=ti.f32, shape=weight_map.shape if weight_map is not None else (1, 1))
-        ti_weight.from_numpy(weight_map if weight_map is not None else np.zeros((1, 1), dtype=np.float32))
-        
+        ti_weight_ref = self.ti_empty_f32
+        if use_weight == 1 and weight_map is not None:
+            self.ti_weight.from_numpy(weight_map)
+            ti_weight_ref = self.ti_weight
+            
         use_uncovered = 1 if params.get("use_uncovered", False) else 0
         uncovered_map = params.get("uncovered_map")
-        ti_uncovered = ti.ndarray(dtype=ti.f32, shape=uncovered_map.shape if uncovered_map is not None else (1, 1))
-        ti_uncovered.from_numpy(uncovered_map if uncovered_map is not None else np.zeros((1, 1), dtype=np.float32))
+        ti_uncovered_ref = self.ti_empty_f32
+        if use_uncovered == 1 and uncovered_map is not None:
+            self.ti_uncovered.from_numpy(uncovered_map)
+            ti_uncovered_ref = self.ti_uncovered
         
         # 4. 啟動 GPU 並行搜尋核
         taichi_parallel_search(
             self.ti_target,
-            ti_canvas,
-            ti_candidates,
-            ti_results,
+            self.ti_canvas,
+            self.ti_candidates,
+            self.ti_results,
             self.ti_alpha,
             check_contour,
             use_freeze,
-            ti_freeze,
+            ti_freeze_ref,
             use_weight,
-            ti_weight,
+            ti_weight_ref,
             use_uncovered,
-            ti_uncovered,
+            ti_uncovered_ref,
             height,
             width,
             batch_size
         )
         
         # 5. 回讀 GPU 計算結果，並在 CPU 端以極速挑選最優解
-        results_np = ti_results.to_numpy()
+        results_np = self.ti_results.to_numpy()
         deltas = results_np[:, 3]
         best_idx = np.argmin(deltas)
         
