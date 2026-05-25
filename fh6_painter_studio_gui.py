@@ -925,14 +925,43 @@ class ForzaStudioGUI:
         taichi_arch = self.combo_taichi_arch.get()
         taichi_device_id = self.combo_taichi_device.current()
 
-        # Launch Worker Thread
+        # Launch Worker Thread in Safe Wrapper to prevent silent thread deaths
         self.active_thread = threading.Thread(
-            target=run_generator,
+            target=self.safe_run_generator,
             args=(img_path, output_json, profile_path, layers, candidates, steps, generator_cb, self.opt_settings, engine_code),
             kwargs={"taichi_arch": taichi_arch, "taichi_device_id": taichi_device_id},
             daemon=True
         )
         self.active_thread.start()
+
+    def safe_run_generator(self, *args, **kwargs):
+        """安全的外掛執行緒外殼，捕獲生圖引擎內部可能引發的所有異常"""
+        try:
+            from tools.fh6_painter_generator import run_generator
+            res = run_generator(*args, **kwargs)
+            if res != 0:
+                self.root.after(0, lambda: self.on_generation_failed("Generator returned a non-zero exit code. Please inspect terminal diagnostics."))
+        except Exception as e:
+            # 捕獲所有異常 (包括 Taichi 編譯、硬體相容性、CUDA/OpenGL 崩潰)
+            import traceback
+            tb = traceback.format_exc()
+            self.root.after(0, lambda: self.on_generation_failed(f"{e}\n\n[Traceback]\n{tb}"))
+
+    def on_generation_failed(self, error_message):
+        """當生圖引擎異常崩潰時，優雅地通知使用者並完全重置 UI 狀態"""
+        self.is_generating = False
+        self.unlock_ui()
+        self.status_lbl.configure(text="GEN ERROR", fg="#D32F2F")
+        self.log_to_console(f"\n[ERROR] Generation thread failed:\n{error_message}\n")
+        
+        # 精緻高階錯誤提示視窗
+        messagebox.showerror(
+            "Livery Engine Error",
+            f"An error occurred within the livery generation engine:\n\n{error_message}\n"
+            "Suggestions:\n"
+            "1. If using Taichi, try switching 'Taichi Arch GPU Mode' to 'Vulkan' (Recommended) or 'CPU'.\n"
+            "2. Switch 'JIT Engine Plugin' to 'Numba JIT' for maximum baseline compatibility."
+        )
 
     def stop_generation(self):
         """Sets the cancellation flag to abort active shape generation."""
