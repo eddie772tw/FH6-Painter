@@ -1192,6 +1192,11 @@ class ForzaStudioGUI:
                         data = json.load(f)
                     shapes = data.get("shapes", [])
                     if len(shapes) > 0:
+                        # QoL 2: 自動更新 Max Layer 控制項的值以匹配 JSON 裡的圖層數 (扣除第0層背景)
+                        num_layers = len(shapes) - 1
+                        if num_layers > 0:
+                            self.val_layers.set(str(num_layers))
+
                         header = shapes[0]
                         # Extract background dimensions and colors from header shape
                         h_data = header.get("data", [0.0, 0.0, 600.0, 600.0])
@@ -1418,6 +1423,13 @@ class ForzaStudioGUI:
                 self.status_lbl.configure(text="INJECT DONE", fg=self.color_blue)
                 self.log_to_console("\n[System] Livery memory injection completed.\n")
 
+                # QoL 2: 導入完成後，彈出傳統中文對話框提示玩家導入了多少幾何圖層
+                imported_layers = self.val_layers.get()
+                messagebox.showinfo(
+                    "導入成功 / Import Completed",
+                    f"彩繪圖層注入成功！\n共成功導入 {imported_layers} 個幾何圖層至遊戲記憶體中。",
+                )
+
         # Loop again in 100ms
         self.root.after(100, self.poll_background_updates)
 
@@ -1616,19 +1628,40 @@ class ForzaStudioGUI:
             messagebox.showerror("Error", f"Geometry JSON file not found:\n{json_path}")
             return
 
-        # Layers count based on GUI value (matching our search count)
-        try:
-            layers = int(self.val_layers.get())
-        except ValueError:
-            layers = 3000
+        # QoL 2: 載入 JSON 路徑時，自動解析 JSON 檔內的實體圖層數作為注入基準，免除手動設定
+        if json_path.lower().endswith(".json") and os.path.exists(json_path):
+            try:
+                import json
+
+                with open(json_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                shapes = data.get("shapes", [])
+                if len(shapes) > 0:
+                    layers = len(shapes) - 1
+                    self.val_layers.set(str(layers))
+                else:
+                    layers = 3000
+            except Exception:
+                try:
+                    layers = int(self.val_layers.get())
+                except ValueError:
+                    layers = 3000
+        else:
+            try:
+                layers = int(self.val_layers.get())
+            except ValueError:
+                layers = 3000
 
         # Confirm user opens ungrouped shapes
         confirm = messagebox.askyesno(
-            "Game Injection Confirmation",
-            "Before injecting, please ensure:\n"
-            "1. Forza Horizon 6 (forzahorizon6.exe) is running.\n"
-            f"2. You are inside the Vinyl Group Editor with a fresh template of exactly {layers} ungrouped circular layers.\n\n"
-            "Would you like to proceed with memory injection?",
+            "遊戲記憶體注入確認 / Game Injection Confirmation",
+            "在開始注入前，請務必確認以下事項：\n\n"
+            "1. 《極限競速：地平線 6》遊戲主程式 (forzahorizon6.exe) 正在運行中。\n"
+            "2. 您目前已進入遊戲內的「彩繪貼圖組編輯器 (Vinyl Group Editor)」。\n"
+            "3. ⚠️【極度重要】您在編輯器內建立的圓形圖層數量，必須「恰好精準等於」下方數值，不能多也不能少：\n"
+            f"   👉 必須剛好是：{layers} 個未編組的圓形圖層！\n"
+            "   （若圖層數量有任何偏差，記憶體搜尋將會失敗，且可能導致注入崩潰！）\n\n"
+            "您是否確定要繼續執行記憶體注入？",
         )
 
         if not confirm:

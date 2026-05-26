@@ -126,6 +126,29 @@ Support both CPU and GPU JIT acceleration, provide GUI & smooth import expierenc
 
 ---
 
+## 開發者規範與程式碼格式化 / Developer Guide & Formatting
+
+專案採用 **[Ruff](https://github.com/astral-sh/ruff)** 作為標準的程式碼格式化與風格檢查工具。為確保代碼風格一致，並能順利通過 GitHub Actions 的 CI 檢查，請在提交代碼前遵循以下程序進行格式化：
+
+*   **全量格式化代碼 / Reformat All Code**：
+    ```bash
+    # 在虛擬環境外 / Outside venv
+    ruff format .
+
+    # 在 Windows 虛擬環境內 / Inside Windows venv
+    .venv\Scripts\ruff.exe format .
+    ```
+*   **驗證排版格式 / Verify Code Formatting**：
+    ```bash
+    # 在虛擬環境外 / Outside venv
+    ruff format --check .
+
+    # 在 Windows 虛擬環境內 / Inside Windows venv
+    .venv\Scripts\ruff.exe format --check .
+    ```
+
+---
+
 ## 開源授權與致謝 / License & Credits
 
 *   **MIT License**：Copyright (c) 2026 罐頭 (eddie772tw) & 貢獻者。
