@@ -78,48 +78,51 @@ class PROCESSENTRY32(ctypes.Structure):
 
 
 # --- Win32 ctypes Function Setup ---
-kernel32 = ctypes.windll.kernel32
+if sys.platform == "win32":
+    kernel32 = ctypes.windll.kernel32
 
-kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
-kernel32.OpenProcess.restype = wintypes.HANDLE
+    kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    kernel32.OpenProcess.restype = wintypes.HANDLE
 
-kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
-kernel32.CloseHandle.restype = wintypes.BOOL
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel32.CloseHandle.restype = wintypes.BOOL
 
-kernel32.ReadProcessMemory.argtypes = [
-    wintypes.HANDLE,
-    ctypes.c_void_p,
-    ctypes.c_void_p,
-    ctypes.c_size_t,
-    ctypes.POINTER(ctypes.c_size_t),
-]
-kernel32.ReadProcessMemory.restype = wintypes.BOOL
+    kernel32.ReadProcessMemory.argtypes = [
+        wintypes.HANDLE,
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+        ctypes.c_size_t,
+        ctypes.POINTER(ctypes.c_size_t),
+    ]
+    kernel32.ReadProcessMemory.restype = wintypes.BOOL
 
-kernel32.WriteProcessMemory.argtypes = [
-    wintypes.HANDLE,
-    ctypes.c_void_p,
-    ctypes.c_void_p,
-    ctypes.c_size_t,
-    ctypes.POINTER(ctypes.c_size_t),
-]
-kernel32.WriteProcessMemory.restype = wintypes.BOOL
+    kernel32.WriteProcessMemory.argtypes = [
+        wintypes.HANDLE,
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+        ctypes.c_size_t,
+        ctypes.POINTER(ctypes.c_size_t),
+    ]
+    kernel32.WriteProcessMemory.restype = wintypes.BOOL
 
-kernel32.VirtualQueryEx.argtypes = [
-    wintypes.HANDLE,
-    ctypes.c_void_p,
-    ctypes.POINTER(MEMORY_BASIC_INFORMATION64),
-    ctypes.c_size_t,
-]
-kernel32.VirtualQueryEx.restype = ctypes.c_size_t
+    kernel32.VirtualQueryEx.argtypes = [
+        wintypes.HANDLE,
+        ctypes.c_void_p,
+        ctypes.POINTER(MEMORY_BASIC_INFORMATION64),
+        ctypes.c_size_t,
+    ]
+    kernel32.VirtualQueryEx.restype = ctypes.c_size_t
 
-kernel32.CreateToolhelp32Snapshot.argtypes = [wintypes.DWORD, wintypes.DWORD]
-kernel32.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
+    kernel32.CreateToolhelp32Snapshot.argtypes = [wintypes.DWORD, wintypes.DWORD]
+    kernel32.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
 
-kernel32.Process32First.argtypes = [wintypes.HANDLE, ctypes.POINTER(PROCESSENTRY32)]
-kernel32.Process32First.restype = wintypes.BOOL
+    kernel32.Process32First.argtypes = [wintypes.HANDLE, ctypes.POINTER(PROCESSENTRY32)]
+    kernel32.Process32First.restype = wintypes.BOOL
 
-kernel32.Process32Next.argtypes = [wintypes.HANDLE, ctypes.POINTER(PROCESSENTRY32)]
-kernel32.Process32Next.restype = wintypes.BOOL
+    kernel32.Process32Next.argtypes = [wintypes.HANDLE, ctypes.POINTER(PROCESSENTRY32)]
+    kernel32.Process32Next.restype = wintypes.BOOL
+else:
+    kernel32 = None
 
 # --- Numba JIT Compilation & Fallbacks ---
 HAS_NUMBA = False
