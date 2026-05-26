@@ -31,6 +31,13 @@ class TestImporter(unittest.TestCase):
         }
         self.assertTrue(fh6_importer.is_header_shape(valid_header))
 
+        valid_header_no_alpha = {
+            "type": 1,
+            "data": [0.0, 0.0, 100, 100],
+            "color": [255, 255, 255, 255],
+        }
+        self.assertTrue(fh6_importer.is_header_shape(valid_header_no_alpha))
+
         invalid_type = valid_header.copy()
         invalid_type["type"] = 2
         self.assertFalse(fh6_importer.is_header_shape(invalid_type))
