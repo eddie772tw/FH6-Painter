@@ -1,0 +1,61 @@
+[tool.ruff]
+# 設定每行最大長度（符合 Black Style 標準）
+line-length = 88
+
+# 設定排除的目錄
+exclude = [
+    ".git",
+    ".venv",
+    "build",
+    "dist",
+    "__pycache__"
+]
+
+[tool.ruff.lint]
+# E, W: PEP8
+# F: Pyflakes
+# I: Isort (自動排序 import，符合 Black Style/PEP8)
+# D: Pydocstyle (Docstring 規範)
+select = [
+    "E", "W",
+    "F",
+    "I",
+    "D"
+]
+
+# 忽略以下規則以容許適度的靈活性：
+# E501: Line too long (對於包含大量中文字串與日誌輸出的專案)
+# E402: Module level import not at top of file (適應 JIT 評估器動態檢測載入機制)
+# E741: Ambiguous variable name
+# F401: Unused import (容許依賴檢測與選擇性模組 import 偵測機制)
+# D 系列: Pydocstyle (避免中英文 docstring 格式、標點與長度的嚴格限制誤報)
+ignore = [
+    "E501",
+    "E402",
+    "E741",
+    "F401",
+    "D100",
+    "D101",
+    "D102",
+    "D103",
+    "D104",
+    "D105",
+    "D106",
+    "D107",
+    "D200",
+    "D203",
+    "D205",
+    "D213",
+    "D415"
+]
+
+[tool.ruff.lint.pydocstyle]
+# 設定採用 Google Style Docstring 規範
+convention = "google"
+
+[tool.ruff.format]
+# 啟用 ruff 的 Black-compatible 格式化
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"

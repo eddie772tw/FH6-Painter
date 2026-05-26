@@ -2,8 +2,32 @@
 chcp 65001 >nul
 setlocal enabledelayedexpansion
 
-:: Check standard AppData location
+:: Check Python 3.13 standard location
+set "PY_EXE=%USERPROFILE%\AppData\Local\Programs\Python\Python313\python.exe"
+if exist "!PY_EXE!" (
+    goto :run
+)
+
+:: Check Python 3.14 standard location
+set "PY_EXE=%USERPROFILE%\AppData\Local\Programs\Python\Python314\python.exe"
+if exist "!PY_EXE!" (
+    goto :run
+)
+
+:: Check Python 3.12 standard location
 set "PY_EXE=%USERPROFILE%\AppData\Local\Programs\Python\Python312\python.exe"
+if exist "!PY_EXE!" (
+    goto :run
+)
+
+:: Check uv-managed Python 3.13 location
+set "PY_EXE=%USERPROFILE%\.local\bin\python3.13.exe"
+if exist "!PY_EXE!" (
+    goto :run
+)
+
+:: Check uv-managed Python 3.14 location
+set "PY_EXE=%USERPROFILE%\.local\bin\python3.14.exe"
 if exist "!PY_EXE!" (
     goto :run
 )
@@ -12,8 +36,10 @@ if exist "!PY_EXE!" (
 for /d %%d in ("%USERPROFILE%\AppData\Local\Programs\Python\Python*") do (
     if exist "%%d\python.exe" (
         set "PY_EXE=%%d\python.exe"
-        goto :run
     )
+)
+if exist "!PY_EXE!" (
+    goto :run
 )
 
 :: Check default path
@@ -55,8 +81,8 @@ if errorlevel 1 (
 :: 將 PY_EXE 切換為虛擬環境中的 Python 執行檔
 set "PY_EXE=%VENV_DIR%\Scripts\python.exe"
 
-:: 檢查是否缺少依賴庫 (嘗試載入 pillow/PIL, numpy, numba)
-"!PY_EXE!" -c "import PIL, numpy, numba" >nul 2>nul
+:: 檢查是否缺少基礎依賴庫 (嘗試載入 pillow/PIL、numpy、numba 和 taichi)
+"!PY_EXE!" -c "import PIL, numpy, numba, taichi" >nul 2>nul
 if %errorlevel% equ 0 goto :dependencies_ok
 
 echo [INFO] 偵測到缺少依賴套件或首次啟動。正在安裝依賴套件...
@@ -69,6 +95,12 @@ if errorlevel 1 (
 )
 
 :dependencies_ok
+echo ====================================================================
+echo      FH6 Painter - FH6 Livery Engine Startup Diagnostic
+echo ====================================================================
+"!PY_EXE!" -c "from evaluators import EvaluatorFactory; engines = EvaluatorFactory.get_available_evaluators(); print('\n[Diagnostic] Computational Engine Plugins Status:'); [print(' - {:<32} | Code: {:<12} | Status: {}'.format(e['name'], e['code'], '[ENABLED]' if e['available'] else '[DISABLED] (Missing library, run: pip install ' + ('numba' if e['code']=='NUMBA' else 'taichi') + ' to enable)')) for e in engines]; print()"
+echo ====================================================================
+
 :: 啟動應用程式
 if "%~1" == "" (
     "!PY_EXE!" fh6_painter_studio_gui.py
