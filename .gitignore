@@ -60,3 +60,4 @@ dist/
 # Keep key configuration JSONs tracked
 !optimization_settings.json
 !tools/fh6-heuristics.json
+tools/benchmark_taichi.py
