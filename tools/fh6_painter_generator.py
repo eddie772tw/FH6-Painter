@@ -30,45 +30,29 @@ def get_boundary_weight_map(alpha_mask, bias):
     """Computes a 2-pixel wide boundary weight map using pure standard NumPy."""
     if alpha_mask is None or alpha_mask.shape == (1, 1):
         return np.ones((1, 1), dtype=np.float32)
-    height, width = alpha_mask.shape
-    boundary_map = np.ones((height, width), dtype=np.float32)
 
     fg = alpha_mask > 127.0
+    eroded = fg.copy()
 
-    # 1-pixel shift
-    sh_up = np.zeros_like(fg)
-    sh_up[:-1, :] = fg[1:, :]
-    sh_down = np.zeros_like(fg)
-    sh_down[1:, :] = fg[:-1, :]
-    sh_left = np.zeros_like(fg)
-    sh_left[:, :-1] = fg[:, 1:]
-    sh_right = np.zeros_like(fg)
-    sh_right[:, 1:] = fg[:, :-1]
+    # 1-pixel shift checks
+    eroded[:-1, :] &= fg[1:, :]
+    eroded[1:, :] &= fg[:-1, :]
+    eroded[:, :-1] &= fg[:, 1:]
+    eroded[:, 1:] &= fg[:, :-1]
 
-    # 2-pixel shift
-    sh_up2 = np.zeros_like(fg)
-    sh_up2[:-2, :] = fg[2:, :]
-    sh_down2 = np.zeros_like(fg)
-    sh_down2[2:, :] = fg[:-2, :]
-    sh_left2 = np.zeros_like(fg)
-    sh_left2[:, :-2] = fg[:, 2:]
-    sh_right2 = np.zeros_like(fg)
-    sh_right2[:, 2:] = fg[:, :-2]
+    # 2-pixel shift checks
+    eroded[:-2, :] &= fg[2:, :]
+    eroded[2:, :] &= fg[:-2, :]
+    eroded[:, :-2] &= fg[:, 2:]
+    eroded[:, 2:] &= fg[:, :-2]
 
-    # Boundary is foreground pixels adjacent to background (within 2 pixels)
-    boundary = fg & (
-        ~sh_up
-        | ~sh_down
-        | ~sh_left
-        | ~sh_right
-        | ~sh_up2
-        | ~sh_down2
-        | ~sh_left2
-        | ~sh_right2
-    )
+    # Out of bounds are considered background, so eroded is false on edges
+    eroded[:2, :] = False
+    eroded[-2:, :] = False
+    eroded[:, :2] = False
+    eroded[:, -2:] = False
 
-    boundary_map[boundary] = np.float32(bias)
-    return boundary_map
+    return np.where(fg & ~eroded, np.float32(bias), np.float32(1.0))
 
 
 def scale_shapes_list(shapes, factor):

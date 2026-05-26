@@ -149,6 +149,7 @@ if HAS_NUMBA:
             ):
                 indices.append(i)
         return indices
+
 else:
 
     def python_scan_chunk(data, pattern_lo, pattern_hi):

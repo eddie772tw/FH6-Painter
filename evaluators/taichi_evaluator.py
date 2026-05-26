@@ -1039,9 +1039,11 @@ class TaichiEvaluator(BaseEvaluator):
                         b,
                         delta,
                         optimization_steps,
-                        self.alpha_mask
-                        if self.alpha_mask is not None
-                        else np.zeros((1, 1), dtype=np.float32),
+                        (
+                            self.alpha_mask
+                            if self.alpha_mask is not None
+                            else np.zeros((1, 1), dtype=np.float32)
+                        ),
                         True if check_contour_jit == 1 else False,
                         sa_enabled=True if sa_enabled == 1 else False,
                         initial_temp=sa_initial_temp,
@@ -1074,9 +1076,11 @@ class TaichiEvaluator(BaseEvaluator):
                             b,
                             delta,
                             optimization_steps,
-                            self.alpha_mask
-                            if self.alpha_mask is not None
-                            else np.zeros((1, 1), dtype=np.float32),
+                            (
+                                self.alpha_mask
+                                if self.alpha_mask is not None
+                                else np.zeros((1, 1), dtype=np.float32)
+                            ),
                             True if check_contour_jit == 1 else False,
                             sa_enabled=True if sa_enabled == 1 else False,
                             initial_temp=sa_initial_temp,
