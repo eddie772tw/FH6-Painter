@@ -794,7 +794,6 @@ def is_header_shape(s):
         and abs(s["data"][0]) < 0.0001
         and abs(s["data"][1]) < 0.0001
         and len(s["color"]) >= 4
-        and s["color"][3] == 0
     )
 
 
