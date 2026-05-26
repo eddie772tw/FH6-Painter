@@ -227,7 +227,7 @@ def run_generator(
     early_interval = opt_early.get("check_interval", 100)
     early_ratio = opt_early.get("start_eval_ratio", 0.5)
     early_threshold = opt_early.get("redundancy_threshold", 0.75)
-    early_targets = opt_early.get("target_integers", [500, 1000, 1500, 2000, 3000])
+    early_step = opt_early.get("convergence_step", 50)
 
     if profile_path:
         print(f"Profile: {os.path.basename(profile_path)}")
@@ -431,6 +431,7 @@ def run_generator(
         stage_1_2_limit = max(20, int(layers * 0.50))
 
     # 提早收斂優化追蹤變數
+    original_layers = layers
     prev_valid_layers = 0
     early_triggered = False
 
@@ -726,72 +727,24 @@ def run_generator(
                                 f"\n[Early Convergence] 偵測到細節已飽和 (淘汰率 {redundancy_ratio * 100:.1f}% >= 閾值 {early_threshold * 100:.1f}%)！開始執行提早收斂..."
                             )
 
-                            # 尋找最接近的整數收斂目標 T (必須小於原目標 layers)
-                            best_t = layers
-                            min_diff = float("inf")
-                            for t in early_targets:
-                                if t < layers:
-                                    diff = abs(current_layer - t)
-                                    if diff < min_diff:
-                                        min_diff = diff
-                                        best_t = t
-
-                            print(
-                                f"[Early Convergence] 最接近的整數收斂目標為: {best_t} 層 (當前有效: {current_layer} 層)"
+                            # 收斂層數則以 early_step 為步進向上取整，且不得超過原定最大層數 original_layers
+                            best_t = min(
+                                int(math.ceil(current_layer / float(early_step)))
+                                * early_step,
+                                original_layers,
                             )
 
-                            # 雙向收斂執行
-                            if current_layer > best_t:
-                                # A > T：削減策略，排序剔除最不重要的圖層，並維持原始繪製順序
+                            print(
+                                f"[Early Convergence] 執行補足策略：將目標層數 layers 調整為 {best_t} 層 (當前有效: {current_layer} 層)"
+                            )
+                            layers = best_t
+                            early_triggered = True
+
+                            if current_layer >= layers:
                                 print(
-                                    f"[Early Convergence] 執行削減策略：從 {current_layer} 層中剔除最不重要的 {current_layer - best_t} 層..."
+                                    "[Early Convergence] 當前層數已達到或超過收斂目標，停止生成。"
                                 )
-
-                                # shapes_list[0] 是背景，shapes_list[1:] 是實際圖層
-                                indexed_shapes = [
-                                    (idx, s) for idx, s in enumerate(shapes_list[1:])
-                                ]
-                                # 按 score (Delta MSE 改善量) 從大到小排序，保留前 best_t 個
-                                indexed_shapes.sort(
-                                    key=lambda item: item[1].get("score", 0.0),
-                                    reverse=True,
-                                )
-                                kept_indexed_shapes = indexed_shapes[:best_t]
-                                # 按原始索引排序以恢復原先的繪製先後順序
-                                kept_indexed_shapes.sort(key=lambda item: item[0])
-
-                                shapes_list = [shapes_list[0]] + [
-                                    item[1] for item in kept_indexed_shapes
-                                ]
-
-                                evaluator.rebuild_canvas(
-                                    canvas, shapes_list, avg_r, avg_g, avg_b
-                                )
-                                if uncovered_enabled:
-                                    uncovered_map = rebuild_uncovered_map_from_shapes(
-                                        evaluator,
-                                        width,
-                                        height,
-                                        has_alpha,
-                                        alpha_mask,
-                                        uncovered_bias,
-                                        shapes_list,
-                                    )
-                                current_layer = len(shapes_list) - 1
-                                print(
-                                    f"[Early Convergence] 削減成功，目前圖層已收斂至 {current_layer} 層！"
-                                )
-
-                                layers = best_t
-                                early_triggered = True
-                                break  # 跳出生成迴圈！
-                            else:
-                                # A < T：補足策略，僅調低總目標 layers 繼續生成
-                                print(
-                                    f"[Early Convergence] 執行補足策略：將目標層數 layers 調整為 {best_t} 層，繼續生成..."
-                                )
-                                layers = best_t
-                                early_triggered = True
+                                break
 
                 # 更新 prev_valid_layers 供下一次區間評估使用
                 prev_valid_layers = current_layer
