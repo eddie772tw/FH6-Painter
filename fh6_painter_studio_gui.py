@@ -1654,11 +1654,14 @@ class ForzaStudioGUI:
 
         # Confirm user opens ungrouped shapes
         confirm = messagebox.askyesno(
-            "Game Injection Confirmation",
-            "Before injecting, please ensure:\n"
-            "1. Forza Horizon 6 (forzahorizon6.exe) is running.\n"
-            f"2. You are inside the Vinyl Group Editor with a fresh template of exactly {layers} ungrouped circular layers.\n\n"
-            "Would you like to proceed with memory injection?",
+            "遊戲記憶體注入確認 / Game Injection Confirmation",
+            "在開始注入前，請務必確認以下事項：\n\n"
+            "1. 《極限競速：地平線 6》遊戲主程式 (forzahorizon6.exe) 正在運行中。\n"
+            "2. 您目前已進入遊戲內的「彩繪貼圖組編輯器 (Vinyl Group Editor)」。\n"
+            "3. ⚠️【極度重要】您在編輯器內建立的圓形圖層數量，必須「恰好精準等於」下方數值，不能多也不能少：\n"
+            f"   👉 必須剛好是：{layers} 個未編組的圓形圖層！\n"
+            "   （若圖層數量有任何偏差，記憶體搜尋將會失敗，且可能導致注入崩潰！）\n\n"
+            "您是否確定要繼續執行記憶體注入？",
         )
 
         if not confirm:
