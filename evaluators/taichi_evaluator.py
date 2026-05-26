@@ -368,39 +368,6 @@ def update_freeze_mask_gpu(
 
 
 @ti.kernel
-def update_weights_gpu(
-    target: ti.types.ndarray(),
-    canvas: ti.types.ndarray(),
-    weight_map: ti.types.ndarray(),
-    boundary_weight: ti.types.ndarray(),
-    max_err_arr: ti.types.ndarray(),
-    has_boundary: ti.i32,
-    height: ti.i32,
-    width: ti.i32,
-):
-    max_err_arr[0] = 0.0
-    for y, x in ti.ndrange(height, width):
-        diff = 0.0
-        for c in ti.static(range(3)):
-            diff += ti.abs(target[y, x, c] - canvas[y, x, c])
-        diff /= 3.0
-        ti.atomic_max(max_err_arr[0], diff)
-        weight_map[y, x] = diff
-
-    max_val = max_err_arr[0]
-    for y, x in ti.ndrange(height, width):
-        norm_err = 0.0
-        if max_val > 0.0:
-            norm_err = weight_map[y, x] / max_val
-
-        dynamic_w = 1.0 + norm_err * 9.0
-        if has_boundary == 1:
-            weight_map[y, x] = dynamic_w * boundary_weight[y, x]
-        else:
-            weight_map[y, x] = dynamic_w
-
-
-@ti.kernel
 def update_uncovered_mask_gpu(
     uncovered_map: ti.types.ndarray(),
     best_candidate: ti.types.ndarray(),
