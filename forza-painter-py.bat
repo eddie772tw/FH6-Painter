@@ -54,9 +54,9 @@ cd /D "%~dp0"
 :: 校驗 Python 版本
 "!PY_EXE!" -c "import sys; sys.exit(0 if sys.version_info.major == 3 and sys.version_info.minor in (13, 14) else 1)" >nul 2>nul
 if %errorlevel% neq 0 (
-    echo [ERROR] 本專案要求 Python 3.13 或 Python 3.14 。
-    echo [ERROR] 當前系統中的 Python 版本不相容 (不支援 Python 3.12 或更舊版本)。
-    echo 請安裝相容的 Python 3.13/3.14 版本後再重新運行本腳本。
+    echo [ERROR] 本專案要求 Python 3.13 或 Python 3.14 
+    echo [ERROR] 當前系統中的 Python 版本不相容 
+    echo 請安裝相容的 Python 3.13/3.14 版本後再重新運行本腳本
     pause
     exit /b 1
 )
