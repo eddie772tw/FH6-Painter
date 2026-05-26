@@ -2,11 +2,13 @@
 import json
 import os
 import tempfile
+
 import numpy as np
 import pytest
 from PIL import Image
-from tools.fh6_painter_generator import run_generator
+
 from evaluators import EvaluatorFactory
+from tools.fh6_painter_generator import run_generator
 
 # 使用 PEP8 / Google Style / Black Style 規範
 
@@ -16,17 +18,17 @@ def temp_image_path():
     """建立一個 16x16 的臨時 RGB 測試圖片。"""
     with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
         img_path = f.name
-        
+
     # 建立一個簡單的紅底藍色圓形圖片
     img = Image.new("RGB", (16, 16), color=(255, 0, 0))
     # 在圖片中央畫一個藍色點/矩形以製造擬合目標
     for x in range(6, 10):
         for y in range(6, 10):
             img.putpixel((x, y), (0, 0, 255))
-            
+
     img.save(img_path)
     yield img_path
-    
+
     # 測試結束後清理
     if os.path.exists(img_path):
         os.remove(img_path)
@@ -47,9 +49,9 @@ def test_generator_pure_python(temp_image_path):
             layers_limit=3,
             candidates_limit=10,
             steps_limit=5,
-            engine_name="PURE_PYTHON"
+            engine_name="PURE_PYTHON",
         )
-        
+
         # 驗證回傳碼
         assert res == 0
         assert os.path.exists(out_path)
@@ -98,7 +100,7 @@ def test_generator_numba(temp_image_path):
             layers_limit=3,
             candidates_limit=10,
             steps_limit=5,
-            engine_name="NUMBA"
+            engine_name="NUMBA",
         )
         assert res == 0
         assert os.path.exists(out_path)

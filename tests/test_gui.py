@@ -2,10 +2,13 @@
 import os
 import sys
 import tkinter as tk
+
 import pytest
-from fh6_painter_studio_gui import ForzaStudioGUI, HAS_LIBS
+
+from fh6_painter_studio_gui import HAS_LIBS, ForzaStudioGUI
 
 # 使用 PEP8 / Google Style / Black Style 規範
+
 
 def test_gui_initialization():
     """測試 Tkinter GUI 控制面板的初始化與安全載入。"""
@@ -20,17 +23,17 @@ def test_gui_initialization():
     try:
         # 初始化專案主 GUI
         app = ForzaStudioGUI(root)
-        
+
         # 驗證 GUI 物件的核心組件與資料結構是否被正確初始化
         assert app.root is root
         assert len(app.profiles) > 0
         assert len(app.gpu_list) > 0
-        
+
         # 驗證核心按鈕與標籤控制元件是否存在
         assert app.btn_generate is not None
         assert app.btn_inject is not None
         assert app.status_lbl is not None
-        
+
         # 觸發一次事件迴圈更新，確保所有 Layout、Canvas 和 Flat 樣式能正確完成繪製且無報錯
         root.update()
 

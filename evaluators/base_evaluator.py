@@ -138,8 +138,7 @@ class BaseEvaluator(ABC):
         r_y: float,
         theta_rad: float,
     ) -> None:
-        """當繪製新形狀時，在未覆蓋優先度地圖中重置被覆蓋的區域權重。
-        """
+        """當繪製新形狀時，在未覆蓋優先度地圖中重置被覆蓋的區域權重。"""
         pass
 
     @abstractmethod

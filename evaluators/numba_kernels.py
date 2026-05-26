@@ -519,8 +519,7 @@ def serial_hill_climb(
 
 @numba.jit(nopython=True, fastmath=True, cache=True)
 def run_redundancy_check_jit(shapes_data, shapes_color, shapes_type, width, height):
-    """JIT-accelerated backward occlusion tracing.
-    """
+    """JIT-accelerated backward occlusion tracing."""
     num_shapes = len(shapes_type)
     visible_mask = np.ones(num_shapes, dtype=np.bool_)
 
