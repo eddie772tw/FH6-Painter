@@ -119,7 +119,7 @@ def test_generator_numba(temp_image_path):
 
 
 def test_early_convergence(temp_image_path):
-    """驗證提早收斂優化：是否能在飽和時將圖層收斂至目標整數。"""
+    """驗證提早收斂優化：是否能在飽和時將圖層收斂至最接近的步進倍數並補足收斂。"""
     with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
         out_path = f.name
     os.remove(out_path)
@@ -128,20 +128,20 @@ def test_early_convergence(temp_image_path):
         "early_convergence": {
             "enabled": True,
             "check_interval": 2,
-            "start_eval_ratio": 0.3,
+            "start_eval_ratio": 0.01,
             "redundancy_threshold": 0.0,  # 設為 0.0 強制觸發
-            "target_integers": [3],
+            "convergence_step": 3,  # 自訂步進以利測試
         }
     }
 
     try:
-        # 目標設為 6 層，但因提早收斂應在第 2 或 4 層被強制收斂至 3 層
+        # 目標設為 6 層，在第 2 層觸發提早收斂，收斂目標應向上取整為 3 層 (步進為 3)
         res = run_generator(
             image_path=temp_image_path,
             output_path=out_path,
             layers_limit=6,
-            candidates_limit=10,
-            steps_limit=5,
+            candidates_limit=5,
+            steps_limit=2,
             opt_settings=opt_settings,
             engine_name="PURE_PYTHON",
         )
@@ -153,12 +153,10 @@ def test_early_convergence(temp_image_path):
             data = json.load(f)
 
         shapes = data["shapes"]
-        # shapes 應該有 1 個背景 + 3 個收斂橢圓 = 4 個 shapes
+        # shapes 應該有 1 個背景 + 3 個收斂橢圓 = 4 個 shapes (而不是原定的 6 個)
         assert len(shapes) == 4
         assert shapes[0]["type"] == 1
-        assert shapes[1]["type"] == 32
-        assert shapes[2]["type"] == 32
-        assert shapes[3]["type"] == 32
+        assert all(s["type"] == 32 for s in shapes[1:])
 
     finally:
         if os.path.exists(out_path):
