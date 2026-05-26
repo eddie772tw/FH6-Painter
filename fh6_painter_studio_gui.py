@@ -1632,6 +1632,7 @@ class ForzaStudioGUI:
         if json_path.lower().endswith(".json") and os.path.exists(json_path):
             try:
                 import json
+
                 with open(json_path, "r", encoding="utf-8") as f:
                     data = json.load(f)
                 shapes = data.get("shapes", [])

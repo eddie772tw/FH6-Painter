@@ -130,7 +130,7 @@ def test_early_convergence(temp_image_path):
             "check_interval": 2,
             "start_eval_ratio": 0.3,
             "redundancy_threshold": 0.0,  # 設為 0.0 強制觸發
-            "target_integers": [3]
+            "target_integers": [3],
         }
     }
 
@@ -173,8 +173,18 @@ def test_redundant_layer_consolidation():
     # 第一層是背景，第二層在 (8,8)，第三層在 (8,8) 完全遮擋第二層
     shapes_list = [
         {"type": 1, "data": [0.0, 0.0, 16.0, 16.0], "color": [255, 0, 0, 255]},
-        {"type": 32, "data": [8.0, 8.0, 4.0, 4.0, 0.0], "color": [0, 0, 255, 255], "score": 10.0},
-        {"type": 32, "data": [8.0, 8.0, 4.0, 4.0, 0.0], "color": [0, 0, 255, 255], "score": 5.0},
+        {
+            "type": 32,
+            "data": [8.0, 8.0, 4.0, 4.0, 0.0],
+            "color": [0, 0, 255, 255],
+            "score": 10.0,
+        },
+        {
+            "type": 32,
+            "data": [8.0, 8.0, 4.0, 4.0, 0.0],
+            "color": [0, 0, 255, 255],
+            "score": 5.0,
+        },
     ]
 
     evaluator = PurePythonEvaluator(np.zeros((16, 16, 3), dtype=np.float32))
@@ -191,4 +201,3 @@ def test_redundant_layer_consolidation():
     assert res[2]["data"][1] == 8.0
     assert res[2]["data"][2] == 0.01
     assert res[2]["data"][3] == 0.01
-
