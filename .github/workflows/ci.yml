@@ -1,0 +1,109 @@
+name: FH6 Painter CI/CD Pipeline
+
+on:
+  push:
+    branches: [ "master", "main" ]
+  pull_request:
+    branches: [ "master", "main" ]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.12", "3.13"]
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+        cache: 'pip' # 自動快取 pip 依賴，大幅加速後續建置
+
+    - name: Install System Dependencies (Linux Only)
+      if: runner.os == 'Linux'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y xvfb python3-tk libx11-dev
+
+    - name: Upgrade pip and install core requirements
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Install quality check and testing tools
+      run: |
+        pip install ruff pytest
+
+    - name: Run style formatting verification (Ruff Format)
+      run: |
+        ruff format --check .
+
+    - name: Run code quality lint checks (Ruff Lint)
+      run: |
+        ruff check .
+
+    - name: Execute automated test suite (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        python -m pytest -v
+
+    - name: Execute automated test suite with Virtual Frame Buffer (Linux)
+      if: runner.os == 'Linux'
+      run: |
+        xvfb-run python -m pytest -v
+
+  build-release:
+    needs: test
+    runs-on: windows-latest
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python 3.13
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.13"
+        cache: 'pip'
+
+    - name: Install requirements & PyInstaller
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pyinstaller
+
+    - name: Build Standalone Windows Executable
+      shell: pwsh
+      run: |
+        # 呼叫 PyInstaller 封裝獨立 EXE，模擬 build_release.bat 的核心編譯參數
+        pyinstaller --noconfirm --name "FH6_Painter_Studio" --windowed --collect-all "taichi" --add-data "evaluators/*;evaluators" --add-data "tools/*;tools" fh6_painter_studio_gui.py
+        
+        # 複製外置配置資源至 dist 發行目錄中
+        if (Test-Path "settings") {
+            Copy-Item -Path "settings" -Destination "dist/FH6_Painter_Studio/settings" -Recurse -Force
+        }
+        if (Test-Path "optimization_settings.json") {
+            Copy-Item -Path "optimization_settings.json" -Destination "dist/FH6_Painter_Studio/" -Force
+        }
+
+    - name: Compress standalone bundle to ZIP
+      shell: pwsh
+      run: |
+        Compress-Archive -Path "dist/FH6_Painter_Studio" -DestinationPath "FH6_Painter_Studio_Windows.zip" -Force
+
+    - name: Upload build artifact preview
+      uses: actions/upload-artifact@v4
+      with:
+        name: FH6_Painter_Studio_Windows_Preview
+        path: FH6_Painter_Studio_Windows.zip
+        retention-days: 7
