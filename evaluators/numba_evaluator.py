@@ -281,25 +281,31 @@ class NumbaEvaluator(BaseEvaluator):
                 )
             return optimized_shapes
         else:
-            final_shapes = []
-            reset_count = 0
-            final_shapes.append(shapes_list[0])
+            center_x = float(width) / 2.0
+            center_y = float(height) / 2.0
+
+            valid_shapes = []
+            discarded_shapes = []
+
             for i in range(1, num_shapes):
                 s = shapes_list[i]
                 if visible_mask[i]:
-                    final_shapes.append(s)
+                    valid_shapes.append(s)
                 else:
                     reset_shape = {
                         "type": 32,
-                        "data": [-1000.0, -1000.0, 0.01, 0.01, 0.0],
+                        "data": [center_x, center_y, 0.01, 0.01, 0.0],
                         "color": [0, 0, 0, 255],
                         "score": 0.0,
                     }
-                    final_shapes.append(reset_shape)
-                    reset_count += 1
+                    discarded_shapes.append(reset_shape)
+
+            final_shapes = [shapes_list[0]] + valid_shapes + discarded_shapes
+            reset_count = len(discarded_shapes)
+
             if reset_count > 0:
                 print(
-                    f"\n[Optimization] Final check: reset {reset_count} redundant shapes to off-screen microscopic opaque shapes."
+                    f"\n[Optimization] Final check: reset {reset_count} redundant shapes to microscopic opaque shapes at center ({center_x:.1f}, {center_y:.1f}) pushed to top layers."
                 )
             return final_shapes
 

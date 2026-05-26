@@ -1192,6 +1192,11 @@ class ForzaStudioGUI:
                         data = json.load(f)
                     shapes = data.get("shapes", [])
                     if len(shapes) > 0:
+                        # QoL 2: 自動更新 Max Layer 控制項的值以匹配 JSON 裡的圖層數 (扣除第0層背景)
+                        num_layers = len(shapes) - 1
+                        if num_layers > 0:
+                            self.val_layers.set(str(num_layers))
+
                         header = shapes[0]
                         # Extract background dimensions and colors from header shape
                         h_data = header.get("data", [0.0, 0.0, 600.0, 600.0])
@@ -1418,6 +1423,13 @@ class ForzaStudioGUI:
                 self.status_lbl.configure(text="INJECT DONE", fg=self.color_blue)
                 self.log_to_console("\n[System] Livery memory injection completed.\n")
 
+                # QoL 2: 導入完成後，彈出傳統中文對話框提示玩家導入了多少幾何圖層
+                imported_layers = self.val_layers.get()
+                messagebox.showinfo(
+                    "導入成功 / Import Completed",
+                    f"彩繪圖層注入成功！\n共成功導入 {imported_layers} 個幾何圖層至遊戲記憶體中。",
+                )
+
         # Loop again in 100ms
         self.root.after(100, self.poll_background_updates)
 
@@ -1616,11 +1628,28 @@ class ForzaStudioGUI:
             messagebox.showerror("Error", f"Geometry JSON file not found:\n{json_path}")
             return
 
-        # Layers count based on GUI value (matching our search count)
-        try:
-            layers = int(self.val_layers.get())
-        except ValueError:
-            layers = 3000
+        # QoL 2: 載入 JSON 路徑時，自動解析 JSON 檔內的實體圖層數作為注入基準，免除手動設定
+        if json_path.lower().endswith(".json") and os.path.exists(json_path):
+            try:
+                import json
+                with open(json_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                shapes = data.get("shapes", [])
+                if len(shapes) > 0:
+                    layers = len(shapes) - 1
+                    self.val_layers.set(str(layers))
+                else:
+                    layers = 3000
+            except Exception:
+                try:
+                    layers = int(self.val_layers.get())
+                except ValueError:
+                    layers = 3000
+        else:
+            try:
+                layers = int(self.val_layers.get())
+            except ValueError:
+                layers = 3000
 
         # Confirm user opens ungrouped shapes
         confirm = messagebox.askyesno(
