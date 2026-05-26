@@ -91,6 +91,9 @@ class ForzaStudioGUI:
         self.latest_canvas_array = None
         self.latest_progress = (0, 100, 0.0, 0.0)  # (current, total, speed, eta)
         self.need_preview_update = False
+        self.enable_preview = True
+        self.preview_image_id = None
+        self.last_canvas_draw_time = 0.0
 
         self.active_thread = None
         self.is_generating = False
@@ -336,6 +339,23 @@ class ForzaStudioGUI:
         )
         self.btn_show_logs.pack(side="right", padx=(0, 10))
 
+        self.btn_toggle_preview = tk.Button(
+            header_frame,
+            text="關閉預覽 / Disable Preview",
+            font=("Microsoft JhengHei", 8, "bold"),
+            bg=self.bg_card,
+            fg=self.color_green,
+            activebackground=self.color_btn_default_hover,
+            activeforeground=self.fg_primary,
+            bd=1,
+            relief="solid",
+            highlightthickness=0,
+            padx=8,
+            pady=2,
+            command=self.toggle_preview_state,
+        )
+        self.btn_toggle_preview.pack(side="right", padx=(0, 10))
+
         # --- Workspace Splitting (Left Control vs Right Preview) ---
         workspace = tk.Frame(main_container, bg=self.bg_main)
         workspace.pack(fill="both", expand=True)
@@ -446,8 +466,13 @@ class ForzaStudioGUI:
         ).grid(row=2, column=0, sticky="w", pady=4)
 
         self.val_layers = tk.StringVar(value="2000")
+        
+        # 使用橫向子 Frame 把 Entry 和提早收斂 Checkbutton 完美組合在同一欄，避免任何重疊
+        layers_container = tk.Frame(params_body, bg=self.bg_card)
+        layers_container.grid(row=2, column=1, sticky="w", pady=4, padx=(10, 0))
+        
         self.entry_layers = tk.Entry(
-            params_body,
+            layers_container,
             textvariable=self.val_layers,
             bg=self.bg_input,
             fg=self.fg_primary,
@@ -456,9 +481,23 @@ class ForzaStudioGUI:
             bd=0,
             width=12,
         )
-        self.entry_layers.grid(
-            row=2, column=1, sticky="w", pady=4, padx=(10, 0), ipady=3
+        self.entry_layers.pack(side="left", ipady=3)
+
+        self.var_early_conv = tk.BooleanVar(value=True)
+        self.chk_early_conv = tk.Checkbutton(
+            layers_container,
+            text="啟用提早收斂 (Early Conv)",
+            variable=self.var_early_conv,
+            font=("Microsoft JhengHei", 9),
+            bg=self.bg_card,
+            fg=self.color_blue,
+            selectcolor=self.bg_card,
+            activebackground=self.bg_card,
+            activeforeground=self.fg_primary,
+            bd=0,
+            padx=10,
         )
+        self.chk_early_conv.pack(side="left")
 
         lbl_limits_tip = tk.Label(
             params_body,
@@ -478,7 +517,14 @@ class ForzaStudioGUI:
             fg=self.fg_secondary,
         ).grid(row=4, column=0, sticky="w", pady=4)
 
-        self.available_evaluators = EvaluatorFactory.get_available_evaluators()
+        if HAS_LIBS and 'EvaluatorFactory' in globals() and EvaluatorFactory is not None:
+            self.available_evaluators = EvaluatorFactory.get_available_evaluators()
+        else:
+            self.available_evaluators = [
+                {"code": "NUMBA", "name": "Numba JIT (CPU, Recommanded)", "available": False},
+                {"code": "TAICHI", "name": "Taichi JIT (GPU, High-perf)", "available": False},
+                {"code": "PURE_PYTHON", "name": "Pure Python (CPU, Slow)", "available": True}
+            ]
         evaluator_names = []
         for e in self.available_evaluators:
             if e["available"]:
@@ -926,6 +972,7 @@ class ForzaStudioGUI:
 
     def draw_cyber_placeholder(self, text="STUDIO READY"):
         """Draws a clean, dark tech cyberpunk graphic when no active simulation is running."""
+        self.preview_image_id = None
         self.canvas_preview.delete("all")
         # Cyber grid lines
         for i in range(10):
@@ -1001,6 +1048,39 @@ class ForzaStudioGUI:
         if sys.stdout is not None:
             sys.stdout.write(text)
             sys.stdout.flush()
+
+    def toggle_preview_state(self):
+        """切換畫布預覽的開啟與關閉狀態"""
+        self.enable_preview = not self.enable_preview
+        if self.enable_preview:
+            self.btn_toggle_preview.configure(
+                text="關閉預覽 / Disable Preview", fg=self.color_green
+            )
+            self.log_to_console("[System] 預覽功能已開啟。\n")
+            if self.latest_canvas_array is not None:
+                self.need_preview_update = True
+        else:
+            self.btn_toggle_preview.configure(
+                text="開啟預覽 / Enable Preview", fg=self.fg_secondary
+            )
+            self.log_to_console("[System] 預覽功能已關閉。\n")
+            self.canvas_preview.delete("all")
+            self.preview_image_id = None
+            center = self.canvas_size / 2
+            self.canvas_preview.create_text(
+                center,
+                center,
+                text="PREVIEW DISABLED",
+                fill="#555555",
+                font=("Outfit", 12, "bold"),
+            )
+            self.canvas_preview.create_text(
+                center,
+                center + 25,
+                text="Click 'Enable Preview' to restore visual fitting",
+                fill="#444444",
+                font=("Microsoft JhengHei", 8),
+            )
 
     def open_log_window(self):
         """Opens a scrollable Traditional Chinese & English bilingual diagnostic console window showing all captured stdout/stderr logs."""
@@ -1308,60 +1388,77 @@ class ForzaStudioGUI:
     def poll_background_updates(self):
         """Cycles every 100ms in the main loop to repaint previews and handle metrics."""
         # 1. Update Canvas Preview from shared numpy variable
-        if self.need_preview_update:
-            with self.preview_image_lock:
-                arr = (
-                    self.latest_canvas_array.copy()
-                    if self.latest_canvas_array is not None
-                    else None
-                )
-                self.need_preview_update = False
+        # 始終讓預覽的更新頻率固定為 2Hz (500ms)，並在 enable_preview 開啟時才更新
+        now_time = time.time()
+        curr, total, _, _ = self.latest_progress
+        is_finished = (curr == total) if self.is_generating else True
+        
+        # 當開啟預覽且需要更新時，檢查是否已間隔 500ms 或已經生成完成
+        if self.need_preview_update and self.enable_preview:
+            if (now_time - self.last_canvas_draw_time >= 0.50) or is_finished:
+                with self.preview_image_lock:
+                    arr = (
+                        self.latest_canvas_array.copy()
+                        if self.latest_canvas_array is not None
+                        else None
+                    )
+                    self.need_preview_update = False
+                self.last_canvas_draw_time = now_time
 
-            if arr is not None:
-                try:
-                    # Clip numpy array and convert float32 to uint8
-                    arr_clipped = np.clip(arr, 0.0, 255.0).astype(np.uint8)
+                if arr is not None:
+                    try:
+                        # Clip numpy array and convert float32 to uint8
+                        arr_clipped = np.clip(arr, 0.0, 255.0).astype(np.uint8)
 
-                    if arr.ndim == 3 and arr.shape[2] == 4:
-                        # Extract RGB and Alpha
-                        arr_rgb = arr_clipped[:, :, :3].astype(np.float32)
-                        alpha = arr_clipped[:, :, 3].astype(np.float32) / 255.0
-                        alpha = np.expand_dims(alpha, axis=2)  # Shape: (H, W, 1)
+                        if arr.ndim == 3 and arr.shape[2] == 4:
+                            # Extract RGB and Alpha
+                            arr_rgb = arr_clipped[:, :, :3].astype(np.float32)
+                            alpha = arr_clipped[:, :, 3].astype(np.float32) / 255.0
+                            alpha = np.expand_dims(alpha, axis=2)  # Shape: (H, W, 1)
 
-                        # Generate checkerboard pattern dynamically using fast numpy indexing
-                        H, W = arr.shape[0], arr.shape[1]
-                        block_size = 8
-                        y_indices = np.arange(H) // block_size
-                        x_indices = np.arange(W) // block_size
-                        grid = (y_indices[:, None] + x_indices[None, :]) % 2
-                        checker = np.zeros((H, W, 3), dtype=np.float32)
-                        checker[grid == 0] = [200.0, 200.0, 200.0]
-                        checker[grid == 1] = [255.0, 255.0, 255.0]
+                            # 直接使用 UI 原生的深黑色背景色融為一體 (RGB: 14, 14, 14)，取消透明背景的灰白方格
+                            bg_color = np.array([14.0, 14.0, 14.0], dtype=np.float32)
+                            blended = (arr_rgb * alpha + bg_color * (1.0 - alpha)).astype(
+                                np.uint8
+                            )
+                            pil_img = Image.fromarray(blended)
+                        else:
+                            pil_img = Image.fromarray(arr_clipped)
 
-                        # Blend: blended = rgb * alpha + checker * (1 - alpha)
-                        blended = (arr_rgb * alpha + checker * (1.0 - alpha)).astype(
-                            np.uint8
+                        # Resize to fit panel: use high-quality bilinear interpolation for static previews to eliminate aliasing, NEAREST for active generation performance
+                        resample_mode = (
+                            Image.Resampling.NEAREST
+                            if self.is_generating
+                            else Image.Resampling.BILINEAR
                         )
-                        pil_img = Image.fromarray(blended)
-                    else:
-                        pil_img = Image.fromarray(arr_clipped)
-
-                    # Resize to fit panel: use high-quality bilinear interpolation for static previews to eliminate aliasing, NEAREST for active generation performance
-                    resample_mode = (
-                        Image.Resampling.NEAREST
-                        if self.is_generating
-                        else Image.Resampling.BILINEAR
-                    )
-                    pil_resized = pil_img.resize(
-                        (self.canvas_size, self.canvas_size), resample_mode
-                    )
-                    self.img_tk = ImageTk.PhotoImage(pil_resized)
-                    self.canvas_preview.delete("all")
-                    self.canvas_preview.create_image(
-                        0, 0, anchor="nw", image=self.img_tk
-                    )
-                except Exception as e:
-                    self.log_to_console(f"\n[Preview Error] {e}\n")
+                        
+                        # 保持圖片長寬比例 (Aspect Ratio) 縮放，置中繪製於 Canvas
+                        w, h = pil_img.size
+                        scale = min(self.canvas_size / w, self.canvas_size / h)
+                        new_w = max(1, int(w * scale))
+                        new_h = max(1, int(h * scale))
+                        
+                        pil_resized = pil_img.resize((new_w, new_h), resample_mode)
+                        self.img_tk = ImageTk.PhotoImage(pil_resized)
+                        
+                        # 增量更新點陣圖，消除 GDI 物件重複重建與 DWM 負載
+                        center_pos = self.canvas_size / 2
+                        if getattr(self, "preview_image_id", None) is None:
+                            self.canvas_preview.delete("all")
+                            self.preview_image_id = self.canvas_preview.create_image(
+                                center_pos, center_pos, anchor="center", image=self.img_tk
+                            )
+                        else:
+                            try:
+                                self.canvas_preview.itemconfig(self.preview_image_id, image=self.img_tk)
+                                self.canvas_preview.coords(self.preview_image_id, center_pos, center_pos)
+                            except Exception:
+                                self.canvas_preview.delete("all")
+                                self.preview_image_id = self.canvas_preview.create_image(
+                                    center_pos, center_pos, anchor="center", image=self.img_tk
+                                )
+                    except Exception as e:
+                        self.log_to_console(f"\n[Preview Error] {e}\n")
 
         # 3. Update HUD Metrics
         if self.is_generating:
@@ -1420,15 +1517,29 @@ class ForzaStudioGUI:
 
             elif self.is_importing:
                 self.is_importing = False
-                self.status_lbl.configure(text="INJECT DONE", fg=self.color_blue)
-                self.log_to_console("\n[System] Livery memory injection completed.\n")
+                result = getattr(self, "import_result", 1)
+                if result == 0:
+                    self.status_lbl.configure(text="INJECT DONE", fg=self.color_blue)
+                    self.log_to_console("\n[System] Livery memory injection completed.\n")
 
-                # QoL 2: 導入完成後，彈出傳統中文對話框提示玩家導入了多少幾何圖層
-                imported_layers = self.val_layers.get()
-                messagebox.showinfo(
-                    "導入成功 / Import Completed",
-                    f"彩繪圖層注入成功！\n共成功導入 {imported_layers} 個幾何圖層至遊戲記憶體中。",
-                )
+                    # QoL 2: 導入完成後，彈出傳統中文對話框提示玩家導入了多少幾何圖層
+                    imported_layers = self.val_layers.get()
+                    messagebox.showinfo(
+                        "導入成功 / Import Completed",
+                        f"彩繪圖層注入成功！\n共成功導入 {imported_layers} 個幾何圖層至遊戲記憶體中。",
+                    )
+                else:
+                    self.status_lbl.configure(text="INJECT ERROR", fg="#D32F2F")
+                    self.log_to_console("\n[System] ERROR: Livery memory injection failed! Check log/terminal for details.\n")
+                    
+                    # Redraw error visual state on GUI Radar
+                    self.draw_cyber_placeholder(text="INJECT FAILED")
+                    
+                    messagebox.showerror(
+                        "導入失敗 / Import Failed",
+                        "彩繪圖層注入失敗！\n請檢查終端機日誌以確認錯誤原因。\n\n"
+                        "提示：如果錯誤是 LastError=5 (Access Denied)，請關閉程式並以「系統管理員身分執行」重試。"
+                    )
 
         # Loop again in 100ms
         self.root.after(100, self.poll_background_updates)
@@ -1485,6 +1596,11 @@ class ForzaStudioGUI:
             else None
         )
 
+        # 動態同步「提早收斂」在 GUI 中的啟用狀態至優化設定中
+        if "early_convergence" not in self.opt_settings:
+            self.opt_settings["early_convergence"] = {}
+        self.opt_settings["early_convergence"]["enabled"] = self.var_early_conv.get()
+
         # Override values
         candidates = None
         steps = None
@@ -1520,17 +1636,27 @@ class ForzaStudioGUI:
         )
 
         # Progress callback hook
+        self.last_cb_update_time = 0.0
+
         def generator_cb(curr, total, speed, eta, canvas_arr):
             if self.cancel_generation_flag:
                 return "ABORT"
-            with self.preview_image_lock:
-                self.latest_canvas_array = canvas_arr.copy()
-                self.latest_progress = (curr, total, speed, eta)
-                self.need_preview_update = True
+            
+            # 更新節流：限制拷貝頻率大約在 20Hz (每 50ms 一次) 或是最後一幀時強制拷貝
+            now_time = time.time()
+            if (now_time - self.last_cb_update_time >= 0.05) or (curr == total):
+                with self.preview_image_lock:
+                    self.latest_canvas_array = canvas_arr.copy()
+                    self.latest_progress = (curr, total, speed, eta)
+                    self.need_preview_update = True
+                self.last_cb_update_time = now_time
 
-            # 若為 Taichi 引擎，釋放 GIL 給 Tkinter 執行緒以保持 GUI 響應與終端機刷新
+            # 若為 Taichi/Numba 引擎，釋放 GIL 給 Tkinter 執行緒以保持 GUI 響應與終端機刷新，避免線程飢餓與 DWM 阻塞
             if engine_code == "TAICHI":
                 time.sleep(0.002)
+            elif engine_code == "NUMBA":
+                # Numba 模式也釋放極小時間 (1ms) 給 CPU 進行排程，減少 DWM 阻塞，徹底解決 AMD GPU VCE 佔用問題
+                time.sleep(0.001)
             return True
 
         # Determine JIT Engine to use
@@ -1617,6 +1743,16 @@ class ForzaStudioGUI:
             state="disabled", text="正在停止...\nStopping...", bg="#555555"
         )
 
+    def run_importer_wrapper(self, **kwargs):
+        """BACKGROUND THREAD: Invokes the actual run_importer logic and captures the return code."""
+        self.import_result = None
+        try:
+            from tools.fh6_import_layer_table import run_importer
+            self.import_result = run_importer(**kwargs)
+        except Exception as e:
+            self.import_result = 1
+            print(f"Exception raised in background importer thread: {e}", file=sys.stderr)
+
     # --- Livery Memory Injection Thread Launcher ---
     def start_injection(self):
         """Launches Win32 memory writing thread on the active game process."""
@@ -1681,9 +1817,12 @@ class ForzaStudioGUI:
         self.progress_bar["value"] = 0
         self.lbl_metric_pct.configure(text="HUD LOCKED")
 
+        # Initialize result before starting thread
+        self.import_result = None
+
         # Launch Worker Thread
         self.active_thread = threading.Thread(
-            target=run_importer,
+            target=self.run_importer_wrapper,
             kwargs={
                 "json_path": json_path,
                 "layers": layers,

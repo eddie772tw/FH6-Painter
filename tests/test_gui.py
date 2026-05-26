@@ -10,8 +10,8 @@ from fh6_painter_studio_gui import HAS_LIBS, ForzaStudioGUI
 # 使用 PEP8 / Google Style / Black Style 規範
 
 
-def test_gui_initialization():
-    """測試 Tkinter GUI 控制面板的初始化與安全載入。"""
+def test_gui_initialization(monkeypatch):
+    """測試 Tkinter GUI 控制面板的初始化、安全載入以及注入失敗捕捉邏輯。"""
     # 如果是在 Linux Headless 且沒有 Xvfb 模擬顯示器的極端環境下跑本地測試，跳過測試
     if sys.platform != "win32" and not os.environ.get("DISPLAY"):
         pytest.skip("無 X 顯示伺服器，跳過 GUI 載入測試（在 CI/CD 中將使用 xvfb 執行）")
@@ -36,6 +36,11 @@ def test_gui_initialization():
 
         # 觸發一次事件迴圈更新，確保所有 Layout、Canvas 和 Flat 樣式能正確完成繪製且無報錯
         root.update()
+
+        # 驗證注入失敗時的包裝器捕捉邏輯（使用同一個 Tk 實例避免多次初始化 tk.Tk() 引發系統 TCL 錯誤）
+        monkeypatch.setattr("tools.fh6_import_layer_table.run_importer", lambda **kwargs: 1)
+        app.run_importer_wrapper(json_path="dummy.json", layers=10)
+        assert app.import_result == 1
 
     finally:
         # 安全銷毀視窗，避免執行緒阻塞或記憶體殘留
