@@ -303,28 +303,27 @@ def compute_raw_error_and_max(
     target: ti.types.ndarray(),
     canvas: ti.types.ndarray(),
     error_prob: ti.types.ndarray(),
-    max_err_arr: ti.types.ndarray(),
     height: ti.i32,
     width: ti.i32,
-):
-    max_err_arr[0] = 0.0
+) -> ti.f32:
+    max_err = 0.0
     for y, x in ti.ndrange(height, width):
         diff = 0.0
         for c in ti.static(range(3)):
             diff += ti.abs(target[y, x, c] - canvas[y, x, c])
         diff /= 3.0
-        ti.atomic_max(max_err_arr[0], diff)
+        ti.atomic_max(max_err, diff)
         error_prob[y, x] = diff
+    return max_err
 
 
 @ti.kernel
 def normalize_error_prob(
     error_prob: ti.types.ndarray(),
-    max_err_arr: ti.types.ndarray(),
+    max_val: ti.f32,
     height: ti.i32,
     width: ti.i32,
 ):
-    max_val = max_err_arr[0]
     for y, x in ti.ndrange(height, width):
         if max_val > 0.0:
             error_prob[y, x] = error_prob[y, x] / max_val
@@ -809,7 +808,6 @@ class TaichiEvaluator(BaseEvaluator):
                     self.ti_best_candidate = ti.ndarray(dtype=ti.f32, shape=(1, 10))
                     self.ti_climb_candidates = ti.ndarray(dtype=ti.f32, shape=(128, 6))
                     self.ti_climb_results = ti.ndarray(dtype=ti.f32, shape=(128, 4))
-                    self.ti_max_err = ti.ndarray(dtype=ti.f32, shape=1)
                 except Exception as e:
                     print(f"[Taichi JIT VRAM Allocation Error] {e}")
                     self.initialized = False
@@ -855,15 +853,14 @@ class TaichiEvaluator(BaseEvaluator):
         error_prob_np = params.get("error_prob")
 
         if use_importance and error_prob_np is not None and error_prob_np.shape[0] > 1:
-            compute_raw_error_and_max(
+            max_err_val = compute_raw_error_and_max(
                 self.ti_target,
                 self.ti_canvas,
                 self.ti_error_prob,
-                self.ti_max_err,
                 height,
                 width,
             )
-            normalize_error_prob(self.ti_error_prob, self.ti_max_err, height, width)
+            normalize_error_prob(self.ti_error_prob, max_err_val, height, width)
 
         use_freeze = 1 if params.get("use_freeze", False) else 0
         freeze_mask_np = params.get("freeze_mask")
