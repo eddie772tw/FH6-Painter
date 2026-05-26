@@ -1,8 +1,8 @@
-import sys
-import unittest
-from unittest.mock import patch, MagicMock
 import json
 import os
+import sys
+import unittest
+from unittest.mock import MagicMock, patch
 
 import tools.fh6_import_layer_table as fh6_importer
 
