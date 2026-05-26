@@ -11,12 +11,11 @@ permissions:
 
 jobs:
   test:
-    runs-on: ${{ matrix.os }}
+    runs-on: windows-latest
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
-        python-version: ["3.12", "3.13"]
+        python-version: ["3.13", "3.14"]
 
     steps:
     - name: Checkout repository
@@ -27,12 +26,6 @@ jobs:
       with:
         python-version: ${{ matrix.python-version }}
         cache: 'pip' # 自動快取 pip 依賴，大幅加速後續建置
-
-    - name: Install System Dependencies (Linux Only)
-      if: runner.os == 'Linux'
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y xvfb python3-tk libx11-dev
 
     - name: Upgrade pip and install core requirements
       run: |
@@ -51,15 +44,9 @@ jobs:
       run: |
         ruff check .
 
-    - name: Execute automated test suite (Windows)
-      if: runner.os == 'Windows'
+    - name: Execute automated test suite
       run: |
         python -m pytest -v
-
-    - name: Execute automated test suite with Virtual Frame Buffer (Linux)
-      if: runner.os == 'Linux'
-      run: |
-        xvfb-run python -m pytest -v
 
   build-release:
     needs: test
