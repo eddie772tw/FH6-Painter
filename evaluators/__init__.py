@@ -16,6 +16,21 @@ try:
 except ImportError:
     TaichiEvaluator = None
 
+try:
+    from evaluators.cmaes_evaluator import CmaesEvaluator
+except ImportError:
+    CmaesEvaluator = None
+
+try:
+    from evaluators.taichi_pso_evaluator import TaichiPsoEvaluator
+except ImportError:
+    TaichiPsoEvaluator = None
+
+try:
+    from evaluators.pytorch_diff_evaluator import PyTorchDiffEvaluator
+except ImportError:
+    PyTorchDiffEvaluator = None
+
 from evaluators.pure_python_evaluator import PurePythonEvaluator
 
 
@@ -74,6 +89,65 @@ class EvaluatorFactory:
             }
         )
 
+        # 註冊 CMA-ES 進化搜索引擎 (Hybrid JIT)
+        cmaes_avail = False
+        if CmaesEvaluator is not None:
+            try:
+                inst = CmaesEvaluator(np.zeros((2, 2, 3), dtype=np.float32))
+                cmaes_avail = inst.is_available()
+            except Exception:
+                cmaes_avail = False
+
+        evaluators.append(
+            {
+                "code": "CMAES_SOLVER",
+                "name": "CMA-ES Solver Engine (Hybrid JIT)",
+                "available": cmaes_avail,
+                "device": "CPU",
+                "class": CmaesEvaluator,
+            }
+        )
+
+        # 註冊 Taichi GPU 粒子群優化 (PSO) 引擎
+        taichi_pso_avail = False
+        if TaichiPsoEvaluator is not None:
+            try:
+                # 重複使用 Python 3.14+ 禁用邏輯
+                if not is_python_314_or_newer:
+                    inst = TaichiPsoEvaluator(np.zeros((2, 2, 3), dtype=np.float32))
+                    taichi_pso_avail = inst.is_available()
+            except Exception:
+                taichi_pso_avail = False
+
+        evaluators.append(
+            {
+                "code": "TAICHI_PSO",
+                "name": "Taichi GPU Particle Swarm Optimization (PSO)",
+                "available": taichi_pso_avail,
+                "device": "GPU",
+                "class": TaichiPsoEvaluator,
+            }
+        )
+
+        # 註冊 PyTorch 可微渲染器 (Adam) 引擎
+        pytorch_diff_avail = False
+        if PyTorchDiffEvaluator is not None:
+            try:
+                inst = PyTorchDiffEvaluator(np.zeros((2, 2, 3), dtype=np.float32))
+                pytorch_diff_avail = inst.is_available()
+            except Exception:
+                pytorch_diff_avail = False
+
+        evaluators.append(
+            {
+                "code": "PYTORCH_DIFF",
+                "name": "PyTorch Differentiable Renderer (GPU Adam)",
+                "available": pytorch_diff_avail,
+                "device": "GPU",
+                "class": PyTorchDiffEvaluator,
+            }
+        )
+
         return evaluators
 
     @staticmethod
@@ -111,7 +185,7 @@ class EvaluatorFactory:
 
         try:
             evaluator_instance = None
-            if selected_code == "TAICHI":
+            if selected_code in ("TAICHI", "TAICHI_PSO"):
                 evaluator_instance = eval_class(target_image, alpha_mask, **kwargs)
             else:
                 evaluator_instance = eval_class(target_image, alpha_mask)
