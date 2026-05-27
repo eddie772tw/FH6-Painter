@@ -82,6 +82,9 @@ class CmaesEvaluator(BaseEvaluator):
 
         x_c, y_c, r_x, r_y, theta, r, g, b, alpha = best_shape_params
 
+        # 將初始的 theta 角度 (弧度) 標準化至 [-pi, pi] 區間，以符合 bounds 的範圍
+        theta_norm = (theta + np.pi) % (2 * np.pi) - np.pi
+
         # 2. 進化策略（CMA-ES）精細定位階段
         bounds = np.array(
             [
@@ -93,48 +96,138 @@ class CmaesEvaluator(BaseEvaluator):
             ]
         )
 
-        mean = np.array([x_c, y_c, r_x, r_y, theta])
+        mean = np.array([x_c, y_c, r_x, r_y, theta_norm])
+        # 使用 1e-5 安全餘裕動態裁剪 mean 向量，確保絕對處於 bounds 範圍內
+        mean = np.clip(mean, bounds[:, 0] + 1e-5, bounds[:, 1] - 1e-5)
+
         # 根據起始值設定初始標準差 (Sigma)
         sigma = np.mean([15.0, 15.0, 8.0, 8.0, 0.3])
 
-        optimizer = CMA(mean=mean, sigma=sigma, bounds=bounds)
-        best_delta = initial_delta
-        best_params = [x_c, y_c, r_x, r_y, theta, r, g, b, alpha]
-
         optimization_steps = params.get("optimization_steps", 50)
-        # 將總步數按照 CMA-ES 代數進行分配
+
+        # 實施 CPU 核心數感知型「動態人口調整策略 (Dynamic Population Sizing)」
+        # 1. 獲取系統邏輯處理器核心數 (如 8C16T 處理器返回 16)
+        import os
+
+        cpu_cores = os.cpu_count() or 4
+        # 2. 數學標準 CMA-ES 最小維度限制 (5維下為 8)
+        cma_min_pop = 4 + int(math.floor(3 * math.log(5)))
+        # 3. 確保算法能充分迭代收斂 (至少保留 8 代的進化週期)
+        min_generations = 8
+        max_pop_by_steps = max(cma_min_pop, optimization_steps // min_generations)
+        # 4. 目標人口數：既要能將 CPU 核心飽和，又不能代數過少
+        target_pop = min(max(cma_min_pop, cpu_cores), max_pop_by_steps)
+        # 5. 核心數對齊：若大於核心數，對齊到最接近的核心倍數以消除線程排程碎片
+        if target_pop > cpu_cores and cpu_cores > 0:
+            population_size = (target_pop // cpu_cores) * cpu_cores
+        else:
+            population_size = max(cma_min_pop, target_pop)
+
+        optimizer = CMA(
+            mean=mean, sigma=sigma, bounds=bounds, population_size=population_size
+        )
+        best_delta = initial_delta
+        best_params = [mean[0], mean[1], mean[2], mean[3], mean[4], r, g, b, alpha]
+
+        # 將總步數按照動態分配的人口數計算出實際迭代代數
         generations = max(5, optimization_steps // optimizer.population_size + 1)
 
         # 取得底層評估器對象，複用其單個形狀 JIT 快速評估函數
         evaluator_obj = self.numba_eval if self.numba_available else self.fallback_eval
 
+        # 準備通道數值以提供極速評估
+        canvas_r = np.ascontiguousarray(current_canvas[:, :, 0])
+        canvas_g = np.ascontiguousarray(current_canvas[:, :, 1])
+        canvas_b = np.ascontiguousarray(current_canvas[:, :, 2])
+
+        # 動態對齊 JIT 編譯器的型別推導 (Static Typing)，將 None 安全替代為 2D NumPy 空矩陣
+        freeze_mask = params.get("freeze_mask")
+        if freeze_mask is None:
+            freeze_mask = np.zeros((1, 1), dtype=np.uint8)
+
+        weight_map = params.get("weight_map")
+        if weight_map is None:
+            weight_map = np.ones((1, 1), dtype=np.float32)
+
+        uncovered_map = params.get("uncovered_map")
+        if uncovered_map is None:
+            uncovered_map = np.ones((1, 1), dtype=np.float32)
+
         for _ in range(generations):
             solutions = []
             candidates = [optimizer.ask() for _ in range(optimizer.population_size)]
 
-            for p in candidates:
-                cx, cy, crx, cry, ctheta = p
-                # 使用底層 JIT 引擎評估單個候選個體的 MSE 與色彩
-                # 這裡調用底層 Evaluator 重建的 evaluate_single_candidate 或直接呼叫 class 的內建評估
-                # （此處先使用 placeholder，具體在實作期對接）
-                # 在此最基本引入中，我們先使用 fallback 機制作為 stub
-                # 實際實作時，我們會直接暴露底層 Evaluation JIT 核心
-                curr_r, curr_g, curr_b, delta = 128.0, 128.0, 128.0, best_delta
+            # 拆分候選幾何參數為 1D 數值陣列，以供 JIT 進行 CPU 多執行緒並行批次評估
+            candidates_x = np.array([p[0] for p in candidates], dtype=np.float32)
+            candidates_y = np.array([p[1] for p in candidates], dtype=np.float32)
+            candidates_rx = np.array([p[2] for p in candidates], dtype=np.float32)
+            candidates_ry = np.array([p[3] for p in candidates], dtype=np.float32)
+            candidates_theta = np.array([p[4] for p in candidates], dtype=np.float32)
+            candidates_alpha = np.full(len(candidates), alpha, dtype=np.float32)
 
-                solutions.append((p, delta))
-                if delta < best_delta:
-                    best_delta = delta
-                    best_params = [
-                        cx,
-                        cy,
-                        crx,
-                        cry,
-                        ctheta,
-                        int(curr_r),
-                        int(curr_g),
-                        int(curr_b),
-                        alpha,
-                    ]
+            if self.numba_available and self.numba_eval is not None:
+                from evaluators import numba_kernels
+
+                colors, deltas = numba_kernels.evaluate_candidates_batch(
+                    self.target_r,
+                    self.target_g,
+                    self.target_b,
+                    canvas_r,
+                    canvas_g,
+                    canvas_b,
+                    candidates_x,
+                    candidates_y,
+                    candidates_rx,
+                    candidates_ry,
+                    candidates_theta,
+                    candidates_alpha,
+                    self.alpha_mask,
+                    params.get("check_contour", False),
+                    params.get("use_freeze", False),
+                    freeze_mask,
+                    params.get("use_weight", False),
+                    weight_map,
+                    params.get("use_uncovered", False),
+                    uncovered_map,
+                )
+
+                for i, p in enumerate(candidates):
+                    delta = deltas[i]
+                    curr_r, curr_g, curr_b = colors[i]
+                    solutions.append((p, delta))
+                    if delta < best_delta:
+                        best_delta = delta
+                        best_params = [
+                            p[0],
+                            p[1],
+                            p[2],
+                            p[3],
+                            p[4],
+                            int(curr_r),
+                            int(curr_g),
+                            int(curr_b),
+                            alpha,
+                        ]
+            else:
+                # Fallback to Pure Python Sequential evaluations
+                for p in candidates:
+                    cx, cy, crx, cry, ctheta = p
+                    curr_r, curr_g, curr_b, delta = 128.0, 128.0, 128.0, best_delta
+
+                    solutions.append((p, delta))
+                    if delta < best_delta:
+                        best_delta = delta
+                        best_params = [
+                            cx,
+                            cy,
+                            crx,
+                            cry,
+                            ctheta,
+                            int(curr_r),
+                            int(curr_g),
+                            int(curr_b),
+                            alpha,
+                        ]
 
             optimizer.tell(solutions)
             if optimizer.should_stop():

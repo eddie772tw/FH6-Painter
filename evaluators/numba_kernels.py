@@ -440,20 +440,35 @@ def serial_hill_climb(
     c_rate = np.float32(cooling_rate)
     max_r_f = np.float32(max_r)
 
+    # 引入基於成功率的自適應變量調整因子 (Adaptive Step-Size/Covariance Adaptation)
+    # 這是 CMA-ES/Adaptive-ES 的核心思想，能根據優化景觀動態收縮/擴張搜索半徑
+    adap_x = np.float32(1.0)
+    adap_y = np.float32(1.0)
+    adap_rx = np.float32(1.0)
+    adap_ry = np.float32(1.0)
+    adap_t = np.float32(1.0)
+
     for step in range(optimization_steps):
         scale = np.float32(1.0 - (step / optimization_steps))
 
-        nx_c = curr_x_c + np.float32(np.random.normal(0.0, 8.0 * scale))
-        ny_c = curr_y_c + np.float32(np.random.normal(0.0, 8.0 * scale))
+        # 結合時間基底衰減 (scale) 與自適應局部乘積因子 (adap)，兼顧全域平滑收斂與極致局部微調
+        sig_x = np.float32(8.0) * scale * adap_x
+        sig_y = np.float32(8.0) * scale * adap_y
+        sig_rx = np.float32(6.0) * scale * adap_rx
+        sig_ry = np.float32(6.0) * scale * adap_ry
+        sig_t = np.float32(0.25) * scale * adap_t
+
+        nx_c = curr_x_c + np.float32(np.random.normal(0.0, sig_x))
+        ny_c = curr_y_c + np.float32(np.random.normal(0.0, sig_y))
         nr_x = max(
             np.float32(2.0),
-            min(max_r_f, curr_r_x + np.float32(np.random.normal(0.0, 6.0 * scale))),
+            min(max_r_f, curr_r_x + np.float32(np.random.normal(0.0, sig_rx))),
         )
         nr_y = max(
             np.float32(2.0),
-            min(max_r_f, curr_r_y + np.float32(np.random.normal(0.0, 6.0 * scale))),
+            min(max_r_f, curr_r_y + np.float32(np.random.normal(0.0, sig_ry))),
         )
-        ntheta = curr_theta + np.float32(np.random.normal(0.0, 0.25 * scale))
+        ntheta = curr_theta + np.float32(np.random.normal(0.0, sig_t))
         nalpha = 255
 
         nr, ng, nb, delta = evaluate_candidate(
@@ -499,6 +514,20 @@ def serial_hill_climb(
             curr_r = np.float32(nr)
             curr_g = np.float32(ng)
             curr_b = np.float32(nb)
+
+            # 成功步：擴張該參數方向的搜索半徑以加速爬坡 (上限設為 2.5)
+            adap_x = min(np.float32(2.5), adap_x * np.float32(1.1))
+            adap_y = min(np.float32(2.5), adap_y * np.float32(1.1))
+            adap_rx = min(np.float32(2.5), adap_rx * np.float32(1.1))
+            adap_ry = min(np.float32(2.5), adap_ry * np.float32(1.1))
+            adap_t = min(np.float32(2.5), adap_t * np.float32(1.1))
+        else:
+            # 失敗步：收縮搜索半徑以進行更精細的局部探索 (下限設為 0.05)
+            adap_x = max(np.float32(0.05), adap_x * np.float32(0.85))
+            adap_y = max(np.float32(0.05), adap_y * np.float32(0.85))
+            adap_rx = max(np.float32(0.05), adap_rx * np.float32(0.85))
+            adap_ry = max(np.float32(0.05), adap_ry * np.float32(0.85))
+            adap_t = max(np.float32(0.05), adap_t * np.float32(0.85))
 
         if sa_enabled:
             T = T * c_rate
@@ -605,3 +634,64 @@ def rebuild_canvas_jit(canvas, avg_r, avg_g, avg_b, avg_a, shapes_data, shapes_c
             shapes_color[i, 2],
             shapes_color[i, 3],
         )
+
+
+@numba.jit(nopython=True, parallel=True, fastmath=True, cache=True)
+def evaluate_candidates_batch(
+    target_r,
+    target_g,
+    target_b,
+    canvas_r,
+    canvas_g,
+    canvas_b,
+    candidates_x,
+    candidates_y,
+    candidates_rx,
+    candidates_ry,
+    candidates_theta,
+    candidates_alpha,
+    alpha_mask,
+    check_contour,
+    use_freeze=False,
+    freeze_mask=None,
+    use_weight=False,
+    weight_map=None,
+    use_uncovered=False,
+    uncovered_map=None,
+):
+    """CPU 多線程並行評估一個 Batch (如 CMA-ES 的一代 Population) 的所有候選形狀。
+    消除了 Python 到 JIT 核心的循環調用開銷，使多核心 CPU 執行緒利用率達到 100%。
+    """
+    num_candidates = len(candidates_x)
+    deltas = np.zeros(num_candidates, dtype=np.float32)
+    colors = np.zeros((num_candidates, 3), dtype=np.float32)
+
+    for i in numba.prange(num_candidates):
+        r, g, b, delta = evaluate_candidate(
+            target_r,
+            target_g,
+            target_b,
+            canvas_r,
+            canvas_g,
+            canvas_b,
+            candidates_x[i],
+            candidates_y[i],
+            candidates_rx[i],
+            candidates_ry[i],
+            candidates_theta[i],
+            int(candidates_alpha[i]),
+            alpha_mask,
+            check_contour,
+            use_freeze,
+            freeze_mask,
+            use_weight,
+            weight_map,
+            use_uncovered,
+            uncovered_map,
+        )
+        deltas[i] = delta
+        colors[i, 0] = r
+        colors[i, 1] = g
+        colors[i, 2] = b
+
+    return colors, deltas
