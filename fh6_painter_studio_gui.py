@@ -466,11 +466,11 @@ class ForzaStudioGUI:
         ).grid(row=2, column=0, sticky="w", pady=4)
 
         self.val_layers = tk.StringVar(value="2000")
-        
+
         # 使用橫向子 Frame 把 Entry 和提早收斂 Checkbutton 完美組合在同一欄，避免任何重疊
         layers_container = tk.Frame(params_body, bg=self.bg_card)
         layers_container.grid(row=2, column=1, sticky="w", pady=4, padx=(10, 0))
-        
+
         self.entry_layers = tk.Entry(
             layers_container,
             textvariable=self.val_layers,
@@ -517,13 +517,29 @@ class ForzaStudioGUI:
             fg=self.fg_secondary,
         ).grid(row=4, column=0, sticky="w", pady=4)
 
-        if HAS_LIBS and 'EvaluatorFactory' in globals() and EvaluatorFactory is not None:
+        if (
+            HAS_LIBS
+            and "EvaluatorFactory" in globals()
+            and EvaluatorFactory is not None
+        ):
             self.available_evaluators = EvaluatorFactory.get_available_evaluators()
         else:
             self.available_evaluators = [
-                {"code": "NUMBA", "name": "Numba JIT (CPU, Recommanded)", "available": False},
-                {"code": "TAICHI", "name": "Taichi JIT (GPU, High-perf)", "available": False},
-                {"code": "PURE_PYTHON", "name": "Pure Python (CPU, Slow)", "available": True}
+                {
+                    "code": "NUMBA",
+                    "name": "Numba JIT (CPU, Recommanded)",
+                    "available": False,
+                },
+                {
+                    "code": "TAICHI",
+                    "name": "Taichi JIT (GPU, High-perf)",
+                    "available": False,
+                },
+                {
+                    "code": "PURE_PYTHON",
+                    "name": "Pure Python (CPU, Slow)",
+                    "available": True,
+                },
             ]
         evaluator_names = []
         for e in self.available_evaluators:
@@ -1392,7 +1408,7 @@ class ForzaStudioGUI:
         now_time = time.time()
         curr, total, _, _ = self.latest_progress
         is_finished = (curr == total) if self.is_generating else True
-        
+
         # 當開啟預覽且需要更新時，檢查是否已間隔 500ms 或已經生成完成
         if self.need_preview_update and self.enable_preview:
             if (now_time - self.last_canvas_draw_time >= 0.50) or is_finished:
@@ -1418,9 +1434,9 @@ class ForzaStudioGUI:
 
                             # 直接使用 UI 原生的深黑色背景色融為一體 (RGB: 14, 14, 14)，取消透明背景的灰白方格
                             bg_color = np.array([14.0, 14.0, 14.0], dtype=np.float32)
-                            blended = (arr_rgb * alpha + bg_color * (1.0 - alpha)).astype(
-                                np.uint8
-                            )
+                            blended = (
+                                arr_rgb * alpha + bg_color * (1.0 - alpha)
+                            ).astype(np.uint8)
                             pil_img = Image.fromarray(blended)
                         else:
                             pil_img = Image.fromarray(arr_clipped)
@@ -1431,31 +1447,43 @@ class ForzaStudioGUI:
                             if self.is_generating
                             else Image.Resampling.BILINEAR
                         )
-                        
+
                         # 保持圖片長寬比例 (Aspect Ratio) 縮放，置中繪製於 Canvas
                         w, h = pil_img.size
                         scale = min(self.canvas_size / w, self.canvas_size / h)
                         new_w = max(1, int(w * scale))
                         new_h = max(1, int(h * scale))
-                        
+
                         pil_resized = pil_img.resize((new_w, new_h), resample_mode)
                         self.img_tk = ImageTk.PhotoImage(pil_resized)
-                        
+
                         # 增量更新點陣圖，消除 GDI 物件重複重建與 DWM 負載
                         center_pos = self.canvas_size / 2
                         if getattr(self, "preview_image_id", None) is None:
                             self.canvas_preview.delete("all")
                             self.preview_image_id = self.canvas_preview.create_image(
-                                center_pos, center_pos, anchor="center", image=self.img_tk
+                                center_pos,
+                                center_pos,
+                                anchor="center",
+                                image=self.img_tk,
                             )
                         else:
                             try:
-                                self.canvas_preview.itemconfig(self.preview_image_id, image=self.img_tk)
-                                self.canvas_preview.coords(self.preview_image_id, center_pos, center_pos)
+                                self.canvas_preview.itemconfig(
+                                    self.preview_image_id, image=self.img_tk
+                                )
+                                self.canvas_preview.coords(
+                                    self.preview_image_id, center_pos, center_pos
+                                )
                             except Exception:
                                 self.canvas_preview.delete("all")
-                                self.preview_image_id = self.canvas_preview.create_image(
-                                    center_pos, center_pos, anchor="center", image=self.img_tk
+                                self.preview_image_id = (
+                                    self.canvas_preview.create_image(
+                                        center_pos,
+                                        center_pos,
+                                        anchor="center",
+                                        image=self.img_tk,
+                                    )
                                 )
                     except Exception as e:
                         self.log_to_console(f"\n[Preview Error] {e}\n")
@@ -1520,7 +1548,9 @@ class ForzaStudioGUI:
                 result = getattr(self, "import_result", 1)
                 if result == 0:
                     self.status_lbl.configure(text="INJECT DONE", fg=self.color_blue)
-                    self.log_to_console("\n[System] Livery memory injection completed.\n")
+                    self.log_to_console(
+                        "\n[System] Livery memory injection completed.\n"
+                    )
 
                     # QoL 2: 導入完成後，彈出傳統中文對話框提示玩家導入了多少幾何圖層
                     imported_layers = self.val_layers.get()
@@ -1530,15 +1560,17 @@ class ForzaStudioGUI:
                     )
                 else:
                     self.status_lbl.configure(text="INJECT ERROR", fg="#D32F2F")
-                    self.log_to_console("\n[System] ERROR: Livery memory injection failed! Check log/terminal for details.\n")
-                    
+                    self.log_to_console(
+                        "\n[System] ERROR: Livery memory injection failed! Check log/terminal for details.\n"
+                    )
+
                     # Redraw error visual state on GUI Radar
                     self.draw_cyber_placeholder(text="INJECT FAILED")
-                    
+
                     messagebox.showerror(
                         "導入失敗 / Import Failed",
                         "彩繪圖層注入失敗！\n請檢查終端機日誌以確認錯誤原因。\n\n"
-                        "提示：如果錯誤是 LastError=5 (Access Denied)，請關閉程式並以「系統管理員身分執行」重試。"
+                        "提示：如果錯誤是 LastError=5 (Access Denied)，請關閉程式並以「系統管理員身分執行」重試。",
                     )
 
         # Loop again in 100ms
@@ -1641,7 +1673,7 @@ class ForzaStudioGUI:
         def generator_cb(curr, total, speed, eta, canvas_arr):
             if self.cancel_generation_flag:
                 return "ABORT"
-            
+
             # 更新節流：限制拷貝頻率大約在 20Hz (每 50ms 一次) 或是最後一幀時強制拷貝
             now_time = time.time()
             if (now_time - self.last_cb_update_time >= 0.05) or (curr == total):
@@ -1748,10 +1780,13 @@ class ForzaStudioGUI:
         self.import_result = None
         try:
             from tools.fh6_import_layer_table import run_importer
+
             self.import_result = run_importer(**kwargs)
         except Exception as e:
             self.import_result = 1
-            print(f"Exception raised in background importer thread: {e}", file=sys.stderr)
+            print(
+                f"Exception raised in background importer thread: {e}", file=sys.stderr
+            )
 
     # --- Livery Memory Injection Thread Launcher ---
     def start_injection(self):

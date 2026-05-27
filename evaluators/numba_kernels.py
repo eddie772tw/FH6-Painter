@@ -65,6 +65,8 @@ def evaluate_candidate(
     b_coeff = sin_cos * (inv_rx2 - inv_ry2)
     c_y_coeff = inv_rx2 * sin_t * sin_t + inv_ry2 * cos_t * cos_t
 
+    inv_a = np.float32(1.0 / a) if a > 0 else np.float32(0.0)
+
     # Validation Pass: Check contour and freeze mask first in a scalar loop with early return
     # This isolates early exits from the heavy accumulation loop so LLVM can vectorize
     if check_contour or use_freeze:
@@ -75,8 +77,8 @@ def evaluate_candidate(
             discriminant = b_val * b_val - a * c_val
             if discriminant >= 0.0:
                 sqrt_d = math.sqrt(discriminant)
-                dx_min = (-b_val - sqrt_d) / a
-                dx_max = (-b_val + sqrt_d) / a
+                dx_min = (-b_val - sqrt_d) * inv_a
+                dx_max = (-b_val + sqrt_d) * inv_a
                 x_start = max(min_x, int(math.ceil(x_c + dx_min)))
                 x_end = min(max_x, int(math.floor(x_c + dx_max)))
 
@@ -122,8 +124,8 @@ def evaluate_candidate(
         discriminant = b_val * b_val - a * c_val
         if discriminant >= 0.0:
             sqrt_d = math.sqrt(discriminant)
-            dx_min = (-b_val - sqrt_d) / a
-            dx_max = (-b_val + sqrt_d) / a
+            dx_min = (-b_val - sqrt_d) * inv_a
+            dx_max = (-b_val + sqrt_d) * inv_a
             x_start = max(min_x, int(math.ceil(x_c + dx_min)))
             x_end = min(max_x, int(math.floor(x_c + dx_max)))
 
@@ -222,22 +224,31 @@ def draw_ellipse(canvas, x_c, y_c, r_x, r_y, theta, r, g, b, alpha):
     g_val = np.float32(g)
     b_val = np.float32(b)
 
+    sin_cos = sin_t * cos_t
+    a = inv_rx2 * cos_t * cos_t + inv_ry2 * sin_t * sin_t
+    b_coeff = sin_cos * (inv_rx2 - inv_ry2)
+    c_y_coeff = inv_rx2 * sin_t * sin_t + inv_ry2 * cos_t * cos_t
+
+    inv_a = np.float32(1.0 / a) if a > 0 else np.float32(0.0)
+
     for y in range(min_y, max_y + 1):
         dy = np.float32(y - y_c)
-        dx_start = np.float32(min_x - x_c)
-        rx = dx_start * cos_t + dy * sin_t
-        ry = -dx_start * sin_t + dy * cos_t
+        b_val = dy * b_coeff
+        c_val = dy * dy * c_y_coeff - 1.0
+        discriminant = b_val * b_val - a * c_val
+        if discriminant >= 0.0:
+            sqrt_d = math.sqrt(discriminant)
+            dx_min = (-b_val - sqrt_d) * inv_a
+            dx_max = (-b_val + sqrt_d) * inv_a
+            x_start = max(min_x, int(math.ceil(x_c + dx_min)))
+            x_end = min(max_x, int(math.floor(x_c + dx_max)))
 
-        for x in range(min_x, max_x + 1):
-            if (rx * rx) * inv_rx2 + (ry * ry) * inv_ry2 <= 1.0:
+            for x in range(x_start, x_end + 1):
                 canvas[y, x, 0] = canvas[y, x, 0] * one_minus_a + r_val * a_f
                 canvas[y, x, 1] = canvas[y, x, 1] * one_minus_a + g_val * a_f
                 canvas[y, x, 2] = canvas[y, x, 2] * one_minus_a + b_val * a_f
                 if canvas.shape[2] == 4:
                     canvas[y, x, 3] = canvas[y, x, 3] * one_minus_a + np.float32(alpha)
-
-            rx += cos_t
-            ry -= sin_t
 
 
 @numba.jit(nopython=True, fastmath=True, cache=True)
@@ -274,18 +285,27 @@ def update_uncovered_mask(uncovered_map, x_c, y_c, r_x, r_y, theta):
     inv_rx2 = np.float32(1.0 / (r_x * r_x) if r_x > 0 else 0.0)
     inv_ry2 = np.float32(1.0 / (r_y * r_y) if r_y > 0 else 0.0)
 
+    sin_cos = sin_t * cos_t
+    a = inv_rx2 * cos_t * cos_t + inv_ry2 * sin_t * sin_t
+    b_coeff = sin_cos * (inv_rx2 - inv_ry2)
+    c_y_coeff = inv_rx2 * sin_t * sin_t + inv_ry2 * cos_t * cos_t
+
+    inv_a = np.float32(1.0 / a) if a > 0 else np.float32(0.0)
+
     for y in range(min_y, max_y + 1):
         dy = np.float32(y - y_c)
-        dx_start = np.float32(min_x - x_c)
-        rx = dx_start * cos_t + dy * sin_t
-        ry = -dx_start * sin_t + dy * cos_t
+        b_val = dy * b_coeff
+        c_val = dy * dy * c_y_coeff - 1.0
+        discriminant = b_val * b_val - a * c_val
+        if discriminant >= 0.0:
+            sqrt_d = math.sqrt(discriminant)
+            dx_min = (-b_val - sqrt_d) * inv_a
+            dx_max = (-b_val + sqrt_d) * inv_a
+            x_start = max(min_x, int(math.ceil(x_c + dx_min)))
+            x_end = min(max_x, int(math.floor(x_c + dx_max)))
 
-        for x in range(min_x, max_x + 1):
-            if (rx * rx) * inv_rx2 + (ry * ry) * inv_ry2 <= 1.0:
+            for x in range(x_start, x_end + 1):
                 uncovered_map[y, x] = np.float32(1.0)
-
-            rx += cos_t
-            ry -= sin_t
 
 
 @numba.jit(nopython=True, parallel=True, fastmath=True, cache=True)
@@ -559,22 +579,31 @@ def run_redundancy_check_jit(shapes_data, shapes_color, shapes_type, width, heig
         inv_rx2 = np.float32(1.0 / (r_x * r_x) if r_x > 0 else 0.0)
         inv_ry2 = np.float32(1.0 / (r_y * r_y) if r_y > 0 else 0.0)
 
+        sin_cos = sin_t * cos_t
+        a = inv_rx2 * cos_t * cos_t + inv_ry2 * sin_t * sin_t
+        b_coeff = sin_cos * (inv_rx2 - inv_ry2)
+        c_y_coeff = inv_rx2 * sin_t * sin_t + inv_ry2 * cos_t * cos_t
+
+        inv_a = np.float32(1.0 / a) if a > 0 else np.float32(0.0)
+
         has_contribution = False
 
         for y in range(min_y, max_y + 1):
             dy = np.float32(y - y_c)
-            dx_start = np.float32(min_x - x_c)
-            rx = dx_start * cos_t + dy * sin_t
-            ry = -dx_start * sin_t + dy * cos_t
+            b_val = dy * b_coeff
+            c_val = dy * dy * c_y_coeff - 1.0
+            discriminant = b_val * b_val - a * c_val
+            if discriminant >= 0.0:
+                sqrt_d = math.sqrt(discriminant)
+                dx_min = (-b_val - sqrt_d) * inv_a
+                dx_max = (-b_val + sqrt_d) * inv_a
+                x_start = max(min_x, int(math.ceil(x_c + dx_min)))
+                x_end = min(max_x, int(math.floor(x_c + dx_max)))
 
-            for x in range(min_x, max_x + 1):
-                if (rx * rx) * inv_rx2 + (ry * ry) * inv_ry2 <= 1.0:
+                for x in range(x_start, x_end + 1):
                     if occlusion[y, x] < 0.999:
                         has_contribution = True
                         occlusion[y, x] += (1.0 - occlusion[y, x]) * a_f
-
-                rx += cos_t
-                ry -= sin_t
 
         if not has_contribution:
             visible_mask[i] = False
