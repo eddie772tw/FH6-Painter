@@ -39,15 +39,15 @@ def test_pure_python_evaluator():
         r_x=4.0,
         r_y=4.0,
         theta_rad=0.0,
-        r=1.0,
-        g=0.0,
-        b=0.0,
+        r=0.5,
+        g=0.3,
+        b=0.8,
         alpha=0.8,
     )
-    # 確認畫布有被更新 (有紅色像素被著色)
-    assert np.sum(canvas[:, :, 0]) > 0
-    assert np.sum(canvas[:, :, 1]) == 0
-    assert np.sum(canvas[:, :, 2]) == 0
+    # 確認所有 RGB 色彩通道都有被正確著色與更新，以防範未來出現變數遮蔽等色彩 Bug
+    assert np.sum(canvas[:, :, 0]) > 0  # 紅色通道
+    assert np.sum(canvas[:, :, 1]) > 0  # 綠色通道
+    assert np.sum(canvas[:, :, 2]) > 0  # 藍色通道
 
     # 測試未覆蓋優先度地圖
     uncovered_map = evaluator.init_uncovered_map(16, 16, has_alpha=False, bias=0.1)
@@ -86,12 +86,15 @@ def test_numba_evaluator():
         r_x=4.0,
         r_y=4.0,
         theta_rad=0.0,
-        r=1.0,
-        g=0.0,
-        b=0.0,
+        r=0.5,
+        g=0.3,
+        b=0.8,
         alpha=0.8,
     )
-    assert np.sum(canvas[:, :, 0]) > 0
+    # 確認所有 RGB 色彩通道都有被正確著色與更新，以防範未來出現變數遮蔽等色彩 Bug
+    assert np.sum(canvas[:, :, 0]) > 0  # 紅色通道
+    assert np.sum(canvas[:, :, 1]) > 0  # 綠色通道
+    assert np.sum(canvas[:, :, 2]) > 0  # 藍色通道
 
     # 測試未覆蓋優先度地圖
     uncovered_map = evaluator.init_uncovered_map(16, 16, has_alpha=False, bias=0.1)
