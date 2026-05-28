@@ -79,30 +79,50 @@ if exist "%~dp0settings" (
     )
 )
 
-:: Copy optimization_settings.json
-if exist "%~dp0optimization_settings.json" (
-    copy /Y "%~dp0optimization_settings.json" "%DIST_DIR%\" >nul
+:: 5. Compress output package automatically
+echo [INFO] Compressing output package...
+where 7z >nul 2>nul
+if %errorlevel% equ 0 (
+    echo [INFO] Found 7-Zip, compressing to .7z archive...
+    if exist "%~dp0dist\FH6_Painter_Studio.7z" del /q "%~dp0dist\FH6_Painter_Studio.7z"
+    7z a -r "%~dp0dist\FH6_Painter_Studio.7z" "%DIST_DIR%" >nul
     if errorlevel 1 (
-        echo [WARNING] Encountered minor warning when copying optimization_settings.json.
+        echo [WARNING] Failed to compress using 7-Zip.
     ) else (
-        echo [SUCCESS] Copied "optimization_settings.json".
+        echo [SUCCESS] Compressed successfully: FH6_Painter_Studio.7z
+        set "ARCHIVE_FILE=FH6_Painter_Studio.7z"
+    )
+) else (
+    echo [INFO] 7-Zip not found in PATH, using PowerShell Compress-Archive...
+    if exist "%~dp0dist\FH6_Painter_Studio.zip" del /q "%~dp0dist\FH6_Painter_Studio.zip"
+    powershell -NoProfile -Command "Compress-Archive -Path '%DIST_DIR%' -DestinationPath '%~dp0dist\FH6_Painter_Studio.zip' -Force"
+    if errorlevel 1 (
+        echo [WARNING] Failed to compress using PowerShell.
+    ) else (
+        echo [SUCCESS] Compressed successfully: FH6_Painter_Studio.zip
+        set "ARCHIVE_FILE=FH6_Painter_Studio.zip"
     )
 )
 echo.
 
-:: 5. Success screen
+:: 6. Success screen
 echo ====================================================================
-echo      ??FH6 Painter standalone bundle created successfully ??echo ====================================================================
+echo      FH6 Painter standalone bundle created successfully
+echo ====================================================================
 echo  Distribution Folder Path:
 echo  %DIST_DIR%
 echo.
 echo  Executable Program Location:
 echo  %DIST_DIR%\FH6_Painter_Studio.exe
+if not "!ARCHIVE_FILE!"=="" (
+    echo.
+    echo  Compressed Distribution Archive:
+    echo  %~dp0dist\!ARCHIVE_FILE!
+)
 echo ====================================================================
 echo.
-echo TIP: You can directly ZIP the "%~dp0dist\FH6_Painter_Studio" directory
-echo      and distribute it to other players as a portable standalone tool!
+echo TIP: You can distribute the generated archive to other players
+echo      as a portable standalone tool!
 echo.
 pause
 exit /b 0
-

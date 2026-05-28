@@ -32,7 +32,7 @@
     "enabled": true,
     "bias": 5.0
   },
-  "window_geometry": "1216x863+2197+-65",
+  "window_geometry": "1216x863+18+42",
   "boundary_weighting": {
     "enabled": true,
     "bias": 3.0
