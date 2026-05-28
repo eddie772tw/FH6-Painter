@@ -38,7 +38,9 @@ def test_gui_initialization(monkeypatch):
         root.update()
 
         # 驗證注入失敗時的包裝器捕捉邏輯（使用同一個 Tk 實例避免多次初始化 tk.Tk() 引發系統 TCL 錯誤）
-        monkeypatch.setattr("tools.fh6_import_layer_table.run_importer", lambda **kwargs: 1)
+        monkeypatch.setattr(
+            "tools.fh6_import_layer_table.run_importer", lambda **kwargs: 1
+        )
         app.run_importer_wrapper(json_path="dummy.json", layers=10)
         assert app.import_result == 1
 
