@@ -204,9 +204,10 @@ def evaluate_candidate_ti(
     total_delta_mse = 99999999.0
 
     if is_valid == 1 and count > 0.0:
-        avg_r = sum_t_r / count
-        avg_g = sum_t_g / count
-        avg_b = sum_t_b / count
+        inv_count = 1.0 / count
+        avg_r = sum_t_r * inv_count
+        avg_g = sum_t_g * inv_count
+        avg_b = sum_t_b * inv_count
 
         a_f = alpha / 255.0
         a2_minus_2a = a_f * a_f - 2.0 * a_f
@@ -311,7 +312,7 @@ def compute_raw_error_and_max(
         diff = 0.0
         for c in ti.static(range(3)):
             diff += ti.abs(target[y, x, c] - canvas[y, x, c])
-        diff /= 3.0
+        diff *= 0.3333333333333333
         ti.atomic_max(max_err, diff)
         error_prob[y, x] = diff
     return max_err
@@ -324,9 +325,10 @@ def normalize_error_prob(
     height: ti.i32,
     width: ti.i32,
 ):
+    inv_max_val = 1.0 / max_val if max_val > 0.0 else 0.0
     for y, x in ti.ndrange(height, width):
-        if max_val > 0.0:
-            error_prob[y, x] = error_prob[y, x] / max_val
+        if inv_max_val > 0.0:
+            error_prob[y, x] = error_prob[y, x] * inv_max_val
         else:
             error_prob[y, x] = 0.0
 
