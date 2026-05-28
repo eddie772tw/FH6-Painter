@@ -61,3 +61,4 @@ dist/
 !optimization_settings.json
 !tools/fh6-heuristics.json
 tools/benchmark_taichi.py
+optimization_settings.json
