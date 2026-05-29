@@ -10,13 +10,9 @@ permissions:
   contents: read
 
 jobs:
-  test:
-    runs-on: windows-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.13"]
-
+  # 任務 1：代碼格式與語法檢查 (獨立出來)
+  lint:
+    runs-on: ubuntu-latest # Lint 在 Linux 環境執行通常較快
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
@@ -30,6 +26,18 @@ jobs:
       uses: astral-sh/ruff-action@v3
       with:
         args: "format --check ."
+
+  # 任務 2：單元測試與邏輯驗證
+  test:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.13"]
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
 
     - name: Set up Python ${{ matrix.python-version }}
       uses: actions/setup-python@v5
@@ -47,61 +55,14 @@ jobs:
         pip install pytest
         python -m pytest -v
 
-  build-release:
-    needs: test
-    runs-on: windows-latest
-    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
-    
-    steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-
-    - name: Set up Python 3.13
-      uses: actions/setup-python@v5
-      with:
-        python-version: "3.13"
-        cache: 'pip'
-
-    - name: Install requirements & PyInstaller
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install pyinstaller
-
-    - name: Build Standalone Windows Executable
-      shell: pwsh
-      run: |
-        # 呼叫 PyInstaller 封裝獨立 EXE，模擬 build_release.bat 的核心編譯參數
-        pyinstaller --noconfirm --name "FH6_Painter_Studio" --windowed --collect-all "taichi" --add-data "evaluators/*;evaluators" --add-data "tools/*;tools" fh6_painter_studio_gui.py
-        
-        # 複製外置配置資源至 dist 發行目錄中
-        if (Test-Path "settings") {
-            Copy-Item -Path "settings" -Destination "dist/FH6_Painter_Studio/settings" -Recurse -Force
-        }
-        if (Test-Path "optimization_settings.json") {
-            Copy-Item -Path "optimization_settings.json" -Destination "dist/FH6_Painter_Studio/" -Force
-        }
-
-    - name: Compress standalone bundle to ZIP
-      shell: pwsh
-      run: |
-        Compress-Archive -Path "dist/FH6_Painter_Studio" -DestinationPath "FH6_Painter_Studio_Windows.zip" -Force
-
-    - name: Upload build artifact preview
-      uses: actions/upload-artifact@v4
-      with:
-        name: FH6_Painter_Studio_Windows_Preview
-        path: FH6_Painter_Studio_Windows.zip
-        retention-days: 7
+  # 任務 3：自動修復代碼格式 (僅依賴 lint 的結果)
   auto-fix:
-    needs: test
+    needs: lint
     runs-on: ubuntu-latest
     
-    # 關鍵門檻 1：只有當 test Job 失敗時才觸發
-    # 關鍵門檻 2：檢查 commit 訊息，如果開頭是 "style: auto format" 則跳過，防止無限循環
-    if: |
-      failure() && 
-      !contains(github.event.head_commit.message, 'style: auto format')
+    # 只要 lint 任務失敗就觸發。
+    # 移除了對 commit message 的判斷，因為底層加上 [skip ci] 後，GitHub 預設就不會觸發新流程。
+    if: failure()
     
     permissions:
       contents: write
@@ -125,5 +86,53 @@ jobs:
     - name: Commit and Push changes
       uses: stefanzweifel/git-auto-commit-action@v5
       with:
+        # 加入 [skip ci] 讓這次自動提交不會再次觸發 Action，避免無限迴圈
         commit_message: "style: auto format code with ruff [skip ci]"
+
+  # 任務 4：建置與封裝發行版
+  build-release:
+    needs: test # 確保邏輯測試通過後才打包
+    runs-on: windows-latest
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python 3.13
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.13"
+        cache: 'pip'
+
+    - name: Install requirements & PyInstaller
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pyinstaller
+
+    - name: Build Standalone Windows Executable
+      shell: pwsh
+      run: |
+        # 呼叫 PyInstaller 封裝獨立 EXE
+        pyinstaller --noconfirm --name "FH6_Painter_Studio" --windowed --collect-all "taichi" --add-data "evaluators/*;evaluators" --add-data "tools/*;tools" fh6_painter_studio_gui.py
         
+        # 複製外置配置資源至 dist 發行目錄中
+        if (Test-Path "settings") {
+            Copy-Item -Path "settings" -Destination "dist/FH6_Painter_Studio/settings" -Recurse -Force
+        }
+        if (Test-Path "optimization_settings.json") {
+            Copy-Item -Path "optimization_settings.json" -Destination "dist/FH6_Painter_Studio/" -Force
+        }
+
+    - name: Compress standalone bundle to ZIP
+      shell: pwsh
+      run: |
+        Compress-Archive -Path "dist/FH6_Painter_Studio" -DestinationPath "FH6_Painter_Studio_Windows.zip" -Force
+
+    - name: Upload build artifact preview
+      uses: actions/upload-artifact@v4
+      with:
+        name: FH6_Painter_Studio_Windows_Preview
+        path: FH6_Painter_Studio_Windows.zip
+        retention-days: 7
