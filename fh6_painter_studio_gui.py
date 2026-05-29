@@ -1876,6 +1876,7 @@ class ForzaStudioGUI:
     def validate_geometry(self, geom_str, screen_w, screen_h):
         """解析並校驗視窗幾何字串，防止視窗小於 1216x863 或移出可見螢幕範圍之外"""
         import re
+
         pattern = r"^(\d+)x(\d+)([+-]\d+)?([+-]\d+)?$"
         match = re.match(pattern, geom_str.strip())
 
@@ -1963,7 +1964,9 @@ class ForzaStudioGUI:
                             if sub_k not in self.opt_settings[k]:
                                 self.opt_settings[k][sub_k] = sub_v
             except Exception as e:
-                self.log_to_console(f"[Settings] 讀取優化設定失敗: {e}，正在重建設定檔並恢復預設值。\n")
+                self.log_to_console(
+                    f"[Settings] 讀取優化設定失敗: {e}，正在重建設定檔並恢復預設值。\n"
+                )
                 self.opt_settings = default_settings
                 self.save_optimization_settings()
         else:
@@ -1978,7 +1981,9 @@ class ForzaStudioGUI:
             validated_geom = self.validate_geometry(geom, screen_w, screen_h)
             self.root.geometry(validated_geom)
         except Exception as e:
-            self.log_to_console(f"[Settings] 套用視窗幾何失敗: {e}，回退到 1216x863 置中。\n")
+            self.log_to_console(
+                f"[Settings] 套用視窗幾何失敗: {e}，回退到 1216x863 置中。\n"
+            )
             try:
                 screen_w = self.root.winfo_screenwidth()
                 screen_h = self.root.winfo_screenheight()

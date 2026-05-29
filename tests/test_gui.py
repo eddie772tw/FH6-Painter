@@ -100,10 +100,10 @@ def test_settings_recreation_on_corruption(tmp_path):
 
         # 3. 驗證檔案是否被寫回且可以正確載入為 JSON
         import json
+
         with open(app.settings_path, "r", encoding="utf-8") as f:
             data = json.load(f)
         assert data["window_geometry"] == "1216x863"
 
     finally:
         root.destroy()
-
