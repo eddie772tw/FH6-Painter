@@ -38,6 +38,7 @@ jobs:
 
     - name: Run style formatting verification (Ruff Format)
       run: |
+        ruff format .
         ruff format --check .
 
     - name: Run code quality lint checks (Ruff Lint)
