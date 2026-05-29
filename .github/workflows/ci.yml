@@ -36,14 +36,10 @@ jobs:
       run: |
         pip install ruff pytest
 
-    - name: Run style formatting verification (Ruff Format)
+    - name: Run code quality lint checks & style formatting verification (Ruff Lint & Ruff Format)
       run: |
-        ruff format .
         ruff format --check .
-
-    - name: Run code quality lint checks (Ruff Lint)
-      run: |
-        ruff check .
+        ruff check .  
 
     - name: Execute automated test suite
       run: |
