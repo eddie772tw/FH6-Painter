@@ -124,6 +124,8 @@ def evaluate_candidate_ti(
         b_coeff = sin_cos * (inv_rx2 - inv_ry2)
         c_y_coeff = inv_rx2 * sin_t * sin_t + inv_ry2 * cos_t * cos_t
 
+        inv_a = 1.0 / a if a > 0.0 else 0.0
+
         # Validation Pass (Scalar constraints check)
         if check_contour == 1 or use_freeze == 1:
             y = min_y
@@ -134,8 +136,8 @@ def evaluate_candidate_ti(
                 discriminant = b_val * b_val - a * c_val
                 if discriminant >= 0.0:
                     sqrt_d = ti.math.sqrt(discriminant)
-                    dx_min = (-b_val - sqrt_d) / a
-                    dx_max = (-b_val + sqrt_d) / a
+                    dx_min = (-b_val - sqrt_d) * inv_a
+                    dx_max = (-b_val + sqrt_d) * inv_a
                     x_start = ti.max(min_x, ti.cast(ti.math.ceil(x_c + dx_min), ti.i32))
                     x_end = ti.min(max_x, ti.cast(ti.math.floor(x_c + dx_max), ti.i32))
 
@@ -158,8 +160,8 @@ def evaluate_candidate_ti(
                 discriminant = b_val * b_val - a * c_val
                 if discriminant >= 0.0:
                     sqrt_d = ti.math.sqrt(discriminant)
-                    dx_min = (-b_val - sqrt_d) / a
-                    dx_max = (-b_val + sqrt_d) / a
+                    dx_min = (-b_val - sqrt_d) * inv_a
+                    dx_max = (-b_val + sqrt_d) * inv_a
                     x_start = ti.max(min_x, ti.cast(ti.math.ceil(x_c + dx_min), ti.i32))
                     x_end = ti.min(max_x, ti.cast(ti.math.floor(x_c + dx_max), ti.i32))
 
@@ -393,13 +395,27 @@ def update_uncovered_mask_gpu(
     inv_rx2 = 1.0 / (r_x * r_x) if r_x > 0.0 else 0.0
     inv_ry2 = 1.0 / (r_y * r_y) if r_y > 0.0 else 0.0
 
-    for y, x in ti.ndrange((min_y, max_y + 1), (min_x, max_x + 1)):
+    sin_cos = sin_t * cos_t
+    a = inv_rx2 * cos_t * cos_t + inv_ry2 * sin_t * sin_t
+    b_coeff = sin_cos * (inv_rx2 - inv_ry2)
+    c_y_coeff = inv_rx2 * sin_t * sin_t + inv_ry2 * cos_t * cos_t
+
+    inv_a = 1.0 / a if a > 0.0 else 0.0
+
+    for y in range(min_y, max_y + 1):
         dy = ti.cast(y, ti.f32) - y_c
-        dx = ti.cast(x, ti.f32) - x_c
-        rx = dx * cos_t + dy * sin_t
-        ry = -dx * sin_t + dy * cos_t
-        if (rx * rx) * inv_rx2 + (ry * ry) * inv_ry2 <= 1.0:
-            uncovered_map[y, x] = 1.0
+        b_val = dy * b_coeff
+        c_val = dy * dy * c_y_coeff - 1.0
+        discriminant = b_val * b_val - a * c_val
+        if discriminant >= 0.0:
+            sqrt_d = ti.math.sqrt(discriminant)
+            dx_min = (-b_val - sqrt_d) * inv_a
+            dx_max = (-b_val + sqrt_d) * inv_a
+            x_start = ti.max(min_x, ti.cast(ti.math.ceil(x_c + dx_min), ti.i32))
+            x_end = ti.min(max_x, ti.cast(ti.math.floor(x_c + dx_max), ti.i32))
+
+            for x in range(x_start, x_end + 1):
+                uncovered_map[y, x] = 1.0
 
 
 @ti.kernel
@@ -489,15 +505,29 @@ def draw_ellipse_gpu(
     a_f = alpha / 255.0
     one_minus_a = 1.0 - a_f
 
-    for y, x in ti.ndrange((min_y, max_y + 1), (min_x, max_x + 1)):
+    sin_cos = sin_t * cos_t
+    a = inv_rx2 * cos_t * cos_t + inv_ry2 * sin_t * sin_t
+    b_coeff = sin_cos * (inv_rx2 - inv_ry2)
+    c_y_coeff = inv_rx2 * sin_t * sin_t + inv_ry2 * cos_t * cos_t
+
+    inv_a = 1.0 / a if a > 0.0 else 0.0
+
+    for y in range(min_y, max_y + 1):
         dy = ti.cast(y, ti.f32) - y_c
-        dx = ti.cast(x, ti.f32) - x_c
-        rx = dx * cos_t + dy * sin_t
-        ry = -dx * sin_t + dy * cos_t
-        if (rx * rx) * inv_rx2 + (ry * ry) * inv_ry2 <= 1.0:
-            canvas[y, x, 0] = canvas[y, x, 0] * one_minus_a + r * a_f
-            canvas[y, x, 1] = canvas[y, x, 1] * one_minus_a + g * a_f
-            canvas[y, x, 2] = canvas[y, x, 2] * one_minus_a + b * a_f
+        b_val = dy * b_coeff
+        c_val = dy * dy * c_y_coeff - 1.0
+        discriminant = b_val * b_val - a * c_val
+        if discriminant >= 0.0:
+            sqrt_d = ti.math.sqrt(discriminant)
+            dx_min = (-b_val - sqrt_d) * inv_a
+            dx_max = (-b_val + sqrt_d) * inv_a
+            x_start = ti.max(min_x, ti.cast(ti.math.ceil(x_c + dx_min), ti.i32))
+            x_end = ti.min(max_x, ti.cast(ti.math.floor(x_c + dx_max), ti.i32))
+
+            for x in range(x_start, x_end + 1):
+                canvas[y, x, 0] = canvas[y, x, 0] * one_minus_a + r * a_f
+                canvas[y, x, 1] = canvas[y, x, 1] * one_minus_a + g * a_f
+                canvas[y, x, 2] = canvas[y, x, 2] * one_minus_a + b * a_f
 
 
 @ti.kernel
