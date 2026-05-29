@@ -20,29 +20,31 @@ jobs:
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
+      
+    - name: Run Ruff Check & Format
+      uses: astral-sh/ruff-action@v3
+      with:
+        args: "check --output-format=github ."
+    
+    - name: Run Ruff Format Verification
+      uses: astral-sh/ruff-action@v3
+      with:
+        args: "format --check ."
 
     - name: Set up Python ${{ matrix.python-version }}
       uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
-        cache: 'pip' # 自動快取 pip 依賴，大幅加速後續建置
+        cache: 'pip' 
 
     - name: Upgrade pip and install core requirements
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
 
-    - name: Install quality check and testing tools
+    - name: Install & Execute automated test suite
       run: |
-        pip install ruff pytest
-
-    - name: Run code quality lint checks & style formatting verification (Ruff Lint & Ruff Format)
-      run: |
-        ruff format --check .
-        ruff check .  
-
-    - name: Execute automated test suite
-      run: |
+        pip install pytest
         python -m pytest -v
 
   build-release:
@@ -91,3 +93,37 @@ jobs:
         name: FH6_Painter_Studio_Windows_Preview
         path: FH6_Painter_Studio_Windows.zip
         retention-days: 7
+auto-fix:
+    needs: test
+    runs-on: ubuntu-latest
+    
+    # 關鍵門檻 1：只有當 test Job 失敗時才觸發
+    # 關鍵門檻 2：檢查 commit 訊息，如果開頭是 "style: auto format" 則跳過，防止無限循環
+    if: |
+      failure() && 
+      !contains(github.event.head_commit.message, 'style: auto format')
+    
+    permissions:
+      contents: write
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        ref: ${{ github.head_ref || github.ref_name }}
+
+    - name: Run Ruff Format and Fix
+      uses: astral-sh/ruff-action@v3
+      with:
+        args: "format ."
+
+    - name: Run Ruff Lint Fix
+      uses: astral-sh/ruff-action@v3
+      with:
+        args: "check --fix --exit-zero ."
+
+    - name: Commit and Push changes
+      uses: stefanzweifel/git-auto-commit-action@v5
+      with:
+        commit_message: "style: auto format code with ruff [skip ci]"
+        
