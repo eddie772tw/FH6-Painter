@@ -93,7 +93,7 @@ jobs:
         name: FH6_Painter_Studio_Windows_Preview
         path: FH6_Painter_Studio_Windows.zip
         retention-days: 7
-auto-fix:
+  auto-fix:
     needs: test
     runs-on: ubuntu-latest
     
