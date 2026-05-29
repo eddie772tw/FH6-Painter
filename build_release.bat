@@ -44,9 +44,20 @@ echo --------------------------------------------------------------------
     --noconfirm ^
     --name "FH6_Painter_Studio" ^
     --windowed ^
+    --noupx ^
+    --version-file "%~dp0file_version_info.txt" ^
+    --icon "%~dp0icon.ico" ^
     --collect-all "taichi" ^
     --add-data "evaluators\*;evaluators" ^
     --add-data "tools\*;tools" ^
+    --exclude-module unittest ^
+    --exclude-module pydoc ^
+    --exclude-module doctest ^
+    --exclude-module xmlrpc ^
+    --exclude-module ftplib ^
+    --exclude-module email ^
+    --exclude-module html ^
+    --exclude-module http.server ^
     "%~dp0fh6_painter_studio_gui.py"
 echo --------------------------------------------------------------------
 

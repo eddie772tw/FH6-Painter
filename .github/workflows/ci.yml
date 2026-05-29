@@ -63,25 +63,35 @@ jobs:
         python-version: "3.13"
         cache: 'pip'
 
-    - name: Install requirements & PyInstaller
+    - name: Install requirements
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
-        pip install pyinstaller
+
+    - name: Build PyInstaller from source (custom bootloader)
+      shell: pwsh
+      run: |
+        # 從原始碼編譯 PyInstaller bootloader，產生唯一的二進位特徵碼
+        # 避免與預編譯 bootloader 共用的惡意軟體特徵碼匹配，大幅降低防毒誤報
+        git clone --depth 1 https://github.com/pyinstaller/pyinstaller.git pyinstaller-src
+        cd pyinstaller-src/bootloader
+        python ./waf all
+        cd ..
+        pip install .
 
     - name: Build Standalone Windows Executable
       shell: pwsh
       run: |
         # 呼叫 PyInstaller 封裝獨立 EXE，模擬 build_release.bat 的核心編譯參數
-        pyinstaller --noconfirm --name "FH6_Painter_Studio" --windowed --collect-all "taichi" --add-data "evaluators/*;evaluators" --add-data "tools/*;tools" fh6_painter_studio_gui.py
+        # --noupx: 停用 UPX 壓縮以降低防毒誤報
+        # --exclude-module: 排除不必要的標準庫模組
+        pyinstaller --noconfirm --name "FH6_Painter_Studio" --windowed --noupx --version-file file_version_info.txt --icon icon.ico --collect-all "taichi" --add-data "evaluators/*;evaluators" --add-data "tools/*;tools" --exclude-module unittest --exclude-module pydoc --exclude-module doctest --exclude-module xmlrpc --exclude-module ftplib --exclude-module email --exclude-module html --exclude-module http.server fh6_painter_studio_gui.py
         
         # 複製外置配置資源至 dist 發行目錄中
         if (Test-Path "settings") {
             Copy-Item -Path "settings" -Destination "dist/FH6_Painter_Studio/settings" -Recurse -Force
         }
-        if (Test-Path "optimization_settings.json") {
-            Copy-Item -Path "optimization_settings.json" -Destination "dist/FH6_Painter_Studio/" -Force
-        }
+
 
     - name: Compress standalone bundle to ZIP
       shell: pwsh

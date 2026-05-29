@@ -17,7 +17,7 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=['unittest', 'pydoc', 'doctest', 'xmlrpc', 'ftplib', 'email', 'html', 'http.server'],
     noarchive=False,
     optimize=0,
 )
@@ -32,20 +32,22 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    upx=False,
     console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    version='D:\\FH6-Painter\\file_version_info.txt',
+    icon=['D:\\FH6-Painter\\icon.ico'],
 )
 coll = COLLECT(
     exe,
     a.binaries,
     a.datas,
     strip=False,
-    upx=True,
+    upx=False,
     upx_exclude=[],
     name='FH6_Painter_Studio',
 )

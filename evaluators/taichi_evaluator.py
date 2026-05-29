@@ -5,7 +5,7 @@ import sys
 import numpy as np
 
 # PyInstaller environment source-inspect hook for Taichi Lang JIT
-if getattr(sys, "frozen", False):
+if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
     physical_py_file = os.path.join(sys._MEIPASS, "evaluators", "taichi_evaluator.py")
     if os.path.exists(physical_py_file):
         __file__ = physical_py_file
