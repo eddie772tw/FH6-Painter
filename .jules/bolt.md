@@ -1,3 +1,7 @@
 ## 2025-02-12 - Numba Scanline Rendering Optimization
 **Learning:** Naive bounding box rendering loops with pixel-by-pixel checks `if (rx*rx)*inv_rx2 + (ry*ry)*inv_ry2 <= 1.0` in Numba JIT functions are slow.
 **Action:** Use an analytical scanline solver to calculate start/end x-coordinates per scanline using quadratic formula bounds based on sine/cosine projections. Precompute the division by hoisting `inv_a = np.float32(1.0 / a) if a > 0 else np.float32(0.0)` outside the loop to change expensive division into multiplication inside the hot loops. This provided a ~5x speedup for `draw_ellipse` and ~4.7x for `update_uncovered_mask`.
+
+## 2025-05-30 - Taichi Scanline Rendering & Division Optimization
+**Learning:** Pixel-by-pixel boundary checks in GPU loops (like `if (rx*rx)*inv_rx2 + (ry*ry)*inv_ry2 <= 1.0` in `update_uncovered_mask_gpu`) causes significant thread divergence and is much slower compared to analytical scanline solvers that calculate 1D start/end bounds for each row. Furthermore, GPU/JIT engines handle division operations slower than multiplication.
+**Action:** Applied the analytical scanline algorithm to `update_uncovered_mask_gpu` and hoisted division calculations (such as `inv_a = 1.0 / a` and `1.0 / max_val`) out of the innermost hot loops across `update_uncovered_mask_gpu`, `evaluate_candidate_ti`, `normalize_error_prob`, and `compute_raw_error_and_max`. Division by a constant was replaced by multiplication with its floating-point fraction (e.g. `diff /= 3.0` replaced with `diff *= 0.3333333333333333`).
