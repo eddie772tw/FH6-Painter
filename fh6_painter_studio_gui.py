@@ -221,10 +221,10 @@ class ForzaStudioGUI:
     def scan_gpus(self):
         """偵測系統中的顯示卡列表 (支援 winreg 登錄檔、wmic 與 PowerShell 多重防禦機制)"""
         gpus = []
-        
+
         # 定義排除關鍵字 (不區分大小寫)
         exclude_keywords = ["display adapter", "parsec", "remote", "virtual", "indirect", "mirror"]
-        
+
         def is_valid_gpu(name):
             if not name:
                 return False
