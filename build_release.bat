@@ -54,6 +54,7 @@ echo --------------------------------------------------------------------
     --noconfirm ^
     --name "FH6_Painter_Studio" ^
     --windowed ^
+    --icon "%~dp0app_icon.ico" ^
     --collect-all "taichi" ^
     --add-data "evaluators\*;evaluators" ^
     --add-data "tools\*;tools" ^

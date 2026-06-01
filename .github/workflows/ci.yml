@@ -98,14 +98,9 @@ jobs:
       run: |
         call build_release.bat
 
-    - name: Compress standalone bundle to ZIP
-      shell: pwsh
-      run: |
-        Compress-Archive -Path "dist/FH6_Painter_Studio" -DestinationPath "FH6_Painter_Studio_Windows.zip" -Force
-
     - name: Upload build artifact preview
       uses: actions/upload-artifact@v4
       with:
         name: FH6_Painter_Studio_Windows_Preview
-        path: FH6_Painter_Studio_Windows.zip
+        path: dist/FH6_Painter_Studio
         retention-days: 7
