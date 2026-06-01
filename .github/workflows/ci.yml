@@ -109,7 +109,7 @@ jobs:
         # 呼叫 PyInstaller 封裝獨立 EXE，模擬 build_release.bat 的核心編譯參數
         # --noupx: 停用 UPX 壓縮以降低防毒誤報
         # --exclude-module: 排除不必要的標準庫模組
-        pyinstaller --noconfirm --name "FH6_Painter_Studio" --windowed --noupx --version-file file_version_info.txt --icon icon.ico --collect-all "taichi" --add-data "evaluators/*;evaluators" --add-data "tools/*;tools" --exclude-module unittest --exclude-module pydoc --exclude-module doctest --exclude-module xmlrpc --exclude-module ftplib --exclude-module email --exclude-module html --exclude-module http.server fh6_painter_studio_gui.py
+        pyinstaller --noconfirm --name "FH6_Painter_Studio" --windowed --noupx --version-file file_version_info.txt --icon icon.ico --collect-all "taichi" --add-data "evaluators/*;evaluators" --add-data "tools/*;tools" --exclude-module unittest --exclude-module pydoc --exclude-module doctest --exclude-module xmlrpc --exclude-module ftplib --exclude-module html --exclude-module http.server fh6_painter_studio_gui.py
         
         # 複製外置配置資源至 dist 發行目錄中
         if (Test-Path "settings") {

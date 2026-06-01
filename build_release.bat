@@ -55,7 +55,6 @@ echo --------------------------------------------------------------------
     --exclude-module doctest ^
     --exclude-module xmlrpc ^
     --exclude-module ftplib ^
-    --exclude-module email ^
     --exclude-module html ^
     --exclude-module http.server ^
     "%~dp0fh6_painter_studio_gui.py"

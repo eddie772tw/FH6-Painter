@@ -17,7 +17,7 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=['unittest', 'pydoc', 'doctest', 'xmlrpc', 'ftplib', 'email', 'html', 'http.server'],
+    excludes=['unittest', 'pydoc', 'doctest', 'xmlrpc', 'ftplib', 'html', 'http.server'],
     noarchive=False,
     optimize=0,
 )

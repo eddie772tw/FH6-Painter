@@ -43,7 +43,6 @@ call "%NUITKA_EXE%" ^
     --nofollow-import-to=doctest ^
     --nofollow-import-to=xmlrpc ^
     --nofollow-import-to=ftplib ^
-    --nofollow-import-to=email ^
     --nofollow-import-to=html ^
     --nofollow-import-to=http ^
     --nofollow-import-to=numba ^
