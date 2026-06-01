@@ -51,6 +51,7 @@ echo --------------------------------------------------------------------
     --nofollow-import-to=torch ^
     --nofollow-import-to=dill ^
     --windows-console-mode=disable ^
+    --include-windows-runtime-dlls=no ^
     --enable-plugins=tk-inter ^
     --include-package=taichi ^
     --include-data-dir="%~dp0tools=tools" ^
