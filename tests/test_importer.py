@@ -131,6 +131,53 @@ class TestImporter(unittest.TestCase):
         self.assertEqual(shapes[0]["data"], [0.0, 0.0, 100.0, 100.0])
         self.assertEqual(shapes[1]["type"], 2)
 
+    @patch("tools.fh6_import_layer_table.try_read")
+    @patch("tools.fh6_import_layer_table.read_u64")
+    @patch("tools.fh6_import_layer_table.score_layer")
+    def test_cache_mechanism(self, mock_score_layer, mock_read_u64, mock_try_read):
+        import struct
+        cache_file = "test_layer_table.cache"
+        if os.path.exists(cache_file):
+            os.remove(cache_file)
+
+        try:
+            pid = 12345
+            layers = 4
+            group_addr = 0x1000
+            table_addr = 0x2000
+            pointers = [0x3000, 0x30B0, 0x3160, 0x3210]
+
+            # Test save_cached_layer_pointers
+            fh6_importer.save_cached_layer_pointers(
+                cache_file, pid, layers, group_addr, table_addr, pointers
+            )
+            self.assertTrue(os.path.exists(cache_file))
+
+            # Mock responses for verification in try_load_cached_layer_pointers
+            # 1. read group count: GROUP_COUNT_OFFSET = 0x5A
+            # Struct format "<I" is 4 bytes. We return count as 4
+            mock_try_read.side_effect = [
+                struct.pack("<I", 4),  # First call: try_read for count
+                struct.pack("<4Q", *pointers)  # Second call: try_read for pointers table
+            ]
+            # 2. read table pointer at group_addr + GROUP_TABLE_OFFSET (0x78)
+            mock_read_u64.return_value = table_addr
+            # 3. score each layer
+            mock_score_layer.return_value = 5
+
+            loaded_pointers = fh6_importer.try_load_cached_layer_pointers(
+                handle=None, cache_path=cache_file, pid=pid, layer_count=layers
+            )
+
+            self.assertEqual(loaded_pointers, pointers)
+            
+            # Verify read_u64 was called with group_addr + GROUP_TABLE_OFFSET
+            mock_read_u64.assert_called_with(None, group_addr + fh6_importer.GROUP_TABLE_OFFSET)
+
+        finally:
+            if os.path.exists(cache_file):
+                os.remove(cache_file)
+
 
 if __name__ == "__main__":
     unittest.main()

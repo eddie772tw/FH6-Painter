@@ -703,7 +703,7 @@ def locate_layer_pointers(handle, layer_count, max_candidates):
         for i in range(layer_count):
             pointers.append(read_u64(handle, best_table + i * 8))
 
-    return pointers
+    return pointers, best_group, best_table
 
 
 # --- Caching Support ---
@@ -719,12 +719,15 @@ def try_load_cached_layer_pointers(handle, cache_path, pid, layer_count):
             return None
 
         header = lines[0].split("|")
-        if len(header) != 2:
-            print("Layer cache header is invalid; full scan needed.")
+        if len(header) < 4:
+            print("Layer cache header is invalid or old format; full scan needed.")
             return None
 
         cached_pid = int(header[0])
         cached_layers = int(header[1])
+        cached_group = int(header[2], 16)
+        cached_table = int(header[3], 16)
+
         if cached_pid != pid:
             print("Layer cache is from another FH6 process; full scan needed.")
             return None
@@ -732,14 +735,33 @@ def try_load_cached_layer_pointers(handle, cache_path, pid, layer_count):
             print("Layer cache is for a different layer count; full scan needed.")
             return None
 
+        # Verify group count in game memory to make sure count matches
+        count_bytes = try_read(handle, cached_group + GROUP_COUNT_OFFSET, 4)
+        if not count_bytes:
+            print("Failed to read group count from memory; cache is invalid.")
+            return None
+        current_count = struct.unpack("<I", count_bytes)[0]
+        if current_count != layer_count:
+            print(f"Group layer count changed in memory ({current_count} != {layer_count}); cache is invalid.")
+            return None
+
+        # Verify group table pointer in game memory
+        table_ptr = read_u64(handle, cached_group + GROUP_TABLE_OFFSET)
+        if table_ptr != cached_table:
+            print(f"Group table pointer changed in memory; cache is invalid.")
+            return None
+
+        # Dynamically read layer pointers from the table in game memory
         pointers = []
-        for line in lines[1:]:
-            pointers.append(int(line, 16))
-            if len(pointers) == layer_count:
-                break
+        table_data = try_read(handle, cached_table, layer_count * 8)
+        if table_data and len(table_data) == layer_count * 8:
+            pointers = list(struct.unpack(f"<{layer_count}Q", table_data))
+        else:
+            for i in range(layer_count):
+                pointers.append(read_u64(handle, cached_table + i * 8))
 
         if len(pointers) != layer_count:
-            print("Layer cache pointer count does not match; full scan needed.")
+            print("Failed to read pointers from table; full scan needed.")
             return None
 
         valid = 0
@@ -753,17 +775,17 @@ def try_load_cached_layer_pointers(handle, cache_path, pid, layer_count):
             )
             return None
 
-        print(f"Using cached layer pointers valid={valid}/{layer_count}")
+        print(f"Using cached layer pointers valid={valid}/{layer_count} (dynamically read from table 0x{cached_table:X})")
         return pointers
     except Exception as e:
         print(f"Layer cache could not be read; full scan needed. Error: {e}")
         return None
 
 
-def save_cached_layer_pointers(cache_path, pid, layer_count, pointers):
+def save_cached_layer_pointers(cache_path, pid, layer_count, group_addr, table_addr, pointers):
     try:
         with open(cache_path, "w", encoding="utf-8") as f:
-            f.write(f"{pid}|{layer_count}\n")
+            f.write(f"{pid}|{layer_count}|{group_addr:X}|{table_addr:X}\n")
             for ptr in pointers:
                 f.write(f"{ptr:X}\n")
     except Exception as e:
@@ -928,8 +950,8 @@ def run_importer(
             )
 
             if layer_pointers is None:
-                layer_pointers = locate_layer_pointers(handle, layers, max_candidates)
-                save_cached_layer_pointers(cache_path, pid, layers, layer_pointers)
+                layer_pointers, best_group, best_table = locate_layer_pointers(handle, layers, max_candidates)
+                save_cached_layer_pointers(cache_path, pid, layers, best_group, best_table, layer_pointers)
 
             print(f"LiveryGroup found. Valid layer pointers={len(layer_pointers)}")
 
