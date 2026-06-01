@@ -50,6 +50,7 @@ echo --------------------------------------------------------------------
     --nofollow-import-to=llvmlite ^
     --nofollow-import-to=torch ^
     --nofollow-import-to=dill ^
+    --nofollow-import-to=evaluators.taichi_evaluator ^
     --windows-console-mode=disable ^
     --include-windows-runtime-dlls=no ^
     --enable-plugins=tk-inter ^
