@@ -10,6 +10,24 @@ permissions:
   contents: read
 
 jobs:
+  # 任務 1：極速 Linux 代碼風格與語法檢查 (與單元測試並行)
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Run Ruff Check
+      uses: astral-sh/ruff-action@v3
+      with:
+        args: "check --output-format=github ."
+
+    - name: Run Ruff Format Verification
+      uses: astral-sh/ruff-action@v3
+      with:
+        args: "format --check ."
+
+  # 任務 2：Windows 單元測試與邏輯驗證
   test:
     runs-on: windows-latest
     strategy:
@@ -32,24 +50,17 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
 
-    - name: Install quality check and testing tools
+    - name: Install testing tools
       run: |
-        pip install ruff pytest
-
-    - name: Run style formatting verification (Ruff Format)
-      run: |
-        ruff format --check .
-
-    - name: Run code quality lint checks (Ruff Lint)
-      run: |
-        ruff check .
+        pip install pytest
 
     - name: Execute automated test suite
       run: |
         python -m pytest -v
 
+  # 任務 3：建置與封裝發行版 (依賴 test 與 lint 通過)
   build-release:
-    needs: test
+    needs: [test, lint]
     runs-on: windows-latest
     if: github.event_name == 'pull_request' || github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
     
