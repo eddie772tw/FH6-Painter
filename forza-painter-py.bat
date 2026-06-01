@@ -100,6 +100,12 @@ if errorlevel 1 (
 
 :dependencies_ok
 
+:: 執行 Ruff 程式碼自動排版與靜態檢查
+if exist "%VENV_DIR%\Scripts\ruff.exe" (
+    echo [INFO] 正在運行 Ruff 進行程式碼品質校驗與自動排版...
+    "%VENV_DIR%\Scripts\ruff.exe" check . --fix
+)
+
 :: 啟動應用程式
 if "%~1" == "" (
     "!PY_EXE!" fh6_painter_studio_gui.py
