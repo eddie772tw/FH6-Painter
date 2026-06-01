@@ -12,6 +12,9 @@ set "NUITKA_EXE=%VENV_DIR%\Scripts\nuitka.bat"
 if not exist "%NUITKA_EXE%" (
     set "NUITKA_EXE=%VENV_DIR%\Scripts\nuitka.exe"
 )
+if not exist "%NUITKA_EXE%" (
+    set "NUITKA_EXE=%VENV_DIR%\Scripts\nuitka.cmd"
+)
 
 if not exist "%NUITKA_EXE%" (
     echo [ERROR] Nuitka executable not found in virtual environment.
