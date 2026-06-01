@@ -16,8 +16,11 @@ def test_gui_initialization(monkeypatch):
     if sys.platform != "win32" and not os.environ.get("DISPLAY"):
         pytest.skip("無 X 顯示伺服器，跳過 GUI 載入測試（在 CI/CD 中將使用 xvfb 執行）")
 
-    # 初始化 Tkinter root
-    root = tk.Tk()
+    # 初始化 Tkinter root，如果環境不支援則安全跳過
+    try:
+        root = tk.Tk()
+    except Exception as e:
+        pytest.skip(f"無法初始化 Tkinter (無介面環境或限制): {e}")
     root.withdraw()  # 隱藏主視窗，避免實體彈窗干擾測試
 
     try:
@@ -51,7 +54,11 @@ def test_gui_initialization(monkeypatch):
 
 def test_validate_geometry():
     """測試視窗幾何字串校驗與越界安全防護邏輯"""
-    root = tk.Tk()
+    # 初始化 Tkinter root，如果環境不支援則安全跳過
+    try:
+        root = tk.Tk()
+    except Exception as e:
+        pytest.skip(f"無法初始化 Tkinter (無介面環境或限制): {e}")
     root.withdraw()
     try:
         app = ForzaStudioGUI(root)
@@ -83,7 +90,11 @@ def test_validate_geometry():
 
 def test_settings_recreation_on_corruption(tmp_path):
     """測試 optimization_settings.json 損壞時自動重建的保險機制"""
-    root = tk.Tk()
+    # 初始化 Tkinter root，如果環境不支援則安全跳過
+    try:
+        root = tk.Tk()
+    except Exception as e:
+        pytest.skip(f"無法初始化 Tkinter (無介面環境或限制): {e}")
     root.withdraw()
     try:
         app = ForzaStudioGUI(root)

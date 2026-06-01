@@ -991,18 +991,18 @@ class ForzaStudioGUI:
         """Draws a clean, dark tech cyberpunk graphic when no active simulation is running."""
         self.preview_image_id = None
         self.canvas_preview.delete("all")
-        
+
         canvas_w = self.canvas_preview.winfo_width()
         canvas_h = self.canvas_preview.winfo_height()
         if canvas_w <= 1 or canvas_h <= 1:
             canvas_w = 380
             canvas_h = 380
-            
+
         # 保持正方形區域繪製 grid
         size = min(canvas_w, canvas_h)
         offset_x = (canvas_w - size) / 2
         offset_y = (canvas_h - size) / 2
-        
+
         # Cyber grid lines within square region
         for i in range(10):
             gap = size / 10
@@ -1018,7 +1018,7 @@ class ForzaStudioGUI:
         # Circular HUD radar lines
         center_x = canvas_w / 2
         center_y = canvas_h / 2
-        
+
         radar_radius = size * 0.4
         self.canvas_preview.create_oval(
             center_x - radar_radius,
@@ -1131,7 +1131,7 @@ class ForzaStudioGUI:
             self.log_to_console("[System] 預覽功能已關閉。\n")
             self.canvas_preview.delete("all")
             self.preview_image_id = None
-            
+
             canvas_w = self.canvas_preview.winfo_width()
             canvas_h = self.canvas_preview.winfo_height()
             if canvas_w <= 1 or canvas_h <= 1:
