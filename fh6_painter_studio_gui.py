@@ -1008,11 +1008,21 @@ class ForzaStudioGUI:
             gap = size / 10
             # Horizontal lines
             self.canvas_preview.create_line(
-                offset_x, offset_y + i * gap, offset_x + size, offset_y + i * gap, fill="#151515", width=1
+                offset_x,
+                offset_y + i * gap,
+                offset_x + size,
+                offset_y + i * gap,
+                fill="#151515",
+                width=1,
             )
             # Vertical lines
             self.canvas_preview.create_line(
-                offset_x + i * gap, offset_y, offset_x + i * gap, offset_y + size, fill="#151515", width=1
+                offset_x + i * gap,
+                offset_y,
+                offset_x + i * gap,
+                offset_y + size,
+                fill="#151515",
+                width=1,
             )
 
         # Circular HUD radar lines
@@ -1048,16 +1058,36 @@ class ForzaStudioGUI:
         # Crosshair lines
         cross_len = radar_radius * 1.07
         self.canvas_preview.create_line(
-            center_x - cross_len, center_y, center_x - 10, center_y, fill="#333333", width=1
+            center_x - cross_len,
+            center_y,
+            center_x - 10,
+            center_y,
+            fill="#333333",
+            width=1,
         )
         self.canvas_preview.create_line(
-            center_x + 10, center_y, center_x + cross_len, center_y, fill="#333333", width=1
+            center_x + 10,
+            center_y,
+            center_x + cross_len,
+            center_y,
+            fill="#333333",
+            width=1,
         )
         self.canvas_preview.create_line(
-            center_x, center_y - cross_len, center_x, center_y - 10, fill="#333333", width=1
+            center_x,
+            center_y - cross_len,
+            center_x,
+            center_y - 10,
+            fill="#333333",
+            width=1,
         )
         self.canvas_preview.create_line(
-            center_x, center_y + 10, center_x, center_y + cross_len, fill="#333333", width=1
+            center_x,
+            center_y + 10,
+            center_x,
+            center_y + cross_len,
+            fill="#333333",
+            width=1,
         )
 
         # Text label in center

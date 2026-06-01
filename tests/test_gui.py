@@ -28,7 +28,9 @@ def safe_init_tk():
             or "cannot open display" in err_msg
         )
         if is_env_error:
-            pytest.skip(f"系統環境不支援或 Tcl 資源受限（安全跳過非代碼 Bug 錯誤）: {e}")
+            pytest.skip(
+                f"系統環境不支援或 Tcl 資源受限（安全跳過非代碼 Bug 錯誤）: {e}"
+            )
         else:
             # 其它意料之外的錯誤（說明可能是我們自己的代碼在引用或底層拋出了其它異常）則直接拋出，不予以遮蓋
             raise e
