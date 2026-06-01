@@ -48,10 +48,11 @@ echo --------------------------------------------------------------------
     --nofollow-import-to=http ^
     --nofollow-import-to=numba ^
     --nofollow-import-to=llvmlite ^
-    --disable-console ^
+    --nofollow-import-to=torch ^
+    --nofollow-import-to=dill ^
+    --windows-console-mode=disable ^
     --enable-plugins=tk-inter ^
     --include-package=taichi ^
-    --include-data-dir="%~dp0evaluators=evaluators" ^
     --include-data-dir="%~dp0tools=tools" ^
     --company-name="FH6-Painter Open Source" ^
     --product-name="Forza Horizon 6 Painter Studio" ^
@@ -85,6 +86,12 @@ if exist "%~dp0settings" (
 if exist "%~dp0optimization_settings.json" (
     copy /Y "%~dp0optimization_settings.json" "%DIST_DIR%" >nul
     echo [SUCCESS] Copied "optimization_settings.json" configuration file.
+)
+:: Copy physical taichi_evaluator.py for Taichi JIT source lookup
+if exist "%~dp0evaluators" (
+    if not exist "%DIST_DIR%\evaluators" mkdir "%DIST_DIR%\evaluators"
+    copy /Y "%~dp0evaluators\taichi_evaluator.py" "%DIST_DIR%\evaluators\" >nul
+    echo [SUCCESS] Copied "taichi_evaluator.py" source file for Taichi JIT compatibility.
 )
 
 echo ====================================================================
