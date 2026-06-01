@@ -33,6 +33,15 @@ echo --------------------------------------------------------------------
 "%NUITKA_EXE%" ^
     --standalone ^
     --zig ^
+    --jobs=%NUMBER_OF_PROCESSORS% ^
+    --nofollow-import-to=unittest ^
+    --nofollow-import-to=pydoc ^
+    --nofollow-import-to=doctest ^
+    --nofollow-import-to=xmlrpc ^
+    --nofollow-import-to=ftplib ^
+    --nofollow-import-to=email ^
+    --nofollow-import-to=html ^
+    --nofollow-import-to=http ^
     --disable-console ^
     --enable-plugins=tk-inter ^
     --include-package=taichi ^
