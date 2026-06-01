@@ -60,18 +60,34 @@ def get_project_root():
 class ForzaStudioGUI:
     def __init__(self, root, preload_file=None):
         # Print Startup Diagnostic plugins status to captured stdout so it is saved in global_log_buffer
-        if HAS_LIBS and "EvaluatorFactory" in globals() and EvaluatorFactory is not None:
+        if (
+            HAS_LIBS
+            and "EvaluatorFactory" in globals()
+            and EvaluatorFactory is not None
+        ):
             try:
                 engines = EvaluatorFactory.get_available_evaluators()
-                print("====================================================================")
+                print(
+                    "===================================================================="
+                )
                 print("     FH6 Painter - FH6 Livery Engine Startup Diagnostic")
-                print("====================================================================")
+                print(
+                    "===================================================================="
+                )
                 print("\n[Diagnostic] Computational Engine Plugins Status:")
                 for e in engines:
-                    status_str = "[ENABLED]" if e['available'] else f"[DISABLED] (Missing library, run: pip install {'numba' if e['code']=='NUMBA' else 'taichi'} to enable)"
-                    print(f" - {e['name']:<32} | Code: {e['code']:<12} | Status: {status_str}")
+                    status_str = (
+                        "[ENABLED]"
+                        if e["available"]
+                        else f"[DISABLED] (Missing library, run: pip install {'numba' if e['code'] == 'NUMBA' else 'taichi'} to enable)"
+                    )
+                    print(
+                        f" - {e['name']:<32} | Code: {e['code']:<12} | Status: {status_str}"
+                    )
                 print()
-                print("====================================================================")
+                print(
+                    "===================================================================="
+                )
                 print()
             except Exception as ex:
                 print(f"[Diagnostic Error] Failed to run engine check: {ex}")
@@ -223,7 +239,14 @@ class ForzaStudioGUI:
         gpus = []
 
         # 定義排除關鍵字 (不區分大小寫)
-        exclude_keywords = ["display adapter", "parsec", "remote", "virtual", "indirect", "mirror"]
+        exclude_keywords = [
+            "display adapter",
+            "parsec",
+            "remote",
+            "virtual",
+            "indirect",
+            "mirror",
+        ]
 
         def is_valid_gpu(name):
             if not name:
@@ -234,6 +257,7 @@ class ForzaStudioGUI:
         # 1. 優先採用 Python 原生 winreg 讀取登錄檔 (速度最快，免行程開銷，完全不受 wmic 棄用影響)
         try:
             import winreg
+
             path = r"SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}"
             with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, path) as key:
                 for i in range(winreg.QueryInfoKey(key)[0]):
@@ -242,8 +266,14 @@ class ForzaStudioGUI:
                         if subkey_name.isdigit():
                             with winreg.OpenKey(key, subkey_name) as subkey:
                                 try:
-                                    gpu_name, _ = winreg.QueryValueEx(subkey, "DriverDesc")
-                                    if gpu_name and gpu_name not in gpus and is_valid_gpu(gpu_name):
+                                    gpu_name, _ = winreg.QueryValueEx(
+                                        subkey, "DriverDesc"
+                                    )
+                                    if (
+                                        gpu_name
+                                        and gpu_name not in gpus
+                                        and is_valid_gpu(gpu_name)
+                                    ):
                                         gpus.append(gpu_name)
                                 except Exception:
                                     pass
@@ -256,13 +286,21 @@ class ForzaStudioGUI:
         if not gpus:
             try:
                 import subprocess
+
                 out = subprocess.check_output(
-                    "wmic path win32_VideoController get name", shell=True, stderr=subprocess.DEVNULL
+                    "wmic path win32_VideoController get name",
+                    shell=True,
+                    stderr=subprocess.DEVNULL,
                 ).decode("utf-8", errors="ignore")
                 lines = [line.strip() for line in out.split("\n") if line.strip()]
                 if len(lines) > 1:
                     for l in lines[1:]:
-                        if l and "name" not in l.lower() and l not in gpus and is_valid_gpu(l):
+                        if (
+                            l
+                            and "name" not in l.lower()
+                            and l not in gpus
+                            and is_valid_gpu(l)
+                        ):
                             gpus.append(l)
             except Exception:
                 pass
@@ -271,9 +309,11 @@ class ForzaStudioGUI:
         if not gpus:
             try:
                 import subprocess
+
                 out = subprocess.check_output(
                     'powershell -Command "Get-CimInstance Win32_VideoController | Select-Object -ExpandProperty Name"',
-                    shell=True, stderr=subprocess.DEVNULL
+                    shell=True,
+                    stderr=subprocess.DEVNULL,
                 ).decode("utf-8", errors="ignore")
                 lines = [line.strip() for line in out.split("\n") if line.strip()]
                 for l in lines:

@@ -104,6 +104,7 @@ if errorlevel 1 (
 if exist "%VENV_DIR%\Scripts\ruff.exe" (
     echo [INFO] 正在運行 Ruff 進行程式碼品質校驗與自動排版...
     "%VENV_DIR%\Scripts\ruff.exe" check . --fix
+    "%VENV_DIR%\Scripts\ruff.exe" format .
 )
 
 :: 啟動應用程式
