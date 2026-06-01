@@ -362,7 +362,7 @@ class ForzaStudioGUI:
 
         # Left Panel (Width ~ 480)
         left_panel = tk.Frame(workspace, bg=self.bg_main, width=480)
-        left_panel.pack(side="left", fill="both", expand=True, padx=(0, 10))
+        left_panel.pack(side="left", fill="y", expand=False, padx=(0, 10))
         left_panel.pack_propagate(False)
 
         # Right Panel (Width ~ 680)
@@ -794,9 +794,10 @@ class ForzaStudioGUI:
         )
         self.chk_decay.grid(row=2, column=1, sticky="w", pady=3)
 
-        # Card 3: Action Panel (Double-Button Execution)
-        card_actions = ttk.Frame(left_panel, style="Card.TFrame")
-        card_actions.pack(fill="x", pady=(5, 0), ipady=4)
+        # --- RIGHT PANEL CARDS ---
+        # Card 3: Action Panel (Double-Button Execution) - Moved to Right Panel Bottom
+        card_actions = ttk.Frame(right_panel, style="Card.TFrame")
+        card_actions.pack(side="bottom", fill="x", pady=(5, 0), ipady=4)
 
         self.create_card_header(
             card_actions,
@@ -840,10 +841,9 @@ class ForzaStudioGUI:
         # Make sure buttons start in correct states
         self.on_file_changed()
 
-        # --- RIGHT PANEL CARDS ---
         # Card 4: Fitment Preview Canvas
         card_preview = ttk.Frame(right_panel, style="Card.TFrame")
-        card_preview.pack(fill="both", expand=True, ipady=5)
+        card_preview.pack(side="top", fill="both", expand=True, pady=(0, 5), ipady=5)
 
         self.create_card_header(
             card_preview,
@@ -859,13 +859,14 @@ class ForzaStudioGUI:
         self.canvas_preview = tk.Canvas(
             preview_body,
             bg="#0E0E0E",
-            width=self.canvas_size,
-            height=self.canvas_size,
             bd=0,
             highlightthickness=1,
             highlightbackground=self.border_color,
         )
-        self.canvas_preview.pack(pady=5)
+        self.canvas_preview.pack(fill="both", expand=True, pady=5)
+
+        # Bind resize event to dynamically redraw grid/image
+        self.canvas_preview.bind("<Configure>", self.on_canvas_resize)
 
         # Draw placeholder cyber graphics on start
         self.draw_cyber_placeholder()
@@ -990,74 +991,152 @@ class ForzaStudioGUI:
         """Draws a clean, dark tech cyberpunk graphic when no active simulation is running."""
         self.preview_image_id = None
         self.canvas_preview.delete("all")
-        # Cyber grid lines
+
+        canvas_w = self.canvas_preview.winfo_width()
+        canvas_h = self.canvas_preview.winfo_height()
+        if canvas_w <= 1 or canvas_h <= 1:
+            canvas_w = 380
+            canvas_h = 380
+
+        # 保持正方形區域繪製 grid
+        size = min(canvas_w, canvas_h)
+        offset_x = (canvas_w - size) / 2
+        offset_y = (canvas_h - size) / 2
+
+        # Cyber grid lines within square region
         for i in range(10):
-            gap = self.canvas_size / 10
+            gap = size / 10
             # Horizontal lines
             self.canvas_preview.create_line(
-                0, i * gap, self.canvas_size, i * gap, fill="#151515", width=1
+                offset_x,
+                offset_y + i * gap,
+                offset_x + size,
+                offset_y + i * gap,
+                fill="#151515",
+                width=1,
             )
             # Vertical lines
             self.canvas_preview.create_line(
-                i * gap, 0, i * gap, self.canvas_size, fill="#151515", width=1
+                offset_x + i * gap,
+                offset_y,
+                offset_x + i * gap,
+                offset_y + size,
+                fill="#151515",
+                width=1,
             )
 
         # Circular HUD radar lines
-        center = self.canvas_size / 2
+        center_x = canvas_w / 2
+        center_y = canvas_h / 2
+
+        radar_radius = size * 0.4
         self.canvas_preview.create_oval(
-            center - 150,
-            center - 150,
-            center + 150,
-            center + 150,
+            center_x - radar_radius,
+            center_y - radar_radius,
+            center_x + radar_radius,
+            center_y + radar_radius,
             outline="#222222",
             width=1,
         )
         self.canvas_preview.create_oval(
-            center - 100,
-            center - 100,
-            center + 100,
-            center + 100,
+            center_x - radar_radius * 0.67,
+            center_y - radar_radius * 0.67,
+            center_x + radar_radius * 0.67,
+            center_y + radar_radius * 0.67,
             outline="#2A2A2A",
             width=1,
         )
         self.canvas_preview.create_oval(
-            center - 40,
-            center - 40,
-            center + 40,
-            center + 40,
+            center_x - radar_radius * 0.27,
+            center_y - radar_radius * 0.27,
+            center_x + radar_radius * 0.27,
+            center_y + radar_radius * 0.27,
             outline="#333333",
             width=1,
         )
 
         # Crosshair lines
+        cross_len = radar_radius * 1.07
         self.canvas_preview.create_line(
-            center - 160, center, center - 10, center, fill="#333333", width=1
+            center_x - cross_len,
+            center_y,
+            center_x - 10,
+            center_y,
+            fill="#333333",
+            width=1,
         )
         self.canvas_preview.create_line(
-            center + 10, center, center + 160, center, fill="#333333", width=1
+            center_x + 10,
+            center_y,
+            center_x + cross_len,
+            center_y,
+            fill="#333333",
+            width=1,
         )
         self.canvas_preview.create_line(
-            center, center - 160, center, center - 10, fill="#333333", width=1
+            center_x,
+            center_y - cross_len,
+            center_x,
+            center_y - 10,
+            fill="#333333",
+            width=1,
         )
         self.canvas_preview.create_line(
-            center, center + 10, center, center + 160, fill="#333333", width=1
+            center_x,
+            center_y + 10,
+            center_x,
+            center_y + cross_len,
+            fill="#333333",
+            width=1,
         )
 
         # Text label in center
         self.canvas_preview.create_text(
-            center,
-            center,
+            center_x,
+            center_y,
             text=text,
             fill=self.fg_secondary,
             font=("Outfit", 10, "bold"),
         )
         self.canvas_preview.create_text(
-            center,
-            center + 25,
+            center_x,
+            center_y + 25,
             text="LOAD INPUT DATA FILE",
             fill="#555555",
             font=("Microsoft JhengHei", 8),
         )
+
+    def on_canvas_resize(self, event):
+        """當預覽畫布大小改變時觸發重新整理"""
+        if not self.enable_preview:
+            # 如果預覽已關閉，重新繪製 PREVIEW DISABLED 畫面
+            self.canvas_preview.delete("all")
+            self.preview_image_id = None
+            canvas_w = self.canvas_preview.winfo_width()
+            canvas_h = self.canvas_preview.winfo_height()
+            if canvas_w <= 1 or canvas_h <= 1:
+                canvas_w = 380
+                canvas_h = 380
+            center_x = canvas_w / 2
+            center_y = canvas_h / 2
+            self.canvas_preview.create_text(
+                center_x,
+                center_y,
+                text="PREVIEW DISABLED",
+                fill="#555555",
+                font=("Outfit", 12, "bold"),
+            )
+            self.canvas_preview.create_text(
+                center_x,
+                center_y + 25,
+                text="Click 'Enable Preview' to restore visual fitting",
+                fill="#444444",
+                font=("Microsoft JhengHei", 8),
+            )
+        elif self.latest_canvas_array is not None:
+            self.need_preview_update = True
+        else:
+            self.draw_cyber_placeholder()
 
     def log_to_console(self, text):
         """Prints a diagnostic log line into the standard terminal console."""
@@ -1082,17 +1161,24 @@ class ForzaStudioGUI:
             self.log_to_console("[System] 預覽功能已關閉。\n")
             self.canvas_preview.delete("all")
             self.preview_image_id = None
-            center = self.canvas_size / 2
+
+            canvas_w = self.canvas_preview.winfo_width()
+            canvas_h = self.canvas_preview.winfo_height()
+            if canvas_w <= 1 or canvas_h <= 1:
+                canvas_w = 380
+                canvas_h = 380
+            center_x = canvas_w / 2
+            center_y = canvas_h / 2
             self.canvas_preview.create_text(
-                center,
-                center,
+                center_x,
+                center_y,
                 text="PREVIEW DISABLED",
                 fill="#555555",
                 font=("Outfit", 12, "bold"),
             )
             self.canvas_preview.create_text(
-                center,
-                center + 25,
+                center_x,
+                center_y + 25,
                 text="Click 'Enable Preview' to restore visual fitting",
                 fill="#444444",
                 font=("Microsoft JhengHei", 8),
@@ -1448,22 +1534,30 @@ class ForzaStudioGUI:
                             else Image.Resampling.BILINEAR
                         )
 
+                        # 動態取得當前 Canvas 實體大小進行自適應縮放
+                        canvas_w = self.canvas_preview.winfo_width()
+                        canvas_h = self.canvas_preview.winfo_height()
+                        if canvas_w <= 1 or canvas_h <= 1:
+                            canvas_w = 380
+                            canvas_h = 380
+
                         # 保持圖片長寬比例 (Aspect Ratio) 縮放，置中繪製於 Canvas
                         w, h = pil_img.size
-                        scale = min(self.canvas_size / w, self.canvas_size / h)
+                        scale = min(canvas_w / w, canvas_h / h)
                         new_w = max(1, int(w * scale))
                         new_h = max(1, int(h * scale))
 
                         pil_resized = pil_img.resize((new_w, new_h), resample_mode)
                         self.img_tk = ImageTk.PhotoImage(pil_resized)
 
-                        # 增量更新點陣圖，消除 GDI 物件重複重建與 DWM 負載
-                        center_pos = self.canvas_size / 2
+                        # 增量更新點陣圖，消除 GDI 物件重複重建與 DWM 負載，置中於當前實際尺寸
+                        center_x = canvas_w / 2
+                        center_y = canvas_h / 2
                         if getattr(self, "preview_image_id", None) is None:
                             self.canvas_preview.delete("all")
                             self.preview_image_id = self.canvas_preview.create_image(
-                                center_pos,
-                                center_pos,
+                                center_x,
+                                center_y,
                                 anchor="center",
                                 image=self.img_tk,
                             )
@@ -1473,14 +1567,14 @@ class ForzaStudioGUI:
                                     self.preview_image_id, image=self.img_tk
                                 )
                                 self.canvas_preview.coords(
-                                    self.preview_image_id, center_pos, center_pos
+                                    self.preview_image_id, center_x, center_y
                                 )
                             except Exception:
                                 self.canvas_preview.delete("all")
                                 self.preview_image_id = (
                                     self.canvas_preview.create_image(
-                                        center_pos,
-                                        center_pos,
+                                        center_x,
+                                        center_y,
                                         anchor="center",
                                         image=self.img_tk,
                                     )

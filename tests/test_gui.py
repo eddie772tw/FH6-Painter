@@ -5,9 +5,35 @@ import tkinter as tk
 
 import pytest
 
-from fh6_painter_studio_gui import HAS_LIBS, ForzaStudioGUI
+from fh6_painter_studio_gui import ForzaStudioGUI
 
 # 使用 PEP8 / Google Style / Black Style 規範
+
+
+def safe_init_tk():
+    """安全初始化 tk.Tk()，只在出現特定『非程式本身造成』的環境 TclError 時跳過測試"""
+    try:
+        root = tk.Tk()
+        return root
+    except Exception as e:
+        err_msg = str(e)
+        # 精確匹配「非程式本身導致」的環境缺失或 Tcl 資源損壞錯誤
+        # 1. tcl_findLibrary: 找不到 Tcl 庫 (多次初始化 C 資源清理副作用或 Windows CI 缺件)
+        # 2. no display name: Linux/Unix 下沒有 DISPLAY 顯示器
+        # 3. Tcl_Init / cannot open display: 其它系統層級的 Tk 載入失敗
+        is_env_error = (
+            "tcl_findLibrary" in err_msg
+            or "no display name" in err_msg
+            or "Tcl_Init" in err_msg
+            or "cannot open display" in err_msg
+        )
+        if is_env_error:
+            pytest.skip(
+                f"系統環境不支援或 Tcl 資源受限（安全跳過非代碼 Bug 錯誤）: {e}"
+            )
+        else:
+            # 其它意料之外的錯誤（說明可能是我們自己的代碼在引用或底層拋出了其它異常）則直接拋出，不予以遮蓋
+            raise e
 
 
 def test_gui_initialization(monkeypatch):
@@ -16,8 +42,7 @@ def test_gui_initialization(monkeypatch):
     if sys.platform != "win32" and not os.environ.get("DISPLAY"):
         pytest.skip("無 X 顯示伺服器，跳過 GUI 載入測試（在 CI/CD 中將使用 xvfb 執行）")
 
-    # 初始化 Tkinter root
-    root = tk.Tk()
+    root = safe_init_tk()
     root.withdraw()  # 隱藏主視窗，避免實體彈窗干擾測試
 
     try:
@@ -51,7 +76,7 @@ def test_gui_initialization(monkeypatch):
 
 def test_validate_geometry():
     """測試視窗幾何字串校驗與越界安全防護邏輯"""
-    root = tk.Tk()
+    root = safe_init_tk()
     root.withdraw()
     try:
         app = ForzaStudioGUI(root)
@@ -83,7 +108,7 @@ def test_validate_geometry():
 
 def test_settings_recreation_on_corruption(tmp_path):
     """測試 optimization_settings.json 損壞時自動重建的保險機制"""
-    root = tk.Tk()
+    root = safe_init_tk()
     root.withdraw()
     try:
         app = ForzaStudioGUI(root)
