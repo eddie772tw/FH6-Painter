@@ -82,6 +82,10 @@ if exist "%~dp0settings" (
     xcopy /E /I /Y "%~dp0settings" "%DIST_DIR%\settings" >nul
     echo [SUCCESS] Copied "settings" preset folder.
 )
+if exist "%~dp0optimization_settings.json" (
+    copy /Y "%~dp0optimization_settings.json" "%DIST_DIR%" >nul
+    echo [SUCCESS] Copied "optimization_settings.json" configuration file.
+)
 
 echo ====================================================================
 echo      FH6 Painter Nuitka native build created successfully

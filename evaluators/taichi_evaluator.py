@@ -4,10 +4,18 @@ import sys
 
 import numpy as np
 
-# PyInstaller environment source-inspect hook for Taichi Lang JIT
-if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
-    physical_py_file = os.path.join(sys._MEIPASS, "evaluators", "taichi_evaluator.py")
-    if os.path.exists(physical_py_file):
+# PyInstaller & Nuitka environment source-inspect hook for Taichi Lang JIT
+if getattr(sys, "frozen", False) or "__compiled__" in sys.modules:
+    physical_py_file = None
+    if hasattr(sys, "_MEIPASS"):
+        # PyInstaller
+        physical_py_file = os.path.join(sys._MEIPASS, "evaluators", "taichi_evaluator.py")
+    else:
+        # Nuitka Standalone
+        base_dir = os.path.dirname(os.path.abspath(sys.argv[0])) if sys.argv[0] else os.path.dirname(os.path.abspath(sys.executable))
+        physical_py_file = os.path.join(base_dir, "evaluators", "taichi_evaluator.py")
+        
+    if physical_py_file and os.path.exists(physical_py_file):
         __file__ = physical_py_file
         if "evaluators.taichi_evaluator" in sys.modules:
             sys.modules["evaluators.taichi_evaluator"].__file__ = physical_py_file

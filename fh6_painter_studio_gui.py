@@ -51,8 +51,8 @@ except ImportError as e:
 
 
 def get_project_root():
-    if getattr(sys, "frozen", False):
-        return os.path.dirname(sys.executable)
+    if getattr(sys, "frozen", False) or "__compiled__" in sys.modules:
+        return os.path.dirname(os.path.realpath(sys.executable))
     return os.path.dirname(os.path.abspath(__file__))
 
 
