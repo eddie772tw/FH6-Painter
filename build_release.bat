@@ -12,20 +12,30 @@ set "PY_EXE=%VENV_DIR%\Scripts\python.exe"
 set "PYINSTALLER_EXE=%VENV_DIR%\Scripts\pyinstaller.exe"
 
 if not exist "%PYINSTALLER_EXE%" (
-    echo [ERROR] PyInstaller executable not found in virtual environment.
-    echo Make sure you have run "forza-painter-py.bat" to set up the environment.
-    echo Trying to install PyInstaller package...
-    if exist "%PY_EXE%" (
-        "%PY_EXE%" -m pip install pyinstaller
-        if errorlevel 1 (
-            echo [ERROR] Failed to install PyInstaller. Please run: pip install pyinstaller
-            pause
-            exit /b 1
-        )
+    where pyinstaller >nul 2>nul
+    if !errorlevel! equ 0 (
+        set "PYINSTALLER_EXE=pyinstaller"
     ) else (
-        echo [ERROR] No valid Python virtual environment found. Run "forza-painter-py.bat" first.
-        pause
-        exit /b 1
+        echo [INFO] PyInstaller not found in virtual environment, checking global Python...
+        if exist "%PY_EXE%" (
+            "%PY_EXE%" -m pip install pyinstaller
+            if errorlevel 1 (
+                echo [ERROR] Failed to install PyInstaller in virtual environment.
+                if not "%GITHUB_ACTIONS%" == "true" pause
+                exit /b 1
+            )
+        ) else (
+            where python >nul 2>nul
+            if !errorlevel! equ 0 (
+                set "PY_EXE=python"
+                "!PY_EXE!" -m pip install pyinstaller
+                set "PYINSTALLER_EXE=pyinstaller"
+            ) else (
+                echo [ERROR] No valid Python virtual environment or global Python environment found.
+                if not "%GITHUB_ACTIONS%" == "true" pause
+                exit /b 1
+            )
+        )
     )
 )
 
@@ -53,7 +63,7 @@ echo --------------------------------------------------------------------
 if errorlevel 1 (
     echo.
     echo [ERROR] PyInstaller bundling encountered an error!
-    pause
+    if not "%GITHUB_ACTIONS%" == "true" pause
     exit /b 1
 )
 echo [SUCCESS] Core binary bundled successfully.
@@ -65,7 +75,7 @@ set "DIST_DIR=%~dp0dist\FH6_Painter_Studio"
 
 if not exist "%DIST_DIR%" (
     echo [ERROR] Distribution directory not found: %DIST_DIR%
-    pause
+    if not "%GITHUB_ACTIONS%" == "true" pause
     exit /b 1
 )
 
@@ -124,5 +134,5 @@ echo.
 echo TIP: You can distribute the generated archive to other players
 echo      as a portable standalone tool!
 echo.
-pause
+if not "%GITHUB_ACTIONS%" == "true" pause
 exit /b 0

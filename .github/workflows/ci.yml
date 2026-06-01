@@ -94,18 +94,9 @@ jobs:
         pip install pyinstaller
 
     - name: Build Standalone Windows Executable
-      shell: pwsh
+      shell: cmd
       run: |
-        # 呼叫 PyInstaller 封裝獨立 EXE，模擬 build_release.bat 的核心編譯參數
-        pyinstaller --noconfirm --name "FH6_Painter_Studio" --windowed --collect-all "taichi" --add-data "evaluators/*;evaluators" --add-data "tools/*;tools" fh6_painter_studio_gui.py
-        
-        # 複製外置配置資源至 dist 發行目錄中
-        if (Test-Path "settings") {
-            Copy-Item -Path "settings" -Destination "dist/FH6_Painter_Studio/settings" -Recurse -Force
-        }
-        if (Test-Path "optimization_settings.json") {
-            Copy-Item -Path "optimization_settings.json" -Destination "dist/FH6_Painter_Studio/" -Force
-        }
+        call build_release.bat
 
     - name: Compress standalone bundle to ZIP
       shell: pwsh
