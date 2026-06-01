@@ -9,3 +9,7 @@
 ## 2026-05-29 - Taichi GPU Scanline Rendering Optimization
 **Learning:** Naive bounding box rendering loops with pixel-by-pixel checks `if (rx*rx)*inv_rx2 + (ry*ry)*inv_ry2 <= 1.0` in Taichi GPU JIT functions (`draw_ellipse_gpu` and `update_uncovered_mask_gpu`) are slow and cause thread divergence inside inner loops on the GPU.
 **Action:** Use an analytical scanline solver (quadratic roots based on sine/cosine projections) to calculate start/end x-coordinates per scanline. Precompute divisions by hoisting `inv_a = 1.0 / a if a > 0.0 else 0.0` outside the loop to change expensive division into multiplication inside the hot loops. This matches the optimization strategy used in Numba CPU kernels and significantly speeds up Taichi execution on the GPU by avoiding thread divergence.
+
+## 2026-06-01 - Pure Python Scanline Rendering Optimization
+**Learning:** The analytical scanline solver (quadratic roots based on sine/cosine projections) previously used in Numba and Taichi JIT kernels also significantly boosts performance in Pure Python environments without explicit vectorization. It eliminates conditional branching inside tight inner loops, which is inherently slow in CPython due to evaluation overhead.
+**Action:** Apply the analytical scanline solver to purely Python bounding box iteration loops where mathematical solutions are faster than procedural pixel-by-pixel boundary checking, reducing evaluation time during fallback operations.
