@@ -99,11 +99,6 @@ if errorlevel 1 (
 )
 
 :dependencies_ok
-echo ====================================================================
-echo      FH6 Painter - FH6 Livery Engine Startup Diagnostic
-echo ====================================================================
-"!PY_EXE!" -c "from evaluators import EvaluatorFactory; engines = EvaluatorFactory.get_available_evaluators(); print('\n[Diagnostic] Computational Engine Plugins Status:'); [print(' - {:<32} | Code: {:<12} | Status: {}'.format(e['name'], e['code'], '[ENABLED]' if e['available'] else '[DISABLED] (Missing library, run: pip install ' + ('numba' if e['code']=='NUMBA' else 'taichi') + ' to enable)')) for e in engines]; print()"
-echo ====================================================================
 
 :: 啟動應用程式
 if "%~1" == "" (

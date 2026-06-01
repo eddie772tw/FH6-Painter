@@ -59,6 +59,23 @@ def get_project_root():
 # --- Premium Dark Studio GUI Application ---
 class ForzaStudioGUI:
     def __init__(self, root, preload_file=None):
+        # Print Startup Diagnostic plugins status to captured stdout so it is saved in global_log_buffer
+        if HAS_LIBS and "EvaluatorFactory" in globals() and EvaluatorFactory is not None:
+            try:
+                engines = EvaluatorFactory.get_available_evaluators()
+                print("====================================================================")
+                print("     FH6 Painter - FH6 Livery Engine Startup Diagnostic")
+                print("====================================================================")
+                print("\n[Diagnostic] Computational Engine Plugins Status:")
+                for e in engines:
+                    status_str = "[ENABLED]" if e['available'] else f"[DISABLED] (Missing library, run: pip install {'numba' if e['code']=='NUMBA' else 'taichi'} to enable)"
+                    print(f" - {e['name']:<32} | Code: {e['code']:<12} | Status: {status_str}")
+                print()
+                print("====================================================================")
+                print()
+            except Exception as ex:
+                print(f"[Diagnostic Error] Failed to run engine check: {ex}")
+
         self.root = root
         self.root.title("FH6 Painter - Shape Generator & Importer")
         self.root.geometry("1216x863")
@@ -202,21 +219,69 @@ class ForzaStudioGUI:
         return profiles
 
     def scan_gpus(self):
-        """利用 Windows wmic 指令偵測系統中的顯示卡列表"""
+        """偵測系統中的顯示卡列表 (支援 winreg 登錄檔、wmic 與 PowerShell 多重防禦機制)"""
         gpus = []
-        try:
-            import subprocess
+        
+        # 定義排除關鍵字 (不區分大小寫)
+        exclude_keywords = ["display adapter", "parsec", "remote", "virtual", "indirect", "mirror"]
+        
+        def is_valid_gpu(name):
+            if not name:
+                return False
+            name_lower = name.lower()
+            return not any(kw in name_lower for kw in exclude_keywords)
 
-            out = subprocess.check_output(
-                "wmic path win32_VideoController get name", shell=True
-            ).decode("utf-8", errors="ignore")
-            lines = [line.strip() for line in out.split("\n") if line.strip()]
-            if len(lines) > 1:
-                for l in lines[1:]:
-                    if l and "name" not in l.lower():
-                        gpus.append(l)
+        # 1. 優先採用 Python 原生 winreg 讀取登錄檔 (速度最快，免行程開銷，完全不受 wmic 棄用影響)
+        try:
+            import winreg
+            path = r"SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}"
+            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, path) as key:
+                for i in range(winreg.QueryInfoKey(key)[0]):
+                    try:
+                        subkey_name = winreg.EnumKey(key, i)
+                        if subkey_name.isdigit():
+                            with winreg.OpenKey(key, subkey_name) as subkey:
+                                try:
+                                    gpu_name, _ = winreg.QueryValueEx(subkey, "DriverDesc")
+                                    if gpu_name and gpu_name not in gpus and is_valid_gpu(gpu_name):
+                                        gpus.append(gpu_name)
+                                except Exception:
+                                    pass
+                    except Exception:
+                        pass
         except Exception:
             pass
+
+        # 2. 次要備援方案：wmic 指令 (以 stderr=DEVNULL 靜音)
+        if not gpus:
+            try:
+                import subprocess
+                out = subprocess.check_output(
+                    "wmic path win32_VideoController get name", shell=True, stderr=subprocess.DEVNULL
+                ).decode("utf-8", errors="ignore")
+                lines = [line.strip() for line in out.split("\n") if line.strip()]
+                if len(lines) > 1:
+                    for l in lines[1:]:
+                        if l and "name" not in l.lower() and l not in gpus and is_valid_gpu(l):
+                            gpus.append(l)
+            except Exception:
+                pass
+
+        # 3. 終極備援方案：PowerShell 原生 CimInstance 查詢
+        if not gpus:
+            try:
+                import subprocess
+                out = subprocess.check_output(
+                    'powershell -Command "Get-CimInstance Win32_VideoController | Select-Object -ExpandProperty Name"',
+                    shell=True, stderr=subprocess.DEVNULL
+                ).decode("utf-8", errors="ignore")
+                lines = [line.strip() for line in out.split("\n") if line.strip()]
+                for l in lines:
+                    if l and l not in gpus and is_valid_gpu(l):
+                        gpus.append(l)
+            except Exception:
+                pass
+
         if not gpus:
             gpus = ["Default GPU (Device 0)"]
         return gpus
