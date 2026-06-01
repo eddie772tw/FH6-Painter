@@ -170,7 +170,7 @@ class TestImporter(unittest.TestCase):
             )
 
             self.assertEqual(loaded_pointers, pointers)
-            
+
             # Verify read_u64 was called with group_addr + GROUP_TABLE_OFFSET
             mock_read_u64.assert_called_with(None, group_addr + fh6_importer.GROUP_TABLE_OFFSET)
 

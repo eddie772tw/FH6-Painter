@@ -748,7 +748,7 @@ def try_load_cached_layer_pointers(handle, cache_path, pid, layer_count):
         # Verify group table pointer in game memory
         table_ptr = read_u64(handle, cached_group + GROUP_TABLE_OFFSET)
         if table_ptr != cached_table:
-            print(f"Group table pointer changed in memory; cache is invalid.")
+            print("Group table pointer changed in memory; cache is invalid.")
             return None
 
         # Dynamically read layer pointers from the table in game memory
