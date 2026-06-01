@@ -27,12 +27,13 @@ jobs:
       with:
         args: "format --check ."
 
-  # 任務 2：Windows 單元測試與邏輯驗證
+  # 任務 2：跨平台單元測試與邏輯驗證
   test:
-    runs-on: windows-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
+        os: [windows-latest, ubuntu-latest]
         python-version: ["3.13"]
 
     steps:
@@ -43,7 +44,13 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
-        cache: 'pip' # 自動快取 pip 依賴，大幅加速後續建置
+        cache: 'pip'
+
+    - name: Install System GUI Dependencies (Linux only)
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y xvfb python3-tk
 
     - name: Upgrade pip and install core requirements
       run: |
@@ -54,9 +61,15 @@ jobs:
       run: |
         pip install pytest
 
-    - name: Execute automated test suite
+    - name: Execute automated test suite (Windows)
+      if: matrix.os == 'windows-latest'
       run: |
         python -m pytest -v
+
+    - name: Execute automated test suite with xvfb (Linux)
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        xvfb-run python -m pytest -v
 
   # 任務 3：建置與封裝發行版 (依賴 test 與 lint 通過)
   build-release:
