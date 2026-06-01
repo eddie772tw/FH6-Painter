@@ -81,7 +81,8 @@ echo.
 echo [INFO] Copying editable preset assets...
 set "DIST_DIR=%~dp0nuitka_dist\fh6_painter_studio_gui.dist"
 if exist "%~dp0settings" (
-    xcopy /E /I /Y "%~dp0settings" "%DIST_DIR%\settings" >nul
+    if not exist "%DIST_DIR%\settings" mkdir "%DIST_DIR%\settings"
+    xcopy /E /Y "%~dp0settings\*" "%DIST_DIR%\settings\" >nul
     echo [SUCCESS] Copied "settings" preset folder.
 )
 if exist "%~dp0optimization_settings.json" (
