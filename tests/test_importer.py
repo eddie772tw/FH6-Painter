@@ -136,6 +136,7 @@ class TestImporter(unittest.TestCase):
     @patch("tools.fh6_import_layer_table.score_layer")
     def test_cache_mechanism(self, mock_score_layer, mock_read_u64, mock_try_read):
         import struct
+
         cache_file = "test_layer_table.cache"
         if os.path.exists(cache_file):
             os.remove(cache_file)
@@ -158,7 +159,9 @@ class TestImporter(unittest.TestCase):
             # Struct format "<I" is 4 bytes. We return count as 4
             mock_try_read.side_effect = [
                 struct.pack("<I", 4),  # First call: try_read for count
-                struct.pack("<4Q", *pointers)  # Second call: try_read for pointers table
+                struct.pack(
+                    "<4Q", *pointers
+                ),  # Second call: try_read for pointers table
             ]
             # 2. read table pointer at group_addr + GROUP_TABLE_OFFSET (0x78)
             mock_read_u64.return_value = table_addr
@@ -172,7 +175,9 @@ class TestImporter(unittest.TestCase):
             self.assertEqual(loaded_pointers, pointers)
 
             # Verify read_u64 was called with group_addr + GROUP_TABLE_OFFSET
-            mock_read_u64.assert_called_with(None, group_addr + fh6_importer.GROUP_TABLE_OFFSET)
+            mock_read_u64.assert_called_with(
+                None, group_addr + fh6_importer.GROUP_TABLE_OFFSET
+            )
 
         finally:
             if os.path.exists(cache_file):

@@ -742,7 +742,9 @@ def try_load_cached_layer_pointers(handle, cache_path, pid, layer_count):
             return None
         current_count = struct.unpack("<I", count_bytes)[0]
         if current_count != layer_count:
-            print(f"Group layer count changed in memory ({current_count} != {layer_count}); cache is invalid.")
+            print(
+                f"Group layer count changed in memory ({current_count} != {layer_count}); cache is invalid."
+            )
             return None
 
         # Verify group table pointer in game memory
@@ -775,14 +777,18 @@ def try_load_cached_layer_pointers(handle, cache_path, pid, layer_count):
             )
             return None
 
-        print(f"Using cached layer pointers valid={valid}/{layer_count} (dynamically read from table 0x{cached_table:X})")
+        print(
+            f"Using cached layer pointers valid={valid}/{layer_count} (dynamically read from table 0x{cached_table:X})"
+        )
         return pointers
     except Exception as e:
         print(f"Layer cache could not be read; full scan needed. Error: {e}")
         return None
 
 
-def save_cached_layer_pointers(cache_path, pid, layer_count, group_addr, table_addr, pointers):
+def save_cached_layer_pointers(
+    cache_path, pid, layer_count, group_addr, table_addr, pointers
+):
     try:
         with open(cache_path, "w", encoding="utf-8") as f:
             f.write(f"{pid}|{layer_count}|{group_addr:X}|{table_addr:X}\n")
@@ -950,8 +956,12 @@ def run_importer(
             )
 
             if layer_pointers is None:
-                layer_pointers, best_group, best_table = locate_layer_pointers(handle, layers, max_candidates)
-                save_cached_layer_pointers(cache_path, pid, layers, best_group, best_table, layer_pointers)
+                layer_pointers, best_group, best_table = locate_layer_pointers(
+                    handle, layers, max_candidates
+                )
+                save_cached_layer_pointers(
+                    cache_path, pid, layers, best_group, best_table, layer_pointers
+                )
 
             print(f"LiveryGroup found. Valid layer pointers={len(layer_pointers)}")
 
