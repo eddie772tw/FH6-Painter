@@ -37,6 +37,7 @@ echo --------------------------------------------------------------------
     --standalone ^
     --zig ^
     --jobs=%NUMBER_OF_PROCESSORS% ^
+    --assume-yes-for-downloads ^
     --nofollow-import-to=unittest ^
     --nofollow-import-to=pydoc ^
     --nofollow-import-to=doctest ^
@@ -45,11 +46,11 @@ echo --------------------------------------------------------------------
     --nofollow-import-to=email ^
     --nofollow-import-to=html ^
     --nofollow-import-to=http ^
+    --nofollow-import-to=numba ^
+    --nofollow-import-to=llvmlite ^
     --disable-console ^
     --enable-plugins=tk-inter ^
     --include-package=taichi ^
-    --include-package=numba ^
-    --include-package=llvmlite ^
     --include-data-dir="%~dp0evaluators=evaluators" ^
     --include-data-dir="%~dp0tools=tools" ^
     --company-name="FH6-Painter Open Source" ^

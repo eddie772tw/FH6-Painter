@@ -6,13 +6,15 @@ import numpy as np
 from evaluators.base_evaluator import BaseEvaluator
 
 try:
-    import numba
-
-    from evaluators import numba_kernels
-
+    from evaluators import numba_kernels_aot as numba_kernels
     HAS_NUMBA = True
 except ImportError:
-    HAS_NUMBA = False
+    try:
+        import numba
+        from evaluators import numba_kernels
+        HAS_NUMBA = True
+    except ImportError:
+        HAS_NUMBA = False
 
 
 class NumbaEvaluator(BaseEvaluator):

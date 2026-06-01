@@ -1050,7 +1050,10 @@ class TaichiEvaluator(BaseEvaluator):
             )
 
             try:
-                from evaluators import numba_kernels
+                try:
+                    from evaluators import numba_kernels_aot as numba_kernels
+                except ImportError:
+                    from evaluators import numba_kernels
 
                 canvas_r = np.ascontiguousarray(current_canvas[:, :, 0])
                 canvas_g = np.ascontiguousarray(current_canvas[:, :, 1])
@@ -1163,7 +1166,10 @@ class TaichiEvaluator(BaseEvaluator):
     ) -> None:
 
         try:
-            from evaluators import numba_kernels
+            try:
+                from evaluators import numba_kernels_aot as numba_kernels
+            except ImportError:
+                from evaluators import numba_kernels
 
             numba_kernels.draw_ellipse(
                 canvas, x_c, y_c, r_x, r_y, theta_rad, r, g, b, alpha
