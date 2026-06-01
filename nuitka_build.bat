@@ -33,7 +33,7 @@ echo.
 echo [INFO] Compiling using Nuitka (Standalone + Zig C Compiler)...
 echo This might take a few minutes as it compiles Python bytecode to C++ and compiles to native code...
 echo --------------------------------------------------------------------
-"%NUITKA_EXE%" ^
+call "%NUITKA_EXE%" ^
     --standalone ^
     --zig ^
     --jobs=%NUMBER_OF_PROCESSORS% ^
