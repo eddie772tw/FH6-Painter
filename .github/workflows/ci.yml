@@ -10,29 +10,30 @@ permissions:
   contents: read
 
 jobs:
-  # 任務 1：代碼格式與語法檢查 (獨立出來)
+  # 任務 1：極速 Linux 代碼風格與語法檢查 (與單元測試並行)
   lint:
-    runs-on: ubuntu-latest # Lint 在 Linux 環境執行通常較快
+    runs-on: ubuntu-latest
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
-      
-    - name: Run Ruff Check & Format
+
+    - name: Run Ruff Check
       uses: astral-sh/ruff-action@v3
       with:
         args: "check --output-format=github ."
-    
+
     - name: Run Ruff Format Verification
       uses: astral-sh/ruff-action@v3
       with:
         args: "format --check ."
 
-  # 任務 2：單元測試與邏輯驗證
+  # 任務 2：跨平台單元測試與邏輯驗證
   test:
-    runs-on: windows-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
+        os: [windows-latest, ubuntu-latest]
         python-version: ["3.13"]
 
     steps:
@@ -43,55 +44,36 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
-        cache: 'pip' 
+        cache: 'pip'
+
+    - name: Install System GUI Dependencies (Linux only)
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y xvfb python3-tk
 
     - name: Upgrade pip and install core requirements
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
 
-    - name: Install & Execute automated test suite
+    - name: Install testing tools
       run: |
         pip install pytest
+
+    - name: Execute automated test suite (Windows)
+      if: matrix.os == 'windows-latest'
+      run: |
         python -m pytest -v
 
-  # 任務 3：自動修復代碼格式 (僅依賴 lint 的結果)
-  auto-fix:
-    needs: lint
-    runs-on: ubuntu-latest
-    
-    # 只要 lint 任務失敗就觸發。
-    # 移除了對 commit message 的判斷，因為底層加上 [skip ci] 後，GitHub 預設就不會觸發新流程。
-    if: failure()
-    
-    permissions:
-      contents: write
+    - name: Execute automated test suite with xvfb (Linux)
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        xvfb-run python -m pytest -v
 
-    steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-      with:
-        ref: ${{ github.head_ref || github.ref_name }}
-
-    - name: Run Ruff Format and Fix
-      uses: astral-sh/ruff-action@v3
-      with:
-        args: "format ."
-
-    - name: Run Ruff Lint Fix
-      uses: astral-sh/ruff-action@v3
-      with:
-        args: "check --fix --exit-zero ."
-
-    - name: Commit and Push changes
-      uses: stefanzweifel/git-auto-commit-action@v5
-      with:
-        # 加入 [skip ci] 讓這次自動提交不會再次觸發 Action，避免無限迴圈
-        commit_message: "style: auto format code with ruff [skip ci]"
-
-  # 任務 4：建置與封裝發行版
+  # 任務 3：建置與封裝發行版 (依賴 test 與 lint 通過)
   build-release:
-    needs: test # 確保邏輯測試通過後才打包
+    needs: [test, lint]
     runs-on: windows-latest
     if: github.event_name == 'pull_request' || github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
     
@@ -112,27 +94,13 @@ jobs:
         pip install pyinstaller
 
     - name: Build Standalone Windows Executable
-      shell: pwsh
+      shell: cmd
       run: |
-        # 呼叫 PyInstaller 封裝獨立 EXE
-        pyinstaller --noconfirm --name "FH6_Painter_Studio" --windowed --collect-all "taichi" --add-data "evaluators/*;evaluators" --add-data "tools/*;tools" fh6_painter_studio_gui.py
-        
-        # 複製外置配置資源至 dist 發行目錄中
-        if (Test-Path "settings") {
-            Copy-Item -Path "settings" -Destination "dist/FH6_Painter_Studio/settings" -Recurse -Force
-        }
-        if (Test-Path "optimization_settings.json") {
-            Copy-Item -Path "optimization_settings.json" -Destination "dist/FH6_Painter_Studio/" -Force
-        }
-
-    - name: Compress standalone bundle to ZIP
-      shell: pwsh
-      run: |
-        Compress-Archive -Path "dist/FH6_Painter_Studio" -DestinationPath "FH6_Painter_Studio_Windows.zip" -Force
+        call build_release.bat
 
     - name: Upload build artifact preview
       uses: actions/upload-artifact@v4
       with:
         name: FH6_Painter_Studio_Windows_Preview
-        path: FH6_Painter_Studio_Windows.zip
+        path: dist/FH6_Painter_Studio
         retention-days: 7

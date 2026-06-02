@@ -99,11 +99,13 @@ if errorlevel 1 (
 )
 
 :dependencies_ok
-echo ====================================================================
-echo      FH6 Painter - FH6 Livery Engine Startup Diagnostic
-echo ====================================================================
-"!PY_EXE!" -c "from evaluators import EvaluatorFactory; engines = EvaluatorFactory.get_available_evaluators(); print('\n[Diagnostic] Computational Engine Plugins Status:'); [print(' - {:<32} | Code: {:<12} | Status: {}'.format(e['name'], e['code'], '[ENABLED]' if e['available'] else '[DISABLED] (Missing library, run: pip install ' + ('numba' if e['code']=='NUMBA' else 'taichi') + ' to enable)')) for e in engines]; print()"
-echo ====================================================================
+
+:: 執行 Ruff 程式碼自動排版與靜態檢查
+if exist "%VENV_DIR%\Scripts\ruff.exe" (
+    echo [INFO] 正在運行 Ruff 進行程式碼品質校驗與自動排版...
+    "%VENV_DIR%\Scripts\ruff.exe" check . --fix
+    "%VENV_DIR%\Scripts\ruff.exe" format .
+)
 
 :: 啟動應用程式
 if "%~1" == "" (

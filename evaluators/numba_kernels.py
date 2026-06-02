@@ -163,9 +163,10 @@ def evaluate_candidate(
     if count == 0:
         return np.float32(0.0), np.float32(0.0), np.float32(0.0), np.float32(99999999.0)
 
-    avg_r = sum_t_r / count
-    avg_g = sum_t_g / count
-    avg_b = sum_t_b / count
+    inv_count = np.float32(1.0) / count
+    avg_r = sum_t_r * inv_count
+    avg_g = sum_t_g * inv_count
+    avg_b = sum_t_b * inv_count
 
     a_f = np.float32(alpha / 255.0)
     a2_minus_2a = np.float32(a_f * a_f - 2.0 * a_f)

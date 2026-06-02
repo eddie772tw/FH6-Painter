@@ -133,6 +133,7 @@ def evaluate_candidate_ti(
                 dy = ti.cast(y, ti.f32) - y_c
                 discriminant = a - dy * dy * inv_r_prod
                 if discriminant >= 0.0:
+
                     sqrt_d_inv_a = ti.math.sqrt(discriminant) * inv_a
                     mid_val = -dy * inv_a_b_coeff
                     dx_min = mid_val - sqrt_d_inv_a
@@ -156,6 +157,7 @@ def evaluate_candidate_ti(
                 dy = ti.cast(y, ti.f32) - y_c
                 discriminant = a - dy * dy * inv_r_prod
                 if discriminant >= 0.0:
+
                     sqrt_d_inv_a = ti.math.sqrt(discriminant) * inv_a
                     mid_val = -dy * inv_a_b_coeff
                     dx_min = mid_val - sqrt_d_inv_a
@@ -204,9 +206,10 @@ def evaluate_candidate_ti(
     total_delta_mse = 99999999.0
 
     if is_valid == 1 and count > 0.0:
-        avg_r = sum_t_r / count
-        avg_g = sum_t_g / count
-        avg_b = sum_t_b / count
+        inv_count = 1.0 / count
+        avg_r = sum_t_r * inv_count
+        avg_g = sum_t_g * inv_count
+        avg_b = sum_t_b * inv_count
 
         a_f = alpha / 255.0
         a2_minus_2a = a_f * a_f - 2.0 * a_f
@@ -311,7 +314,8 @@ def compute_raw_error_and_max(
         diff = 0.0
         for c in ti.static(range(3)):
             diff += ti.abs(target[y, x, c] - canvas[y, x, c])
-        diff /= 3.0
+        # Multiply by precomputed inverse of 3.0 to save on expensive division operation
+        diff *= 0.3333333333333333
         ti.atomic_max(max_err, diff)
         error_prob[y, x] = diff
     return max_err
@@ -324,9 +328,11 @@ def normalize_error_prob(
     height: ti.i32,
     width: ti.i32,
 ):
+    # Precompute division for normalization to convert slow div to fast mul inside the loop
+    inv_max_val = 1.0 / max_val if max_val > 0.0 else 0.0
     for y, x in ti.ndrange(height, width):
         if max_val > 0.0:
-            error_prob[y, x] = error_prob[y, x] / max_val
+            error_prob[y, x] = error_prob[y, x] * inv_max_val
         else:
             error_prob[y, x] = 0.0
 
@@ -359,7 +365,7 @@ def update_freeze_mask_gpu(
         diff = 0.0
         for c in ti.static(range(3)):
             diff += ti.abs(target[y, x, c] - canvas[y, x, c])
-        diff /= 3.0
+        diff *= 0.3333333333333333
         if diff < threshold:
             freeze_mask[y, x] = 1
         else:
@@ -393,13 +399,28 @@ def update_uncovered_mask_gpu(
     inv_rx2 = 1.0 / (r_x * r_x) if r_x > 0.0 else 0.0
     inv_ry2 = 1.0 / (r_y * r_y) if r_y > 0.0 else 0.0
 
-    for y, x in ti.ndrange((min_y, max_y + 1), (min_x, max_x + 1)):
+    sin_cos = sin_t * cos_t
+    a = inv_rx2 * cos_t * cos_t + inv_ry2 * sin_t * sin_t
+    b_coeff = sin_cos * (inv_rx2 - inv_ry2)
+    c_y_coeff = inv_rx2 * sin_t * sin_t + inv_ry2 * cos_t * cos_t
+
+    # Analytical scanline solver: Convert 2D pixel-by-pixel boundary check to 1D start/end bounds calculation
+    # Also hoists inverse division outside the loop for performance
+    inv_a = 1.0 / a if a > 0.0 else 0.0
+
+    for y in range(min_y, max_y + 1):
         dy = ti.cast(y, ti.f32) - y_c
-        dx = ti.cast(x, ti.f32) - x_c
-        rx = dx * cos_t + dy * sin_t
-        ry = -dx * sin_t + dy * cos_t
-        if (rx * rx) * inv_rx2 + (ry * ry) * inv_ry2 <= 1.0:
-            uncovered_map[y, x] = 1.0
+        b_val = dy * b_coeff
+        c_val = dy * dy * c_y_coeff - 1.0
+        discriminant = b_val * b_val - a * c_val
+        if discriminant >= 0.0:
+            sqrt_d = ti.math.sqrt(discriminant)
+            dx_min = (-b_val - sqrt_d) * inv_a
+            dx_max = (-b_val + sqrt_d) * inv_a
+            x_start = ti.max(min_x, ti.cast(ti.math.ceil(x_c + dx_min), ti.i32))
+            x_end = ti.min(max_x, ti.cast(ti.math.floor(x_c + dx_max), ti.i32))
+            for x in range(x_start, x_end + 1):
+                uncovered_map[y, x] = 1.0
 
 
 @ti.kernel
@@ -489,15 +510,29 @@ def draw_ellipse_gpu(
     a_f = alpha / 255.0
     one_minus_a = 1.0 - a_f
 
-    for y, x in ti.ndrange((min_y, max_y + 1), (min_x, max_x + 1)):
+    sin_cos = sin_t * cos_t
+    a = inv_rx2 * cos_t * cos_t + inv_ry2 * sin_t * sin_t
+    b_coeff = sin_cos * (inv_rx2 - inv_ry2)
+    c_y_coeff = inv_rx2 * sin_t * sin_t + inv_ry2 * cos_t * cos_t
+
+    inv_a = 1.0 / a if a > 0.0 else 0.0
+
+    for y in range(min_y, max_y + 1):
         dy = ti.cast(y, ti.f32) - y_c
-        dx = ti.cast(x, ti.f32) - x_c
-        rx = dx * cos_t + dy * sin_t
-        ry = -dx * sin_t + dy * cos_t
-        if (rx * rx) * inv_rx2 + (ry * ry) * inv_ry2 <= 1.0:
-            canvas[y, x, 0] = canvas[y, x, 0] * one_minus_a + r * a_f
-            canvas[y, x, 1] = canvas[y, x, 1] * one_minus_a + g * a_f
-            canvas[y, x, 2] = canvas[y, x, 2] * one_minus_a + b * a_f
+        b_val = dy * b_coeff
+        c_val = dy * dy * c_y_coeff - 1.0
+        discriminant = b_val * b_val - a * c_val
+        if discriminant >= 0.0:
+            sqrt_d = ti.math.sqrt(discriminant)
+            dx_min = (-b_val - sqrt_d) * inv_a
+            dx_max = (-b_val + sqrt_d) * inv_a
+            x_start = ti.max(min_x, ti.cast(ti.math.ceil(x_c + dx_min), ti.i32))
+            x_end = ti.min(max_x, ti.cast(ti.math.floor(x_c + dx_max), ti.i32))
+
+            for x in range(x_start, x_end + 1):
+                canvas[y, x, 0] = canvas[y, x, 0] * one_minus_a + r * a_f
+                canvas[y, x, 1] = canvas[y, x, 1] * one_minus_a + g * a_f
+                canvas[y, x, 2] = canvas[y, x, 2] * one_minus_a + b * a_f
 
 
 @ti.kernel
