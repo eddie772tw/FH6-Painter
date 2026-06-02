@@ -63,22 +63,22 @@ def evaluate_candidate(
     sin_cos = sin_t * cos_t
     a = inv_rx2 * cos_t * cos_t + inv_ry2 * sin_t * sin_t
     b_coeff = sin_cos * (inv_rx2 - inv_ry2)
-    c_y_coeff = inv_rx2 * sin_t * sin_t + inv_ry2 * cos_t * cos_t
+    inv_r_prod = inv_rx2 * inv_ry2
 
     inv_a = np.float32(1.0 / a) if a > 0 else np.float32(0.0)
+    inv_a_b_coeff = b_coeff * inv_a
 
     # Validation Pass: Check contour and freeze mask first in a scalar loop with early return
     # This isolates early exits from the heavy accumulation loop so LLVM can vectorize
     if check_contour or use_freeze:
         for y in range(min_y, max_y + 1):
             dy = np.float32(y - y_c)
-            b_quad = dy * b_coeff
-            c_val = dy * dy * c_y_coeff - 1.0
-            discriminant = b_quad * b_quad - a * c_val
+            discriminant = a - dy * dy * inv_r_prod
             if discriminant >= 0.0:
-                sqrt_d = math.sqrt(discriminant)
-                dx_min = (-b_quad - sqrt_d) * inv_a
-                dx_max = (-b_quad + sqrt_d) * inv_a
+                sqrt_d_inv_a = math.sqrt(discriminant) * inv_a
+                mid_val = -dy * inv_a_b_coeff
+                dx_min = mid_val - sqrt_d_inv_a
+                dx_max = mid_val + sqrt_d_inv_a
                 x_start = max(min_x, int(math.ceil(x_c + dx_min)))
                 x_end = min(max_x, int(math.floor(x_c + dx_max)))
 
@@ -119,13 +119,12 @@ def evaluate_candidate(
     # Heavy Accumulation Loop: Contiguous memory access, zero branching, highly vectorizable (AVX2/FMA3)
     for y in range(min_y, max_y + 1):
         dy = np.float32(y - y_c)
-        b_quad = dy * b_coeff
-        c_val = dy * dy * c_y_coeff - 1.0
-        discriminant = b_quad * b_quad - a * c_val
+        discriminant = a - dy * dy * inv_r_prod
         if discriminant >= 0.0:
-            sqrt_d = math.sqrt(discriminant)
-            dx_min = (-b_quad - sqrt_d) * inv_a
-            dx_max = (-b_quad + sqrt_d) * inv_a
+            sqrt_d_inv_a = math.sqrt(discriminant) * inv_a
+            mid_val = -dy * inv_a_b_coeff
+            dx_min = mid_val - sqrt_d_inv_a
+            dx_max = mid_val + sqrt_d_inv_a
             x_start = max(min_x, int(math.ceil(x_c + dx_min)))
             x_end = min(max_x, int(math.floor(x_c + dx_max)))
 
@@ -227,19 +226,19 @@ def draw_ellipse(canvas, x_c, y_c, r_x, r_y, theta, r, g, b, alpha):
     sin_cos = sin_t * cos_t
     a = inv_rx2 * cos_t * cos_t + inv_ry2 * sin_t * sin_t
     b_coeff = sin_cos * (inv_rx2 - inv_ry2)
-    c_y_coeff = inv_rx2 * sin_t * sin_t + inv_ry2 * cos_t * cos_t
+    inv_r_prod = inv_rx2 * inv_ry2
 
     inv_a = np.float32(1.0 / a) if a > 0 else np.float32(0.0)
+    inv_a_b_coeff = b_coeff * inv_a
 
     for y in range(min_y, max_y + 1):
         dy = np.float32(y - y_c)
-        b_quad = dy * b_coeff
-        c_val = dy * dy * c_y_coeff - 1.0
-        discriminant = b_quad * b_quad - a * c_val
+        discriminant = a - dy * dy * inv_r_prod
         if discriminant >= 0.0:
-            sqrt_d = math.sqrt(discriminant)
-            dx_min = (-b_quad - sqrt_d) * inv_a
-            dx_max = (-b_quad + sqrt_d) * inv_a
+            sqrt_d_inv_a = math.sqrt(discriminant) * inv_a
+            mid_val = -dy * inv_a_b_coeff
+            dx_min = mid_val - sqrt_d_inv_a
+            dx_max = mid_val + sqrt_d_inv_a
             x_start = max(min_x, int(math.ceil(x_c + dx_min)))
             x_end = min(max_x, int(math.floor(x_c + dx_max)))
 
@@ -288,19 +287,19 @@ def update_uncovered_mask(uncovered_map, x_c, y_c, r_x, r_y, theta):
     sin_cos = sin_t * cos_t
     a = inv_rx2 * cos_t * cos_t + inv_ry2 * sin_t * sin_t
     b_coeff = sin_cos * (inv_rx2 - inv_ry2)
-    c_y_coeff = inv_rx2 * sin_t * sin_t + inv_ry2 * cos_t * cos_t
+    inv_r_prod = inv_rx2 * inv_ry2
 
     inv_a = np.float32(1.0 / a) if a > 0 else np.float32(0.0)
+    inv_a_b_coeff = b_coeff * inv_a
 
     for y in range(min_y, max_y + 1):
         dy = np.float32(y - y_c)
-        b_quad = dy * b_coeff
-        c_val = dy * dy * c_y_coeff - 1.0
-        discriminant = b_quad * b_quad - a * c_val
+        discriminant = a - dy * dy * inv_r_prod
         if discriminant >= 0.0:
-            sqrt_d = math.sqrt(discriminant)
-            dx_min = (-b_quad - sqrt_d) * inv_a
-            dx_max = (-b_quad + sqrt_d) * inv_a
+            sqrt_d_inv_a = math.sqrt(discriminant) * inv_a
+            mid_val = -dy * inv_a_b_coeff
+            dx_min = mid_val - sqrt_d_inv_a
+            dx_max = mid_val + sqrt_d_inv_a
             x_start = max(min_x, int(math.ceil(x_c + dx_min)))
             x_end = min(max_x, int(math.floor(x_c + dx_max)))
 
@@ -582,21 +581,21 @@ def run_redundancy_check_jit(shapes_data, shapes_color, shapes_type, width, heig
         sin_cos = sin_t * cos_t
         a = inv_rx2 * cos_t * cos_t + inv_ry2 * sin_t * sin_t
         b_coeff = sin_cos * (inv_rx2 - inv_ry2)
-        c_y_coeff = inv_rx2 * sin_t * sin_t + inv_ry2 * cos_t * cos_t
+        inv_r_prod = inv_rx2 * inv_ry2
 
         inv_a = np.float32(1.0 / a) if a > 0 else np.float32(0.0)
+        inv_a_b_coeff = b_coeff * inv_a
 
         has_contribution = False
 
         for y in range(min_y, max_y + 1):
             dy = np.float32(y - y_c)
-            b_quad = dy * b_coeff
-            c_val = dy * dy * c_y_coeff - 1.0
-            discriminant = b_quad * b_quad - a * c_val
+            discriminant = a - dy * dy * inv_r_prod
             if discriminant >= 0.0:
-                sqrt_d = math.sqrt(discriminant)
-                dx_min = (-b_quad - sqrt_d) * inv_a
-                dx_max = (-b_quad + sqrt_d) * inv_a
+                sqrt_d_inv_a = math.sqrt(discriminant) * inv_a
+                mid_val = -dy * inv_a_b_coeff
+                dx_min = mid_val - sqrt_d_inv_a
+                dx_max = mid_val + sqrt_d_inv_a
                 x_start = max(min_x, int(math.ceil(x_c + dx_min)))
                 x_end = min(max_x, int(math.floor(x_c + dx_max)))
 

@@ -122,20 +122,21 @@ def evaluate_candidate_ti(
         sin_cos = sin_t * cos_t
         a = inv_rx2 * cos_t * cos_t + inv_ry2 * sin_t * sin_t
         b_coeff = sin_cos * (inv_rx2 - inv_ry2)
-        c_y_coeff = inv_rx2 * sin_t * sin_t + inv_ry2 * cos_t * cos_t
+        inv_r_prod = inv_rx2 * inv_ry2
+        inv_a = ti.cast(1.0 / a, ti.f32) if a > 0.0 else 0.0
+        inv_a_b_coeff = b_coeff * inv_a
 
         # Validation Pass (Scalar constraints check)
         if check_contour == 1 or use_freeze == 1:
             y = min_y
             while y <= max_y and is_valid == 1:
                 dy = ti.cast(y, ti.f32) - y_c
-                b_val = dy * b_coeff
-                c_val = dy * dy * c_y_coeff - 1.0
-                discriminant = b_val * b_val - a * c_val
+                discriminant = a - dy * dy * inv_r_prod
                 if discriminant >= 0.0:
-                    sqrt_d = ti.math.sqrt(discriminant)
-                    dx_min = (-b_val - sqrt_d) / a
-                    dx_max = (-b_val + sqrt_d) / a
+                    sqrt_d_inv_a = ti.math.sqrt(discriminant) * inv_a
+                    mid_val = -dy * inv_a_b_coeff
+                    dx_min = mid_val - sqrt_d_inv_a
+                    dx_max = mid_val + sqrt_d_inv_a
                     x_start = ti.max(min_x, ti.cast(ti.math.ceil(x_c + dx_min), ti.i32))
                     x_end = ti.min(max_x, ti.cast(ti.math.floor(x_c + dx_max), ti.i32))
 
@@ -153,13 +154,12 @@ def evaluate_candidate_ti(
             y = min_y
             while y <= max_y:
                 dy = ti.cast(y, ti.f32) - y_c
-                b_val = dy * b_coeff
-                c_val = dy * dy * c_y_coeff - 1.0
-                discriminant = b_val * b_val - a * c_val
+                discriminant = a - dy * dy * inv_r_prod
                 if discriminant >= 0.0:
-                    sqrt_d = ti.math.sqrt(discriminant)
-                    dx_min = (-b_val - sqrt_d) / a
-                    dx_max = (-b_val + sqrt_d) / a
+                    sqrt_d_inv_a = ti.math.sqrt(discriminant) * inv_a
+                    mid_val = -dy * inv_a_b_coeff
+                    dx_min = mid_val - sqrt_d_inv_a
+                    dx_max = mid_val + sqrt_d_inv_a
                     x_start = ti.max(min_x, ti.cast(ti.math.ceil(x_c + dx_min), ti.i32))
                     x_end = ti.min(max_x, ti.cast(ti.math.floor(x_c + dx_max), ti.i32))
 
