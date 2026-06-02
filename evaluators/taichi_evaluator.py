@@ -212,7 +212,7 @@ def evaluate_candidate_ti(
         avg_g = sum_t_g * inv_count
         avg_b = sum_t_b * inv_count
 
-        a_f = alpha / 255.0
+        a_f = alpha * 0.00392156862745098
         a2_minus_2a = a_f * a_f - 2.0 * a_f
         two_a = 2.0 * a_f
         two_a_one_minus_a = 2.0 * a_f * (1.0 - a_f)
@@ -508,7 +508,7 @@ def draw_ellipse_gpu(
     inv_rx2 = 1.0 / (r_x * r_x) if r_x > 0.0 else 0.0
     inv_ry2 = 1.0 / (r_y * r_y) if r_y > 0.0 else 0.0
 
-    a_f = alpha / 255.0
+    a_f = alpha * 0.00392156862745098
     one_minus_a = 1.0 - a_f
 
     sin_cos = sin_t * cos_t
@@ -605,9 +605,10 @@ def parallel_hill_climb_gpu(
         curr_delta = best_candidate[0, 9]
 
         T = sa_initial_temp
+        inv_opt_steps = 1.0 / ti.cast(optimization_steps, ti.f32) if optimization_steps > 0 else 0.0
 
         for step in range(optimization_steps):
-            scale = 1.0 - (ti.cast(step, ti.f32) / ti.cast(optimization_steps, ti.f32))
+            scale = 1.0 - (ti.cast(step, ti.f32) * inv_opt_steps)
 
             u1 = ti.random()
             u2 = ti.random()

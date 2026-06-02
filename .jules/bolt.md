@@ -13,3 +13,6 @@
 ## 2026-06-01 - Pure Python Scanline Rendering Optimization
 **Learning:** The analytical scanline solver (quadratic roots based on sine/cosine projections) previously used in Numba and Taichi JIT kernels also significantly boosts performance in Pure Python environments without explicit vectorization. It eliminates conditional branching inside tight inner loops, which is inherently slow in CPython due to evaluation overhead.
 **Action:** Apply the analytical scanline solver to purely Python bounding box iteration loops where mathematical solutions are faster than procedural pixel-by-pixel boundary checking, reducing evaluation time during fallback operations.
+## 2026-06-02 - Division Hoisting: alpha / 255.0
+**Learning:** I found multiple instances where `alpha / 255.0` and `step / optimization_steps` were being computed repeatedly inside of loops in `evaluators/pure_python_evaluator.py`, `evaluators/numba_kernels.py`, and `evaluators/taichi_evaluator.py`. Since divisions are slow, especially in inner loops, replacing division by multiplication using precalculated constants (`alpha * 0.00392156862745098` and `step * inv_opt_steps`) can yield a performance improvement.
+**Action:** Replaced division operations with equivalent multiplication using hoisted reciprocal values or pre-calculated constants across evaluator kernels.
