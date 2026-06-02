@@ -126,6 +126,9 @@ def evaluate_candidate_ti(
         inv_a = ti.cast(1.0 / a, ti.f32) if a > 0.0 else 0.0
         inv_a_b_coeff = b_coeff * inv_a
 
+        # Precompute division (1.0 / a) to avoid expensive division inside tight loops
+        inv_a = 1.0 / a if a > 0.0 else 0.0
+
         # Validation Pass (Scalar constraints check)
         if check_contour == 1 or use_freeze == 1:
             y = min_y
