@@ -460,7 +460,11 @@ def serial_hill_climb(
     T = np.float32(initial_temp)
     c_rate = np.float32(cooling_rate)
     max_r_f = np.float32(max_r)
-    inv_opt_steps = np.float32(1.0 / optimization_steps) if optimization_steps > 0 else np.float32(0.0)
+    inv_opt_steps = (
+        np.float32(1.0 / optimization_steps)
+        if optimization_steps > 0
+        else np.float32(0.0)
+    )
 
     for step in range(optimization_steps):
         scale = np.float32(1.0 - (step * inv_opt_steps))

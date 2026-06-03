@@ -605,7 +605,9 @@ def parallel_hill_climb_gpu(
         curr_delta = best_candidate[0, 9]
 
         T = sa_initial_temp
-        inv_opt_steps = 1.0 / ti.cast(optimization_steps, ti.f32) if optimization_steps > 0 else 0.0
+        inv_opt_steps = (
+            1.0 / ti.cast(optimization_steps, ti.f32) if optimization_steps > 0 else 0.0
+        )
 
         for step in range(optimization_steps):
             scale = 1.0 - (ti.cast(step, ti.f32) * inv_opt_steps)

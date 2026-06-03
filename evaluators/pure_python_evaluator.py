@@ -422,7 +422,11 @@ class PurePythonEvaluator(BaseEvaluator):
         max_r_f = np.float32(max_r)
         sa_enabled = params.get("sa_enabled", False)
         optimization_steps = params.get("optimization_steps", 50)
-        inv_opt_steps = np.float32(1.0 / optimization_steps) if optimization_steps > 0 else np.float32(0.0)
+        inv_opt_steps = (
+            np.float32(1.0 / optimization_steps)
+            if optimization_steps > 0
+            else np.float32(0.0)
+        )
 
         for step in range(optimization_steps):
             scale = np.float32(1.0 - (step * inv_opt_steps))
