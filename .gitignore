@@ -62,7 +62,6 @@ dist/
 !tools/fh6-heuristics.json
 tools/benchmark_taichi.py
 optimization_settings.json
-<<<<<<< Updated upstream
+/tools/benchmark_history.json
 /nuitka_dist
-=======
->>>>>>> Stashed changes
+

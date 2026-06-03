@@ -129,6 +129,7 @@ def run_generator(
     engine_name=None,
     taichi_arch=None,
     taichi_device_id=None,
+    use_pure_gpu=False,
 ):
     if not os.path.exists(image_path):
         print(f"ERROR: Image not found: {image_path}", file=sys.stderr)
@@ -461,6 +462,7 @@ def run_generator(
                 "weight_map": weight_map,
                 "use_uncovered": uncovered_enabled,
                 "uncovered_map": uncovered_map,
+                "use_pure_gpu": use_pure_gpu,
             }
 
             best_shape_params, delta = evaluator.search_best_shape(

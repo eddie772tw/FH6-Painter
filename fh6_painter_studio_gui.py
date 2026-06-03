@@ -444,6 +444,23 @@ class ForzaStudioGUI:
         )
         self.btn_show_logs.pack(side="right", padx=(0, 10))
 
+        self.btn_benchmark = tk.Button(
+            header_frame,
+            text="效能測試 / Benchmark",
+            font=("Microsoft JhengHei", 8, "bold"),
+            bg=self.bg_card,
+            fg=self.color_blue,
+            activebackground=self.color_btn_default_hover,
+            activeforeground=self.fg_primary,
+            bd=1,
+            relief="solid",
+            highlightthickness=0,
+            padx=8,
+            pady=2,
+            command=self.run_benchmark_gui,
+        )
+        self.btn_benchmark.pack(side="right", padx=(0, 10))
+
         self.btn_toggle_preview = tk.Button(
             header_frame,
             text="關閉預覽 / Disable Preview",
@@ -677,14 +694,34 @@ class ForzaStudioGUI:
         )
         self.lbl_taichi_arch.grid(row=5, column=0, sticky="w", pady=4)
 
+        # Container to place Combobox and Hybrid checkbox side-by-side perfectly
+        taichi_arch_container = tk.Frame(params_body, bg=self.bg_card)
+        taichi_arch_container.grid(row=5, column=1, sticky="we", pady=4, padx=(10, 0))
+
         self.combo_taichi_arch = ttk.Combobox(
-            params_body,
+            taichi_arch_container,
             values=["Vulkan", "CUDA", "OpenGL", "CPU"],
             state="readonly",
-            width=35,
+            width=18,
         )
-        self.combo_taichi_arch.grid(row=5, column=1, sticky="we", pady=4, padx=(10, 0))
+        self.combo_taichi_arch.pack(side="left", fill="x", expand=True)
         self.combo_taichi_arch.current(0)
+
+        self.var_hybrid = tk.BooleanVar(value=True)
+        self.chk_hybrid = tk.Checkbutton(
+            taichi_arch_container,
+            text="啟用混合模式 (Hybrid)",
+            variable=self.var_hybrid,
+            font=("Microsoft JhengHei", 9),
+            bg=self.bg_card,
+            fg=self.color_blue,
+            selectcolor=self.bg_card,
+            activebackground=self.bg_card,
+            activeforeground=self.fg_primary,
+            bd=0,
+            padx=10,
+        )
+        self.chk_hybrid.pack(side="left")
 
         # Taichi 顯示卡選擇
         self.lbl_taichi_device = tk.Label(
@@ -1085,12 +1122,15 @@ class ForzaStudioGUI:
         if engine_code == "TAICHI":
             self.combo_taichi_arch.configure(state="readonly")
             self.combo_taichi_device.configure(state="readonly")
+            self.chk_hybrid.configure(state="normal")
         elif engine_code == "NUMBA":
             self.combo_taichi_arch.configure(state="disabled")
             self.combo_taichi_device.configure(state="disabled")
+            self.chk_hybrid.configure(state="disabled")
         else:
             self.combo_taichi_arch.configure(state="disabled")
             self.combo_taichi_device.configure(state="disabled")
+            self.chk_hybrid.configure(state="disabled")
 
     def draw_cyber_placeholder(self, text="STUDIO READY"):
         """Draws a clean, dark tech cyberpunk graphic when no active simulation is running."""
@@ -1359,6 +1399,117 @@ class ForzaStudioGUI:
         txt_widget.delete("1.0", tk.END)
         txt_widget.configure(state="disabled")
 
+    def run_benchmark_gui(self):
+        """Opens a modern dark-themed window and runs benchmark_taichi.py in a background thread, streaming stdout in real time."""
+        bench_win = tk.Toplevel(self.root)
+        bench_win.title("FH6 Painter - Performance Benchmark Suite")
+        bench_win.geometry("900x600")
+        bench_win.configure(bg=self.bg_main)
+        bench_win.transient(self.root)
+
+        hdr = tk.Frame(bench_win, bg=self.bg_card)
+        hdr.pack(fill="x", padx=10, pady=(10, 5), ipady=4)
+        
+        lbl = tk.Label(
+            hdr,
+            text="🏆 性能基準測試主控台 / Performance Benchmark Console",
+            font=("Microsoft JhengHei", 10, "bold"),
+            bg=self.bg_card,
+            fg=self.color_green,
+        )
+        lbl.pack(side="left", padx=10)
+
+        # Status indicator
+        status_lbl = tk.Label(
+            hdr,
+            text="RUNNING TESTS",
+            font=("Consolas", 9, "bold"),
+            bg=self.bg_main,
+            fg=self.color_blue,
+            padx=10,
+            pady=2,
+            bd=1,
+            relief="solid",
+        )
+        status_lbl.pack(side="right", padx=10)
+
+        # ScrolledText for output
+        txt_widget = scrolledtext.ScrolledText(
+            bench_win,
+            bg="#080808",
+            fg=self.fg_primary,
+            insertbackground=self.fg_primary,
+            font=("Consolas", 9.5),
+            bd=0,
+            highlightthickness=1,
+            highlightbackground=self.border_color,
+        )
+        txt_widget.pack(fill="both", expand=True, padx=10, pady=5)
+        txt_widget.insert(tk.END, "Initializing benchmark pipeline...\n")
+        txt_widget.see(tk.END)
+
+        # Lock main GUI during benchmark execution
+        self.status_lbl.configure(text="BENCHMARKING", fg=self.color_blue)
+        self.lock_ui()
+
+        def worker():
+            import subprocess
+            import sys
+            
+            script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tools", "benchmark_taichi.py")
+            
+            try:
+                # Use sys.executable to run in unbuffered mode so stdout streams line-by-line
+                process = subprocess.Popen(
+                    [sys.executable, "-u", script_path],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    bufsize=1,
+                    cwd=os.path.dirname(os.path.abspath(__file__))
+                )
+                
+                for line in iter(process.stdout.readline, ''):
+                    # Append output line-by-line to the text box
+                    txt_widget.after(0, lambda l=line: (
+                        txt_widget.configure(state="normal"),
+                        txt_widget.insert(tk.END, l),
+                        txt_widget.see(tk.END),
+                        txt_widget.configure(state="disabled")
+                    ))
+                
+                process.stdout.close()
+                return_code = process.wait()
+                
+                if return_code == 0:
+                    status_text = "PASSED / SUCCESS"
+                    status_color = self.color_green
+                else:
+                    status_text = "FAILED / REGRESSION WARNING"
+                    status_color = "#D32F2F"
+                    
+                txt_widget.after(0, lambda: (
+                    status_lbl.configure(text=status_text, fg=status_color)
+                ))
+            except Exception as e:
+                txt_widget.after(0, lambda err=e: (
+                    txt_widget.configure(state="normal"),
+                    txt_widget.insert(tk.END, f"\n[Benchmark Execution Error] {err}\n"),
+                    txt_widget.see(tk.END),
+                    txt_widget.configure(state="disabled"),
+                    status_lbl.configure(text="ERROR", fg="#D32F2F")
+                ))
+            finally:
+                # Always unlock main GUI after completion
+                txt_widget.after(0, lambda: (
+                    self.status_lbl.configure(text="READY", fg="#888888"),
+                    self.unlock_ui()
+                ))
+
+        # Launch the subprocess in a daemon thread so the GUI remains perfectly responsive!
+        t = threading.Thread(target=worker, daemon=True)
+        t.start()
+
     def on_profile_selected(self, event):
         """Fires when user selects a profile; updates HUD descriptive elements and pre-populates overrides."""
         idx = self.combo_profile.current()
@@ -1545,6 +1696,8 @@ class ForzaStudioGUI:
         self.chk_freeze.configure(state="disabled")
         self.chk_weight.configure(state="disabled")
         self.chk_decay.configure(state="disabled")
+        self.btn_benchmark.configure(state="disabled")
+        self.chk_hybrid.configure(state="disabled")
 
         self.btn_inject.configure(state="disabled")
 
@@ -1577,6 +1730,8 @@ class ForzaStudioGUI:
         self.chk_freeze.configure(state="normal")
         self.chk_weight.configure(state="normal")
         self.chk_decay.configure(state="normal")
+        self.btn_benchmark.configure(state="normal")
+        self.on_engine_selected(None)
 
         # Restore btn_generate to "Generate Again" style
         self.btn_generate.configure(
@@ -1898,9 +2053,10 @@ class ForzaStudioGUI:
             else "NUMBA"
         )
 
-        # 獲取 Taichi GPU 與後端架構設定
+        # 獲取 Taichi GPU 與後端架構設定及混合模式
         taichi_arch = self.combo_taichi_arch.get()
         taichi_device_id = self.combo_taichi_device.current()
+        use_pure_gpu = not self.var_hybrid.get()
 
         # Launch Worker Thread in Safe Wrapper to prevent silent thread deaths
         self.active_thread = threading.Thread(
@@ -1916,7 +2072,11 @@ class ForzaStudioGUI:
                 self.opt_settings,
                 engine_code,
             ),
-            kwargs={"taichi_arch": taichi_arch, "taichi_device_id": taichi_device_id},
+            kwargs={
+                "taichi_arch": taichi_arch,
+                "taichi_device_id": taichi_device_id,
+                "use_pure_gpu": use_pure_gpu,
+            },
             daemon=True,
         )
         self.active_thread.start()
