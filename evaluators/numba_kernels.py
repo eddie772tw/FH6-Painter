@@ -169,7 +169,7 @@ def evaluate_candidate(
     avg_g = sum_t_g * inv_count
     avg_b = sum_t_b * inv_count
 
-    a_f = np.float32(alpha / 255.0)
+    a_f = np.float32(alpha * 0.00392156862745098)
     a2_minus_2a = np.float32(a_f * a_f - 2.0 * a_f)
     two_a = np.float32(2.0 * a_f)
     two_a_one_minus_a = np.float32(2.0 * a_f * (1.0 - a_f))
@@ -218,7 +218,7 @@ def draw_ellipse(canvas, x_c, y_c, r_x, r_y, theta, r, g, b, alpha):
     inv_rx2 = np.float32(1.0 / (r_x * r_x) if r_x > 0 else 0.0)
     inv_ry2 = np.float32(1.0 / (r_y * r_y) if r_y > 0 else 0.0)
 
-    a_f = np.float32(alpha / 255.0)
+    a_f = np.float32(alpha * 0.00392156862745098)
     one_minus_a = np.float32(1.0 - a_f)
 
     r_val = np.float32(r)
@@ -460,9 +460,14 @@ def serial_hill_climb(
     T = np.float32(initial_temp)
     c_rate = np.float32(cooling_rate)
     max_r_f = np.float32(max_r)
+    inv_opt_steps = (
+        np.float32(1.0 / optimization_steps)
+        if optimization_steps > 0
+        else np.float32(0.0)
+    )
 
     for step in range(optimization_steps):
-        scale = np.float32(1.0 - (step / optimization_steps))
+        scale = np.float32(1.0 - (step * inv_opt_steps))
 
         nx_c = curr_x_c + np.float32(np.random.normal(0.0, 8.0 * scale))
         ny_c = curr_y_c + np.float32(np.random.normal(0.0, 8.0 * scale))
@@ -564,7 +569,7 @@ def run_redundancy_check_jit(shapes_data, shapes_color, shapes_type, width, heig
         theta = np.float32(shapes_data[i, 4])
 
         alpha = shapes_color[i, 3]
-        a_f = np.float32(alpha / 255.0)
+        a_f = np.float32(alpha * 0.00392156862745098)
 
         cos_t = np.float32(math.cos(theta))
         sin_t = np.float32(math.sin(theta))
