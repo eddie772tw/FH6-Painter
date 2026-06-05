@@ -53,7 +53,7 @@ def evaluate_candidate_py(
     sin_cos = sin_t * cos_t
     a = inv_rx2 * cos_t * cos_t + inv_ry2 * sin_t * sin_t
     b_coeff = sin_cos * (inv_rx2 - inv_ry2)
-    c_y_coeff = inv_rx2 * sin_t * sin_t + inv_ry2 * cos_t * cos_t
+    inv_rx2_ry2 = inv_rx2 * inv_ry2
 
     inv_a = np.float32(1.0 / a) if a > 0 else np.float32(0.0)
 
@@ -79,8 +79,7 @@ def evaluate_candidate_py(
         for y in range(min_y, max_y + 1):
             dy = np.float32(y - y_c)
             b_quad = dy * b_coeff
-            c_val = dy * dy * c_y_coeff - 1.0
-            discriminant = b_quad * b_quad - a * c_val
+            discriminant = a - dy * dy * inv_rx2_ry2
             if discriminant >= 0.0:
                 sqrt_d = math.sqrt(discriminant)
                 dx_min = (-b_quad - sqrt_d) * inv_a
@@ -110,8 +109,7 @@ def evaluate_candidate_py(
         for y in range(min_y, max_y + 1):
             dy = np.float32(y - y_c)
             b_quad = dy * b_coeff
-            c_val = dy * dy * c_y_coeff - 1.0
-            discriminant = b_quad * b_quad - a * c_val
+            discriminant = a - dy * dy * inv_rx2_ry2
             if discriminant >= 0.0:
                 sqrt_d = math.sqrt(discriminant)
                 dx_min = (-b_quad - sqrt_d) * inv_a
@@ -149,8 +147,7 @@ def evaluate_candidate_py(
         for y in range(min_y, max_y + 1):
             dy = np.float32(y - y_c)
             b_quad = dy * b_coeff
-            c_val = dy * dy * c_y_coeff - 1.0
-            discriminant = b_quad * b_quad - a * c_val
+            discriminant = a - dy * dy * inv_rx2_ry2
             if discriminant >= 0.0:
                 sqrt_d = math.sqrt(discriminant)
                 dx_min = (-b_quad - sqrt_d) * inv_a
@@ -256,15 +253,14 @@ def draw_ellipse_py(canvas, x_c, y_c, r_x, r_y, theta, r, g, b, alpha):
     sin_cos = sin_t * cos_t
     a = inv_rx2 * cos_t * cos_t + inv_ry2 * sin_t * sin_t
     b_coeff = sin_cos * (inv_rx2 - inv_ry2)
-    c_y_coeff = inv_rx2 * sin_t * sin_t + inv_ry2 * cos_t * cos_t
+    inv_rx2_ry2 = inv_rx2 * inv_ry2
 
     inv_a = np.float32(1.0 / a) if a > 0 else np.float32(0.0)
 
     for y in range(min_y, max_y + 1):
         dy = np.float32(y - y_c)
         b_quad = dy * b_coeff
-        c_val = dy * dy * c_y_coeff - 1.0
-        discriminant = b_quad * b_quad - a * c_val
+        discriminant = a - dy * dy * inv_rx2_ry2
         if discriminant >= 0.0:
             sqrt_d = math.sqrt(discriminant)
             dx_min = (-b_quad - sqrt_d) * inv_a
@@ -640,7 +636,7 @@ class PurePythonEvaluator(BaseEvaluator):
             sin_cos = sin_t * cos_t
             a = inv_rx2 * cos_t * cos_t + inv_ry2 * sin_t * sin_t
             b_coeff = sin_cos * (inv_rx2 - inv_ry2)
-            c_y_coeff = inv_rx2 * sin_t * sin_t + inv_ry2 * cos_t * cos_t
+            inv_rx2_ry2 = inv_rx2 * inv_ry2
 
             inv_a = np.float32(1.0 / a) if a > 0 else np.float32(0.0)
 
@@ -649,8 +645,7 @@ class PurePythonEvaluator(BaseEvaluator):
             for y in range(min_y, max_y + 1):
                 dy = np.float32(y - y_c)
                 b_quad = dy * b_coeff
-                c_val = dy * dy * c_y_coeff - 1.0
-                discriminant = b_quad * b_quad - a * c_val
+                discriminant = a - dy * dy * inv_rx2_ry2
                 if discriminant >= 0.0:
                     sqrt_d = math.sqrt(discriminant)
                     dx_min = (-b_quad - sqrt_d) * inv_a
@@ -747,15 +742,14 @@ class PurePythonEvaluator(BaseEvaluator):
         sin_cos = sin_t * cos_t
         a = inv_rx2 * cos_t * cos_t + inv_ry2 * sin_t * sin_t
         b_coeff = sin_cos * (inv_rx2 - inv_ry2)
-        c_y_coeff = inv_rx2 * sin_t * sin_t + inv_ry2 * cos_t * cos_t
+        inv_rx2_ry2 = inv_rx2 * inv_ry2
 
         inv_a = np.float32(1.0 / a) if a > 0 else np.float32(0.0)
 
         for y in range(min_y, max_y + 1):
             dy = np.float32(y - y_c)
             b_quad = dy * b_coeff
-            c_val = dy * dy * c_y_coeff - 1.0
-            discriminant = b_quad * b_quad - a * c_val
+            discriminant = a - dy * dy * inv_rx2_ry2
             if discriminant >= 0.0:
                 sqrt_d = math.sqrt(discriminant)
                 dx_min = (-b_quad - sqrt_d) * inv_a
