@@ -1409,7 +1409,7 @@ class ForzaStudioGUI:
 
         hdr = tk.Frame(bench_win, bg=self.bg_card)
         hdr.pack(fill="x", padx=10, pady=(10, 5), ipady=4)
-        
+
         lbl = tk.Label(
             hdr,
             text="🏆 性能基準測試主控台 / Performance Benchmark Console",
@@ -1455,9 +1455,13 @@ class ForzaStudioGUI:
         def worker():
             import subprocess
             import sys
-            
-            script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tools", "benchmark_taichi.py")
-            
+
+            script_path = os.path.join(
+                os.path.dirname(os.path.abspath(__file__)),
+                "tools",
+                "benchmark_taichi.py",
+            )
+
             try:
                 # Use sys.executable to run in unbuffered mode so stdout streams line-by-line
                 process = subprocess.Popen(
@@ -1466,45 +1470,56 @@ class ForzaStudioGUI:
                     stderr=subprocess.STDOUT,
                     text=True,
                     bufsize=1,
-                    cwd=os.path.dirname(os.path.abspath(__file__))
+                    cwd=os.path.dirname(os.path.abspath(__file__)),
                 )
-                
-                for line in iter(process.stdout.readline, ''):
+
+                for line in iter(process.stdout.readline, ""):
                     # Append output line-by-line to the text box
-                    txt_widget.after(0, lambda l=line: (
-                        txt_widget.configure(state="normal"),
-                        txt_widget.insert(tk.END, l),
-                        txt_widget.see(tk.END),
-                        txt_widget.configure(state="disabled")
-                    ))
-                
+                    txt_widget.after(
+                        0,
+                        lambda l=line: (
+                            txt_widget.configure(state="normal"),
+                            txt_widget.insert(tk.END, l),
+                            txt_widget.see(tk.END),
+                            txt_widget.configure(state="disabled"),
+                        ),
+                    )
+
                 process.stdout.close()
                 return_code = process.wait()
-                
+
                 if return_code == 0:
                     status_text = "PASSED / SUCCESS"
                     status_color = self.color_green
                 else:
                     status_text = "FAILED / REGRESSION WARNING"
                     status_color = "#D32F2F"
-                    
-                txt_widget.after(0, lambda: (
-                    status_lbl.configure(text=status_text, fg=status_color)
-                ))
+
+                txt_widget.after(
+                    0, lambda: status_lbl.configure(text=status_text, fg=status_color)
+                )
             except Exception as e:
-                txt_widget.after(0, lambda err=e: (
-                    txt_widget.configure(state="normal"),
-                    txt_widget.insert(tk.END, f"\n[Benchmark Execution Error] {err}\n"),
-                    txt_widget.see(tk.END),
-                    txt_widget.configure(state="disabled"),
-                    status_lbl.configure(text="ERROR", fg="#D32F2F")
-                ))
+                txt_widget.after(
+                    0,
+                    lambda err=e: (
+                        txt_widget.configure(state="normal"),
+                        txt_widget.insert(
+                            tk.END, f"\n[Benchmark Execution Error] {err}\n"
+                        ),
+                        txt_widget.see(tk.END),
+                        txt_widget.configure(state="disabled"),
+                        status_lbl.configure(text="ERROR", fg="#D32F2F"),
+                    ),
+                )
             finally:
                 # Always unlock main GUI after completion
-                txt_widget.after(0, lambda: (
-                    self.status_lbl.configure(text="READY", fg="#888888"),
-                    self.unlock_ui()
-                ))
+                txt_widget.after(
+                    0,
+                    lambda: (
+                        self.status_lbl.configure(text="READY", fg="#888888"),
+                        self.unlock_ui(),
+                    ),
+                )
 
         # Launch the subprocess in a daemon thread so the GUI remains perfectly responsive!
         t = threading.Thread(target=worker, daemon=True)
