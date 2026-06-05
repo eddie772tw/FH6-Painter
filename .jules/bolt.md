@@ -16,3 +16,7 @@
 ## 2026-06-02 - Division Hoisting: alpha / 255.0
 **Learning:** I found multiple instances where `alpha / 255.0` and `step / optimization_steps` were being computed repeatedly inside of loops in `evaluators/pure_python_evaluator.py`, `evaluators/numba_kernels.py`, and `evaluators/taichi_evaluator.py`. Since divisions are slow, especially in inner loops, replacing division by multiplication using precalculated constants (`alpha * 0.00392156862745098` and `step * inv_opt_steps`) can yield a performance improvement.
 **Action:** Replaced division operations with equivalent multiplication using hoisted reciprocal values or pre-calculated constants across evaluator kernels.
+
+## 2026-06-03 - Loop Unswitching in JIT Kernels
+**Learning:** In highly intensive accumulation loops (like those evaluating thousands of ellipse candidates), runtime boolean flags (e.g., `use_weight`, `use_uncovered`) inside the inner loops prevent compilers (LLVM/Taichi) from fully vectorizing and unswitching the loops automatically due to complexity thresholds. This results in millions of redundant branch evaluations and multiplications by 1.0 (or its typecast equivalent).
+**Action:** Apply manual loop unswitching by branching on these boolean flags outside the main pixel-processing `y`/`x` loops. Create a dedicated "fast path" loop for the default configuration that completely omits weight computation and multiplications, significantly boosting throughput.
