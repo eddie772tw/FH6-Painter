@@ -122,7 +122,7 @@ def evaluate_candidate_ti(
         sin_cos = sin_t * cos_t
         a = inv_rx2 * cos_t * cos_t + inv_ry2 * sin_t * sin_t
         b_coeff = sin_cos * (inv_rx2 - inv_ry2)
-        c_y_coeff = inv_rx2 * sin_t * sin_t + inv_ry2 * cos_t * cos_t
+        inv_rx2_ry2 = inv_rx2 * inv_ry2
 
         # Precompute division (1.0 / a) to avoid expensive division inside tight loops
         inv_a = 1.0 / a if a > 0.0 else 0.0
@@ -133,8 +133,7 @@ def evaluate_candidate_ti(
             while y <= max_y and is_valid == 1:
                 dy = ti.cast(y, ti.f32) - y_c
                 b_val = dy * b_coeff
-                c_val = dy * dy * c_y_coeff - 1.0
-                discriminant = b_val * b_val - a * c_val
+                discriminant = a - dy * dy * inv_rx2_ry2
                 if discriminant >= 0.0:
                     sqrt_d = ti.math.sqrt(discriminant)
                     dx_min = (-b_val - sqrt_d) * inv_a
@@ -158,8 +157,7 @@ def evaluate_candidate_ti(
                 while y <= max_y:
                     dy = ti.cast(y, ti.f32) - y_c
                     b_val = dy * b_coeff
-                    c_val = dy * dy * c_y_coeff - 1.0
-                    discriminant = b_val * b_val - a * c_val
+                    discriminant = a - dy * dy * inv_rx2_ry2
                     if discriminant >= 0.0:
                         sqrt_d = ti.math.sqrt(discriminant)
                         dx_min = (-b_val - sqrt_d) * inv_a
@@ -204,8 +202,7 @@ def evaluate_candidate_ti(
                 while y <= max_y:
                     dy = ti.cast(y, ti.f32) - y_c
                     b_val = dy * b_coeff
-                    c_val = dy * dy * c_y_coeff - 1.0
-                    discriminant = b_val * b_val - a * c_val
+                    discriminant = a - dy * dy * inv_rx2_ry2
                     if discriminant >= 0.0:
                         sqrt_d = ti.math.sqrt(discriminant)
                         dx_min = (-b_val - sqrt_d) * inv_a
@@ -454,7 +451,7 @@ def update_uncovered_mask_gpu(
     sin_cos = sin_t * cos_t
     a = inv_rx2 * cos_t * cos_t + inv_ry2 * sin_t * sin_t
     b_coeff = sin_cos * (inv_rx2 - inv_ry2)
-    c_y_coeff = inv_rx2 * sin_t * sin_t + inv_ry2 * cos_t * cos_t
+    inv_rx2_ry2 = inv_rx2 * inv_ry2
 
     # Analytical scanline solver: Convert 2D pixel-by-pixel boundary check to 1D start/end bounds calculation
     # Also hoists inverse division outside the loop for performance
@@ -463,8 +460,7 @@ def update_uncovered_mask_gpu(
     for y in range(min_y, max_y + 1):
         dy = ti.cast(y, ti.f32) - y_c
         b_val = dy * b_coeff
-        c_val = dy * dy * c_y_coeff - 1.0
-        discriminant = b_val * b_val - a * c_val
+        discriminant = a - dy * dy * inv_rx2_ry2
         if discriminant >= 0.0:
             sqrt_d = ti.math.sqrt(discriminant)
             dx_min = (-b_val - sqrt_d) * inv_a
@@ -565,15 +561,14 @@ def draw_ellipse_gpu(
     sin_cos = sin_t * cos_t
     a = inv_rx2 * cos_t * cos_t + inv_ry2 * sin_t * sin_t
     b_coeff = sin_cos * (inv_rx2 - inv_ry2)
-    c_y_coeff = inv_rx2 * sin_t * sin_t + inv_ry2 * cos_t * cos_t
+    inv_rx2_ry2 = inv_rx2 * inv_ry2
 
     inv_a = 1.0 / a if a > 0.0 else 0.0
 
     for y in range(min_y, max_y + 1):
         dy = ti.cast(y, ti.f32) - y_c
         b_val = dy * b_coeff
-        c_val = dy * dy * c_y_coeff - 1.0
-        discriminant = b_val * b_val - a * c_val
+        discriminant = a - dy * dy * inv_rx2_ry2
         if discriminant >= 0.0:
             sqrt_d = ti.math.sqrt(discriminant)
             dx_min = (-b_val - sqrt_d) * inv_a
