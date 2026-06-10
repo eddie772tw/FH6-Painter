@@ -270,23 +270,45 @@ def draw_ellipse(canvas, x_c, y_c, r_x, r_y, theta, r, g, b, alpha):
 
     inv_a = np.float32(1.0 / a) if a > 0 else np.float32(0.0)
 
-    for y in range(min_y, max_y + 1):
-        dy = np.float32(y - y_c)
-        b_quad = dy * b_coeff
-        discriminant = a - dy * dy * inv_rx2_ry2
-        if discriminant >= 0.0:
-            sqrt_d = math.sqrt(discriminant)
-            dx_min = (-b_quad - sqrt_d) * inv_a
-            dx_max = (-b_quad + sqrt_d) * inv_a
-            x_start = max(min_x, int(math.ceil(x_c + dx_min)))
-            x_end = min(max_x, int(math.floor(x_c + dx_max)))
+    has_alpha = canvas.shape[2] == 4
+    alpha_val = np.float32(alpha)
+    r_af = np.float32(r_val * a_f)
+    g_af = np.float32(g_val * a_f)
+    b_af = np.float32(b_val * a_f)
 
-            for x in range(x_start, x_end + 1):
-                canvas[y, x, 0] = canvas[y, x, 0] * one_minus_a + r_val * a_f
-                canvas[y, x, 1] = canvas[y, x, 1] * one_minus_a + g_val * a_f
-                canvas[y, x, 2] = canvas[y, x, 2] * one_minus_a + b_val * a_f
-                if canvas.shape[2] == 4:
-                    canvas[y, x, 3] = canvas[y, x, 3] * one_minus_a + np.float32(alpha)
+    if has_alpha:
+        for y in range(min_y, max_y + 1):
+            dy = np.float32(y - y_c)
+            b_quad = dy * b_coeff
+            discriminant = a - dy * dy * inv_rx2_ry2
+            if discriminant >= 0.0:
+                sqrt_d = math.sqrt(discriminant)
+                dx_min = (-b_quad - sqrt_d) * inv_a
+                dx_max = (-b_quad + sqrt_d) * inv_a
+                x_start = max(min_x, int(math.ceil(x_c + dx_min)))
+                x_end = min(max_x, int(math.floor(x_c + dx_max)))
+
+                for x in range(x_start, x_end + 1):
+                    canvas[y, x, 0] = canvas[y, x, 0] * one_minus_a + r_af
+                    canvas[y, x, 1] = canvas[y, x, 1] * one_minus_a + g_af
+                    canvas[y, x, 2] = canvas[y, x, 2] * one_minus_a + b_af
+                    canvas[y, x, 3] = canvas[y, x, 3] * one_minus_a + alpha_val
+    else:
+        for y in range(min_y, max_y + 1):
+            dy = np.float32(y - y_c)
+            b_quad = dy * b_coeff
+            discriminant = a - dy * dy * inv_rx2_ry2
+            if discriminant >= 0.0:
+                sqrt_d = math.sqrt(discriminant)
+                dx_min = (-b_quad - sqrt_d) * inv_a
+                dx_max = (-b_quad + sqrt_d) * inv_a
+                x_start = max(min_x, int(math.ceil(x_c + dx_min)))
+                x_end = min(max_x, int(math.floor(x_c + dx_max)))
+
+                for x in range(x_start, x_end + 1):
+                    canvas[y, x, 0] = canvas[y, x, 0] * one_minus_a + r_af
+                    canvas[y, x, 1] = canvas[y, x, 1] * one_minus_a + g_af
+                    canvas[y, x, 2] = canvas[y, x, 2] * one_minus_a + b_af
 
 
 @numba.jit(nopython=True, fastmath=True, cache=True)
@@ -655,11 +677,15 @@ def run_redundancy_check_jit(shapes_data, shapes_color, shapes_type, width, heig
 @numba.jit(nopython=True, fastmath=True, cache=True)
 def rebuild_canvas_jit(canvas, avg_r, avg_g, avg_b, avg_a, shapes_data, shapes_color):
     """JIT accelerated fast canvas background reset and shape drawing loop."""
-    canvas[:, :, 0] = np.float32(avg_r)
-    canvas[:, :, 1] = np.float32(avg_g)
-    canvas[:, :, 2] = np.float32(avg_b)
     if canvas.shape[2] == 4:
+        canvas[:, :, 0] = np.float32(avg_r)
+        canvas[:, :, 1] = np.float32(avg_g)
+        canvas[:, :, 2] = np.float32(avg_b)
         canvas[:, :, 3] = np.float32(avg_a)
+    else:
+        canvas[:, :, 0] = np.float32(avg_r)
+        canvas[:, :, 1] = np.float32(avg_g)
+        canvas[:, :, 2] = np.float32(avg_b)
 
     num_shapes = len(shapes_data)
     for i in range(num_shapes):
