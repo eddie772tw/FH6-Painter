@@ -22,7 +22,7 @@ def verify_boundary(json_path, w=600.0, h=600.0):
 
     for idx, s in enumerate(shapes):
         # We only check type 32 (ellipse). Skip background or reset redundant shapes (color transparency 0/left-top 0,0)
-        if s.get("type") == 32:
+        if s.get("type") in (16, 32):
             d = s.get("data", [])
             if len(d) < 5:
                 continue

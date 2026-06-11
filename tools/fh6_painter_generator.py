@@ -74,7 +74,7 @@ def get_boundary_weight_map(alpha_mask, bias):
 def scale_shapes_list(shapes, factor):
     """Scale all shape coordinates and radii by the given factor."""
     for s in shapes:
-        if s["type"] == 32:
+        if s["type"] in (16, 32):
             s["data"][0] = float(s["data"][0] * factor)  # X
             s["data"][1] = float(s["data"][1] * factor)  # Y
             s["data"][2] = float(s["data"][2] * factor)  # rX
@@ -109,7 +109,7 @@ def rebuild_uncovered_map_from_shapes(
     """Rebuilds the uncovered map by drawing all active shapes onto a fresh mask."""
     uncovered_map = evaluator.init_uncovered_map(width, height, has_alpha, bias)
     for s in shapes_list:
-        if s["type"] == 32:
+        if s["type"] in (16, 32):
             data = s["data"]
             x_c, y_c, r_x, r_y, theta_deg = data
             theta = math.radians(theta_deg)
@@ -237,9 +237,14 @@ def run_generator(
             with open(resume_path, "r", encoding="utf-8") as f:
                 res_data = json.load(f)
                 resume_shapes = res_data.get("shapes", [])
-                print(f"[Engine] Loaded {len(resume_shapes)} shapes from resume JSON: {resume_path}")
+                print(
+                    f"[Engine] Loaded {len(resume_shapes)} shapes from resume JSON: {resume_path}"
+                )
         except Exception as e:
-            print(f"Warning: Failed to load resume JSON {resume_path}: {e}", file=sys.stderr)
+            print(
+                f"Warning: Failed to load resume JSON {resume_path}: {e}",
+                file=sys.stderr,
+            )
 
     if resume_shapes:
         pyramid_enabled = False
@@ -258,7 +263,7 @@ def run_generator(
     if resume_shapes:
         header = resume_shapes[0]
         if header.get("type") == 1 and len(header.get("color", [])) >= 4:
-            has_alpha = (header["color"][3] <= 0)
+            has_alpha = header["color"][3] <= 0
     if has_alpha:
         img = img_raw.convert("RGBA")
         print("Detected transparent background. Enabling Alpha-guided Ambient Padding.")
@@ -403,8 +408,6 @@ def run_generator(
     }
     shapes_list.append(header)
 
-
-
     error_prob = None
     if importance_enabled:
         diff_mat = np.abs(target - canvas)
@@ -444,15 +447,21 @@ def run_generator(
 
     if resume_shapes:
         for s in resume_shapes[1:]:
-            if s.get("type") == 32:
+            if s.get("type") in (16, 32):
                 shapes_list.append(s)
                 x_c, y_c, r_x, r_y, theta_deg = s["data"]
                 r, g, b, alpha = s["color"]
                 theta = math.radians(theta_deg)
-                evaluator.draw_shape_on_canvas(canvas, x_c, y_c, r_x, r_y, theta, r, g, b, alpha)
+                evaluator.draw_shape_on_canvas(
+                    canvas, x_c, y_c, r_x, r_y, theta, r, g, b, alpha
+                )
                 if uncovered_enabled and uncovered_map is not None:
-                    evaluator.update_uncovered_mask(uncovered_map, x_c, y_c, r_x, r_y, theta)
-        print(f"[Engine] Successfully resumed canvas state with {len(shapes_list) - 1} shapes.")
+                    evaluator.update_uncovered_mask(
+                        uncovered_map, x_c, y_c, r_x, r_y, theta
+                    )
+        print(
+            f"[Engine] Successfully resumed canvas state with {len(shapes_list) - 1} shapes."
+        )
 
     base_max_r = max(10.0, min(width, height) / 3.0)
 

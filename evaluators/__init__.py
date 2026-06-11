@@ -16,6 +16,7 @@ try:
 except ImportError:
     TaichiEvaluator = None
 
+from evaluators.go_opencl_evaluator import GoOpenCLEvaluator
 from evaluators.pure_python_evaluator import PurePythonEvaluator
 
 
@@ -38,7 +39,7 @@ class EvaluatorFactory:
         evaluators.append(
             {
                 "code": "NUMBA",
-                "name": "Numba JIT (CPU, Recommanded)",
+                "name": "Numba JIT (CPU)",
                 "available": numba_avail,
                 "device": "CPU",
                 "class": NumbaEvaluator,
@@ -64,15 +65,38 @@ class EvaluatorFactory:
             }
         )
 
+        # Go-OpenCL GPU Engine
+        go_avail = False
+        try:
+            inst = GoOpenCLEvaluator(np.zeros((2, 2, 3), dtype=np.float32))
+            go_avail = inst.is_available()
+        except Exception:
+            go_avail = False
+
+        evaluators.append(
+            {
+                "code": "GO_OPENCL",
+                "name": "Go-OpenCL (GPU, Fastest)",
+                "available": go_avail,
+                "device": "GPU",
+                "class": GoOpenCLEvaluator,
+            }
+        )
+
         evaluators.append(
             {
                 "code": "PURE_PYTHON",
-                "name": "Pure Python (Slow, for Compatiblity)",
+                "name": "Pure Python (Discontinued)",
                 "available": True,
                 "device": "CPU",
                 "class": PurePythonEvaluator,
             }
         )
+
+        # 確保 Pure Python 始終在清單的最下方
+        evaluators = [e for e in evaluators if e["code"] != "PURE_PYTHON"] + [
+            e for e in evaluators if e["code"] == "PURE_PYTHON"
+        ]
 
         return evaluators
 

@@ -17,6 +17,7 @@ def test_evaluator_factory_scan():
     assert "PURE_PYTHON" in codes
     assert "NUMBA" in codes
     assert "TAICHI" in codes
+    assert "GO_OPENCL" in codes
 
 
 def test_pure_python_evaluator():
@@ -117,4 +118,36 @@ def test_evaluator_factory_fallback():
     assert evaluator.get_device_type() == "CPU"
 
     # 清理資源
+    evaluator.cleanup()
+
+
+def test_go_opencl_evaluator():
+    """測試 GoOpenCLEvaluator 的基礎行為與 fallback 機制。"""
+    from evaluators.go_opencl_evaluator import GoOpenCLEvaluator
+
+    target = np.zeros((16, 16, 3), dtype=np.float32)
+    evaluator = GoOpenCLEvaluator(target)
+
+    assert evaluator.get_name() == "Go-OpenCL GPU (Binary Engine)"
+    assert evaluator.get_device_type() == "GPU"
+
+    # 測試 JIT 方法應拋出 NotImplementedError
+    with pytest.raises(NotImplementedError):
+        evaluator.search_best_shape(target, 10, {})
+
+    with pytest.raises(NotImplementedError):
+        evaluator.draw_shape_on_canvas(
+            target, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+        )
+
+    # 測試 fallback 重建與未覆蓋 map
+    canvas = np.zeros_like(target)
+    evaluator.rebuild_canvas(canvas, [], 0.0, 0.0, 0.0)
+
+    uncovered_map = evaluator.init_uncovered_map(16, 16, has_alpha=False, bias=0.1)
+    assert uncovered_map.shape == (16, 16)
+
+    evaluator.update_uncovered_mask(uncovered_map, 8.0, 8.0, 4.0, 4.0, 0.0)
+    assert uncovered_map[8, 8] == 1.0
+
     evaluator.cleanup()

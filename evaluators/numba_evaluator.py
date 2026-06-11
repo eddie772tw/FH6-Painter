@@ -207,7 +207,7 @@ class NumbaEvaluator(BaseEvaluator):
 
         num_shapes = 0
         for s in shapes_list:
-            if s["type"] == 32:
+            if s["type"] in (16, 32):
                 num_shapes += 1
 
         shapes_data = np.zeros((num_shapes, 5), dtype=np.float32)
@@ -215,7 +215,7 @@ class NumbaEvaluator(BaseEvaluator):
 
         idx = 0
         for s in shapes_list:
-            if s["type"] == 32:
+            if s["type"] in (16, 32):
                 data = s["data"]
                 shapes_data[idx, 0] = data[0]
                 shapes_data[idx, 1] = data[1]
@@ -252,7 +252,7 @@ class NumbaEvaluator(BaseEvaluator):
             s_type = s["type"]
             shapes_type[i] = s_type
             data = s["data"]
-            if s_type == 32 and len(data) >= 5:
+            if s_type in (16, 32) and len(data) >= 5:
                 shapes_data[i, 0] = data[0]
                 shapes_data[i, 1] = data[1]
                 shapes_data[i, 2] = data[2]
