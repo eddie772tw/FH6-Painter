@@ -56,6 +56,61 @@ def get_project_root():
     return os.path.dirname(os.path.abspath(__file__))
 
 
+# --- Lightweight Custom Tooltip Helper ---
+class Tooltip:
+    def __init__(self, widget, text):
+        self.widget = widget
+        self.text = text
+        self.tip_window = None
+        self.id = None
+        self.widget.bind("<Enter>", self.enter)
+        self.widget.bind("<Leave>", self.leave)
+        self.widget.bind("<ButtonPress>", self.leave)
+
+    def enter(self, event=None):
+        self.schedule()
+
+    def leave(self, event=None):
+        self.unschedule()
+        self.hide_tip()
+
+    def schedule(self):
+        self.unschedule()
+        self.id = self.widget.after(500, self.show_tip)
+
+    def unschedule(self):
+        id_ = self.id
+        self.id = None
+        if id_:
+            self.widget.after_cancel(id_)
+
+    def show_tip(self, event=None):
+        x = self.widget.winfo_rootx() + 25
+        y = self.widget.winfo_rooty() + 20
+        self.tip_window = tw = tk.Toplevel(self.widget)
+        tw.wm_overrideredirect(1)
+        tw.wm_geometry(f"+{x}+{y}")
+        label = tk.Label(
+            tw,
+            text=self.text,
+            justify="left",
+            background="#2e2e2e",
+            foreground="#e0e0e0",
+            relief="solid",
+            border=1,
+            font=("Microsoft JhengHei", 9),
+            padx=8,
+            pady=6,
+        )
+        label.pack(ipadx=1)
+
+    def hide_tip(self):
+        tw = self.tip_window
+        self.tip_window = None
+        if tw:
+            tw.destroy()
+
+
 # --- Premium Dark Studio GUI Application ---
 class ForzaStudioGUI:
     def __init__(self, root, preload_file=None):
@@ -862,7 +917,7 @@ class ForzaStudioGUI:
 
         self.chk_pyramid = tk.Checkbutton(
             opts_body,
-            text="影像金字塔優化 (Image Pyramid)",
+            text="漸進式像素採樣 (Progressive Sampling)",
             variable=self.var_pyramid,
             font=("Microsoft JhengHei", 9),
             bg=self.bg_card,
@@ -922,7 +977,7 @@ class ForzaStudioGUI:
 
         self.chk_annealing = tk.Checkbutton(
             opts_body,
-            text="模擬退火演算法 (Annealing)",
+            text="解析解最佳色彩 (Analytical Color)",
             variable=self.var_annealing,
             font=("Microsoft JhengHei", 9),
             bg=self.bg_card,
@@ -949,6 +1004,14 @@ class ForzaStudioGUI:
             command=self.on_opt_changed,
         )
         self.chk_decay.grid(row=2, column=1, sticky="w", pady=3)
+
+        # Bind Tooltips for Step 2.5
+        Tooltip(self.chk_pyramid, "【漸進式像素採樣】\n在生成前期（形狀較大時）跳過部分像素以大幅提速，隨進度逐漸恢復全像素精細評估。")
+        Tooltip(self.chk_freeze, "【動態凍結遮罩】\n自動鎖定已經完美匹配的像素區域，避開重複評估以大幅減少運算負擔。")
+        Tooltip(self.chk_importance, "【錯誤驅動重點採樣】\n依據殘餘誤差圖進行重點採樣，將隨機橢圓生成優先配置於高誤差區域。")
+        Tooltip(self.chk_weight, "【區域誤差加權】\n根據像素的空間特徵（如前景或邊緣）對誤差進行加權，提升邊緣清晰度。")
+        Tooltip(self.chk_annealing, "【解析解最佳色彩】\n在評估幾何時利用解析解直接算出最優顏色，使爬山收斂速度倍增，無需隨機模擬退火。")
+        Tooltip(self.chk_decay, "【衰減式形狀限縮】\n隨著貼圖數量增加，動態縮小橢圓最大半徑以避免破壞已有的微小細節。")
 
         # --- RIGHT PANEL CARDS ---
         # Card 3: Action Panel (Double-Button Execution) - Moved to Right Panel Bottom

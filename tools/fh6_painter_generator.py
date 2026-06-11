@@ -198,7 +198,9 @@ def run_generator(
                 )
 
     opt_pyramid = opt_settings.get("image_pyramid", {})
-    pyramid_enabled = opt_pyramid.get("enabled", False)
+    pyramid_enabled_raw = opt_pyramid.get("enabled", False)
+    progressive_sampling_enabled = pyramid_enabled_raw
+    pyramid_enabled = False
     pyramid_layers_threshold = opt_pyramid.get("pyramid_layers_threshold", 500)
     pyramid_stagnation = opt_pyramid.get("stagnation_threshold", 0.005)
 
@@ -207,7 +209,9 @@ def run_generator(
     importance_interval = opt_importance.get("update_interval", 10)
 
     opt_sa = opt_settings.get("simulated_annealing", {})
-    sa_enabled = opt_sa.get("enabled", False)
+    sa_enabled_raw = opt_sa.get("enabled", False)
+    analytical_color_enabled = sa_enabled_raw
+    sa_enabled = False
     sa_initial_temp = opt_sa.get("initial_temperature", 5000.0)
     sa_cooling_rate = opt_sa.get("cooling_rate", 0.95)
 
@@ -248,7 +252,8 @@ def run_generator(
 
     if resume_shapes:
         pyramid_enabled = False
-        print("[Engine] Resume mode active. Image pyramid disabled.")
+        progressive_sampling_enabled = False
+        print("[Engine] Resume mode active. Progressive sampling disabled.")
 
     if profile_path:
         print(f"Profile: {os.path.basename(profile_path)}")
@@ -499,6 +504,17 @@ def run_generator(
                     decay_min_max_r, base_max_r * (1.0 - progress_ratio**2)
                 )
 
+            # Calculate dynamic sample_step for progressive pixel sampling
+            progress_ratio = (len(shapes_list) - 1) / layers if layers > 0 else 0.0
+            sample_step = 1
+            if progressive_sampling_enabled:
+                if progress_ratio < 0.25:
+                    sample_step = 4
+                elif progress_ratio < 0.50:
+                    sample_step = 2
+
+            force_opaque = opt_settings.get("force_opaque", True)
+
             eval_params = {
                 "optimization_steps": steps,
                 "check_contour": has_alpha,
@@ -515,6 +531,9 @@ def run_generator(
                 "use_uncovered": uncovered_enabled,
                 "uncovered_map": uncovered_map,
                 "use_pure_gpu": use_pure_gpu,
+                "sample_step": sample_step,
+                "analytical_color_enabled": analytical_color_enabled,
+                "force_opaque": force_opaque,
             }
 
             best_shape_params, delta = evaluator.search_best_shape(

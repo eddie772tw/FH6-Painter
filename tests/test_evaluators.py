@@ -151,3 +151,77 @@ def test_go_opencl_evaluator():
     assert uncovered_map[8, 8] == 1.0
 
     evaluator.cleanup()
+
+
+def test_numba_search_best_shape_variants():
+    """測試 NumbaEvaluator 在不同 sample_step、analytical_color_enabled 與 force_opaque 參數下的執行。"""
+    np.random.seed(42)
+    target = np.random.rand(16, 16, 3).astype(np.float32)
+
+    evaluators = EvaluatorFactory.get_available_evaluators()
+    numba_meta = next(e for e in evaluators if e["code"] == "NUMBA")
+
+    if not numba_meta["available"]:
+        pytest.skip("Numba JIT 評估器在當前系統中不可用，跳過測試")
+
+    evaluator = NumbaEvaluator(target)
+    canvas = np.zeros_like(target)
+
+    # 1. 測試預設與啟用的新優化參數
+    params_default = {
+        "optimization_steps": 5,
+        "sample_step": 1,
+        "analytical_color_enabled": True,
+        "force_opaque": True,
+    }
+    shape_params_def, delta_def = evaluator.search_best_shape(canvas, batch_size=4, params=params_default)
+    assert len(shape_params_def) == 9
+    assert delta_def < 99999999.0
+
+    # 2. 測試 sample_step = 2 且 analytical_color_enabled = False 且 force_opaque = False
+    params_progressive = {
+        "optimization_steps": 5,
+        "sample_step": 2,
+        "analytical_color_enabled": False,
+        "force_opaque": False,
+    }
+    shape_params_prog, delta_prog = evaluator.search_best_shape(canvas, batch_size=4, params=params_progressive)
+    assert len(shape_params_prog) == 9
+
+
+def test_taichi_search_best_shape_variants():
+    """測試 TaichiEvaluator 在不同 sample_step、analytical_color_enabled 與 force_opaque 參數下的執行。"""
+    from evaluators.taichi_evaluator import TaichiEvaluator
+    np.random.seed(42)
+    target = np.random.rand(16, 16, 3).astype(np.float32)
+
+    evaluators = EvaluatorFactory.get_available_evaluators()
+    taichi_meta = next(e for e in evaluators if e["code"] == "TAICHI")
+
+    if not taichi_meta["available"]:
+        pytest.skip("Taichi JIT 評估器在當前系統中不可用，跳過測試")
+
+    evaluator = TaichiEvaluator(target)
+    canvas = np.zeros_like(target)
+
+    # 1. 測試預設與啟用的新優化參數
+    params_default = {
+        "optimization_steps": 5,
+        "sample_step": 1,
+        "analytical_color_enabled": True,
+        "force_opaque": True,
+    }
+    shape_params_def, delta_def = evaluator.search_best_shape(canvas, batch_size=4, params=params_default)
+    assert len(shape_params_def) == 9
+    assert delta_def < 99999999.0
+
+    # 2. 測試 sample_step = 2 且 analytical_color_enabled = False 且 force_opaque = False
+    params_progressive = {
+        "optimization_steps": 5,
+        "sample_step": 2,
+        "analytical_color_enabled": False,
+        "force_opaque": False,
+    }
+    shape_params_prog, delta_prog = evaluator.search_best_shape(canvas, batch_size=4, params=params_progressive)
+    assert len(shape_params_prog) == 9
+

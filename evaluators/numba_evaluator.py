@@ -68,6 +68,10 @@ class NumbaEvaluator(BaseEvaluator):
         canvas_g = np.ascontiguousarray(current_canvas[:, :, 1])
         canvas_b = np.ascontiguousarray(current_canvas[:, :, 2])
 
+        sample_step = params.get("sample_step", 1)
+        analytical_color_enabled = params.get("analytical_color_enabled", True)
+        force_opaque = params.get("force_opaque", True)
+
         x_c, y_c, r_x, r_y, theta, alpha, r, g, b, delta = (
             numba_kernels.parallel_random_search(
                 self.target_r,
@@ -90,6 +94,9 @@ class NumbaEvaluator(BaseEvaluator):
                 weight_map,
                 params.get("use_uncovered", False),
                 uncovered_map,
+                sample_step,
+                analytical_color_enabled,
+                force_opaque,
             )
         )
 
@@ -118,6 +125,9 @@ class NumbaEvaluator(BaseEvaluator):
                     weight_map,
                     params.get("use_uncovered", False),
                     uncovered_map,
+                    sample_step,
+                    analytical_color_enabled,
+                    force_opaque,
                 )
             )
 
@@ -155,6 +165,9 @@ class NumbaEvaluator(BaseEvaluator):
                 weight_map,
                 params.get("use_uncovered", False),
                 uncovered_map,
+                sample_step,
+                analytical_color_enabled,
+                force_opaque,
             )
         )
 
