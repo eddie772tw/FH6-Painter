@@ -2201,7 +2201,7 @@ class ForzaStudioGUI:
                     self.need_preview_update = True
 
             def on_success():
-                self.root.after(0, self.on_generation_success)
+                pass
 
             def on_failed(msg):
                 self.root.after(0, lambda: self.on_generation_failed(msg))
