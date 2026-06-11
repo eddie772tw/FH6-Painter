@@ -56,6 +56,7 @@ README_FH6_READY.md
 build/
 dist/
 *.spec
+.ref/
 
 # Keep key configuration JSONs tracked
 !optimization_settings.json
