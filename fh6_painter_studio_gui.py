@@ -2177,12 +2177,12 @@ class ForzaStudioGUI:
 
             # 使用目前的 canvas 圖像尺寸來實例化，以維持 BaseEvaluator 行為
             arr_shape = (2, 2, 3)
-            if self.current_preview_array is not None:
-                arr_shape = self.current_preview_array.shape
+            if self.latest_canvas_array is not None:
+                arr_shape = self.latest_canvas_array.shape
 
             evaluator = evaluator_cls(
-                self.current_preview_array
-                if self.current_preview_array is not None
+                self.latest_canvas_array
+                if self.latest_canvas_array is not None
                 else np.zeros(arr_shape, dtype=np.float32)
             )
 
@@ -2197,8 +2197,8 @@ class ForzaStudioGUI:
 
             def on_preview(arr):
                 with self.preview_image_lock:
-                    self.current_preview_array = arr
-                self.root.after(0, self.on_preview_ready)
+                    self.latest_canvas_array = arr
+                    self.need_preview_update = True
 
             def on_success():
                 self.root.after(0, self.on_generation_success)
