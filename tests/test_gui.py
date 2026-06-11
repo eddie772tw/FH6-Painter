@@ -26,6 +26,8 @@ def safe_init_tk():
             or "no display name" in err_msg
             or "Tcl_Init" in err_msg
             or "cannot open display" in err_msg
+            or "usable init.tcl" in err_msg
+            or "wasn't installed properly" in err_msg
         )
         if is_env_error:
             pytest.skip(
