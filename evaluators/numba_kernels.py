@@ -177,9 +177,9 @@ def evaluate_candidate(
         avg_g = (sum_t_g * inv_count - (sum_c_g * inv_count) * inv_a) / a_f
         avg_b = (sum_t_b * inv_count - (sum_c_b * inv_count) * inv_a) / a_f
 
-        avg_r = max(np.float32(0.0), min(np.float32(1.0), avg_r))
-        avg_g = max(np.float32(0.0), min(np.float32(1.0), avg_g))
-        avg_b = max(np.float32(0.0), min(np.float32(1.0), avg_b))
+        avg_r = max(np.float32(0.0), min(np.float32(255.0), avg_r))
+        avg_g = max(np.float32(0.0), min(np.float32(255.0), avg_g))
+        avg_b = max(np.float32(0.0), min(np.float32(255.0), avg_b))
     else:
         avg_r = sum_t_r * inv_count
         avg_g = sum_t_g * inv_count
@@ -190,12 +190,15 @@ def evaluate_candidate(
 
     if analytical_color_enabled:
         # Exact MSE delta error formula (same as Go-OpenCL)
-        delta_r = a2 * (count * avg_r * avg_r - np.float32(2.0) * avg_r * sum_c_r + sum_c2_r) \
-                  - two_a * (avg_r * sum_t_r - avg_r * sum_c_r - sum_ct_r + sum_c2_r)
-        delta_g = a2 * (count * avg_g * avg_g - np.float32(2.0) * avg_g * sum_c_g + sum_c2_g) \
-                  - two_a * (avg_g * sum_t_g - avg_g * sum_c_g - sum_ct_g + sum_c2_g)
-        delta_b = a2 * (count * avg_b * avg_b - np.float32(2.0) * avg_b * sum_c_b + sum_c2_b) \
-                  - two_a * (avg_b * sum_t_b - avg_b * sum_c_b - sum_ct_b + sum_c2_b)
+        delta_r = a2 * (
+            count * avg_r * avg_r - np.float32(2.0) * avg_r * sum_c_r + sum_c2_r
+        ) - two_a * (avg_r * sum_t_r - avg_r * sum_c_r - sum_ct_r + sum_c2_r)
+        delta_g = a2 * (
+            count * avg_g * avg_g - np.float32(2.0) * avg_g * sum_c_g + sum_c2_g
+        ) - two_a * (avg_g * sum_t_g - avg_g * sum_c_g - sum_ct_g + sum_c2_g)
+        delta_b = a2 * (
+            count * avg_b * avg_b - np.float32(2.0) * avg_b * sum_c_b + sum_c2_b
+        ) - two_a * (avg_b * sum_t_b - avg_b * sum_c_b - sum_ct_b + sum_c2_b)
     else:
         # Old formula for target mean
         a2_minus_2a = a_f * a_f - np.float32(2.0) * a_f
@@ -227,7 +230,11 @@ def evaluate_candidate(
 
     # Soft penalty for allowed overhang
     if count_transparent > 0.0:
-        penalty = a2 * np.float32(count_transparent) * (avg_r*avg_r + avg_g*avg_g + avg_b*avg_b + np.float32(1.0))
+        penalty = (
+            a2
+            * np.float32(count_transparent)
+            * (avg_r * avg_r + avg_g * avg_g + avg_b * avg_b + np.float32(65025.0))
+        )
         if sample_step > 1:
             penalty *= np.float32(sample_step * sample_step)
         total_delta_mse += penalty
@@ -530,7 +537,9 @@ def serial_hill_climb(
         ntheta = curr_theta + np.float32(np.random.normal(0.0, 0.25 * scale))
         nalpha = curr_alpha
         if not force_opaque:
-            nalpha = max(76, min(255, int(curr_alpha + np.random.normal(0.0, 15.0 * scale))))
+            nalpha = max(
+                76, min(255, int(curr_alpha + np.random.normal(0.0, 15.0 * scale)))
+            )
 
         nr, ng, nb, delta = evaluate_candidate(
             target_r,

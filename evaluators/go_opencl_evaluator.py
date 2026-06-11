@@ -139,6 +139,9 @@ class GoOpenCLEvaluator(BaseEvaluator):
             output_dir = os.path.dirname(output_json)
             preview_png = os.path.join(output_dir, "preview.png")
 
+            # Ensure the output directory exists before spawning the Go binary
+            os.makedirs(output_dir, exist_ok=True)
+
             if os.path.exists(preview_png):
                 try:
                     os.unlink(preview_png)

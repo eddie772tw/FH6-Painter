@@ -174,7 +174,9 @@ def test_numba_search_best_shape_variants():
         "analytical_color_enabled": True,
         "force_opaque": True,
     }
-    shape_params_def, delta_def = evaluator.search_best_shape(canvas, batch_size=4, params=params_default)
+    shape_params_def, delta_def = evaluator.search_best_shape(
+        canvas, batch_size=4, params=params_default
+    )
     assert len(shape_params_def) == 9
     assert delta_def < 99999999.0
 
@@ -185,13 +187,16 @@ def test_numba_search_best_shape_variants():
         "analytical_color_enabled": False,
         "force_opaque": False,
     }
-    shape_params_prog, delta_prog = evaluator.search_best_shape(canvas, batch_size=4, params=params_progressive)
+    shape_params_prog, delta_prog = evaluator.search_best_shape(
+        canvas, batch_size=4, params=params_progressive
+    )
     assert len(shape_params_prog) == 9
 
 
 def test_taichi_search_best_shape_variants():
     """測試 TaichiEvaluator 在不同 sample_step、analytical_color_enabled 與 force_opaque 參數下的執行。"""
     from evaluators.taichi_evaluator import TaichiEvaluator
+
     np.random.seed(42)
     target = np.random.rand(16, 16, 3).astype(np.float32)
 
@@ -211,7 +216,9 @@ def test_taichi_search_best_shape_variants():
         "analytical_color_enabled": True,
         "force_opaque": True,
     }
-    shape_params_def, delta_def = evaluator.search_best_shape(canvas, batch_size=4, params=params_default)
+    shape_params_def, delta_def = evaluator.search_best_shape(
+        canvas, batch_size=4, params=params_default
+    )
     assert len(shape_params_def) == 9
     assert delta_def < 99999999.0
 
@@ -222,6 +229,7 @@ def test_taichi_search_best_shape_variants():
         "analytical_color_enabled": False,
         "force_opaque": False,
     }
-    shape_params_prog, delta_prog = evaluator.search_best_shape(canvas, batch_size=4, params=params_progressive)
+    shape_params_prog, delta_prog = evaluator.search_best_shape(
+        canvas, batch_size=4, params=params_progressive
+    )
     assert len(shape_params_prog) == 9
-

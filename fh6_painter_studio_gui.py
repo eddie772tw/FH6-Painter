@@ -1006,12 +1006,30 @@ class ForzaStudioGUI:
         self.chk_decay.grid(row=2, column=1, sticky="w", pady=3)
 
         # Bind Tooltips for Step 2.5
-        Tooltip(self.chk_pyramid, "【漸進式像素採樣】\n在生成前期（形狀較大時）跳過部分像素以大幅提速，隨進度逐漸恢復全像素精細評估。")
-        Tooltip(self.chk_freeze, "【動態凍結遮罩】\n自動鎖定已經完美匹配的像素區域，避開重複評估以大幅減少運算負擔。")
-        Tooltip(self.chk_importance, "【錯誤驅動重點採樣】\n依據殘餘誤差圖進行重點採樣，將隨機橢圓生成優先配置於高誤差區域。")
-        Tooltip(self.chk_weight, "【區域誤差加權】\n根據像素的空間特徵（如前景或邊緣）對誤差進行加權，提升邊緣清晰度。")
-        Tooltip(self.chk_annealing, "【解析解最佳色彩】\n在評估幾何時利用解析解直接算出最優顏色，使爬山收斂速度倍增，無需隨機模擬退火。")
-        Tooltip(self.chk_decay, "【衰減式形狀限縮】\n隨著貼圖數量增加，動態縮小橢圓最大半徑以避免破壞已有的微小細節。")
+        Tooltip(
+            self.chk_pyramid,
+            "【漸進式像素採樣】\n在生成前期（形狀較大時）跳過部分像素以大幅提速，隨進度逐漸恢復全像素精細評估。",
+        )
+        Tooltip(
+            self.chk_freeze,
+            "【動態凍結遮罩】\n自動鎖定已經完美匹配的像素區域，避開重複評估以大幅減少運算負擔。",
+        )
+        Tooltip(
+            self.chk_importance,
+            "【錯誤驅動重點採樣】\n依據殘餘誤差圖進行重點採樣，將隨機橢圓生成優先配置於高誤差區域。",
+        )
+        Tooltip(
+            self.chk_weight,
+            "【區域誤差加權】\n根據像素的空間特徵（如前景或邊緣）對誤差進行加權，提升邊緣清晰度。",
+        )
+        Tooltip(
+            self.chk_annealing,
+            "【解析解最佳色彩】\n在評估幾何時利用解析解直接算出最優顏色，使爬山收斂速度倍增，無需隨機模擬退火。",
+        )
+        Tooltip(
+            self.chk_decay,
+            "【衰減式形狀限縮】\n隨著貼圖數量增加，動態縮小橢圓最大半徑以避免破壞已有的微小細節。",
+        )
 
         # --- RIGHT PANEL CARDS ---
         # Card 3: Action Panel (Double-Button Execution) - Moved to Right Panel Bottom

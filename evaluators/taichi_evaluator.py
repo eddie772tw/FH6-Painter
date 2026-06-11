@@ -161,12 +161,8 @@ def evaluate_candidate_ti(
                     sqrt_d = ti.math.sqrt(discriminant)
                     dx_min = (-b_val - sqrt_d) * inv_a
                     dx_max = (-b_val + sqrt_d) * inv_a
-                    x_start = ti.max(
-                        min_x, ti.cast(ti.math.ceil(x_c + dx_min), ti.i32)
-                    )
-                    x_end = ti.min(
-                        max_x, ti.cast(ti.math.floor(x_c + dx_max), ti.i32)
-                    )
+                    x_start = ti.max(min_x, ti.cast(ti.math.ceil(x_c + dx_min), ti.i32))
+                    x_end = ti.min(max_x, ti.cast(ti.math.floor(x_c + dx_max), ti.i32))
 
                     x = x_start
                     while x <= x_end:
@@ -212,7 +208,9 @@ def evaluate_candidate_ti(
     total_delta_mse = 99999999.0
 
     # Overhang check
-    if is_valid == 1 and (count == 0.0 or (check_contour == 1 and (count_transparent * 100.0 > count))):
+    if is_valid == 1 and (
+        count == 0.0 or (check_contour == 1 and (count_transparent * 100.0 > count))
+    ):
         is_valid = 0
 
     if is_valid == 1 and count > 0.0:
@@ -227,9 +225,9 @@ def evaluate_candidate_ti(
             avg_g = (sum_t_g * inv_count - (sum_c_g * inv_count) * inv_a_val) / a_f
             avg_b = (sum_t_b * inv_count - (sum_c_b * inv_count) * inv_a_val) / a_f
 
-            avg_r = ti.max(0.0, ti.min(1.0, avg_r))
-            avg_g = ti.max(0.0, ti.min(1.0, avg_g))
-            avg_b = ti.max(0.0, ti.min(1.0, avg_b))
+            avg_r = ti.max(0.0, ti.min(255.0, avg_r))
+            avg_g = ti.max(0.0, ti.min(255.0, avg_g))
+            avg_b = ti.max(0.0, ti.min(255.0, avg_b))
         else:
             avg_r = sum_t_r * inv_count
             avg_g = sum_t_g * inv_count
@@ -243,12 +241,15 @@ def evaluate_candidate_ti(
         delta_b = 0.0
 
         if analytical_color_enabled == 1:
-            delta_r = a2 * (count * avg_r * avg_r - 2.0 * avg_r * sum_c_r + sum_c2_r) \
-                      - two_a * (avg_r * sum_t_r - avg_r * sum_c_r - sum_ct_r + sum_c2_r)
-            delta_g = a2 * (count * avg_g * avg_g - 2.0 * avg_g * sum_c_g + sum_c2_g) \
-                      - two_a * (avg_g * sum_t_g - avg_g * sum_c_g - sum_ct_g + sum_c2_g)
-            delta_b = a2 * (count * avg_b * avg_b - 2.0 * avg_b * sum_c_b + sum_c2_b) \
-                      - two_a * (avg_b * sum_t_b - avg_b * sum_c_b - sum_ct_b + sum_c2_b)
+            delta_r = a2 * (
+                count * avg_r * avg_r - 2.0 * avg_r * sum_c_r + sum_c2_r
+            ) - two_a * (avg_r * sum_t_r - avg_r * sum_c_r - sum_ct_r + sum_c2_r)
+            delta_g = a2 * (
+                count * avg_g * avg_g - 2.0 * avg_g * sum_c_g + sum_c2_g
+            ) - two_a * (avg_g * sum_t_g - avg_g * sum_c_g - sum_ct_g + sum_c2_g)
+            delta_b = a2 * (
+                count * avg_b * avg_b - 2.0 * avg_b * sum_c_b + sum_c2_b
+            ) - two_a * (avg_b * sum_t_b - avg_b * sum_c_b - sum_ct_b + sum_c2_b)
         else:
             a2_minus_2a = a_f * a_f - 2.0 * a_f
             two_a_one_minus_a = 2.0 * a_f * (1.0 - a_f)
@@ -277,7 +278,11 @@ def evaluate_candidate_ti(
             total_delta_mse *= ti.cast(sample_step * sample_step, ti.f32)
 
         if count_transparent > 0.0:
-            penalty = a2 * count_transparent * (avg_r*avg_r + avg_g*avg_g + avg_b*avg_b + 1.0)
+            penalty = (
+                a2
+                * count_transparent
+                * (avg_r * avg_r + avg_g * avg_g + avg_b * avg_b + 65025.0)
+            )
             if sample_step > 1:
                 penalty *= ti.cast(sample_step * sample_step, ti.f32)
             total_delta_mse += penalty
@@ -514,7 +519,7 @@ def generate_candidates_gpu(
         r_x = 2.0 + ti.random() * (max_r - 2.0)
         r_y = 2.0 + ti.random() * (max_r - 2.0)
         theta = ti.random() * 2.0 * ti.math.pi
-        
+
         alpha = 255.0
         if force_opaque == 0:
             alpha = 76.0 + ti.random() * (255.0 - 76.0)
@@ -837,7 +842,7 @@ class TaichiEvaluator(BaseEvaluator):
 
             for arch, name in backends:
                 try:
-                    ti.init(arch=arch, log_level=ti.WARN)
+                    ti.init(arch=arch, log_level=ti.WARN, offline_cache=False)
                     # Verify backend with a test allocation
                     test = ti.field(dtype=ti.f32, shape=1)
                     test[0] = 1.0
@@ -995,7 +1000,9 @@ class TaichiEvaluator(BaseEvaluator):
             self.ti_results = ti.ndarray(dtype=ti.f32, shape=(batch_size, 4))
 
         sample_step = params.get("sample_step", 1)
-        analytical_color_enabled = 1 if params.get("analytical_color_enabled", True) else 0
+        analytical_color_enabled = (
+            1 if params.get("analytical_color_enabled", True) else 0
+        )
         force_opaque = 1 if params.get("force_opaque", True) else 0
 
         generate_candidates_gpu(
@@ -1168,7 +1175,9 @@ class TaichiEvaluator(BaseEvaluator):
                         use_uncovered=True if use_uncovered == 1 else False,
                         uncovered_map=uncovered_map_np_dummy,
                         sample_step=sample_step,
-                        analytical_color_enabled=True if analytical_color_enabled == 1 else False,
+                        analytical_color_enabled=True
+                        if analytical_color_enabled == 1
+                        else False,
                         force_opaque=True if force_opaque == 1 else False,
                     )
                 )
