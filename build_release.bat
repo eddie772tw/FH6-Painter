@@ -90,6 +90,17 @@ if exist "%~dp0settings" (
     )
 )
 
+:: Copy tools/bin directory
+if exist "%~dp0tools\bin" (
+    xcopy /E /I /Y "%~dp0tools\bin" "%DIST_DIR%\tools\bin" >nul
+    if errorlevel 1 (
+        echo [WARNING] Encountered minor warning when copying tools/bin folder.
+    ) else (
+        echo [SUCCESS] Copied "tools/bin" folder.
+    )
+)
+
+
 :: 5. Compress output package automatically
 echo [INFO] Compressing output package...
 where 7z >nul 2>nul

@@ -132,3 +132,30 @@ def test_settings_recreation_on_corruption(tmp_path):
 
     finally:
         root.destroy()
+
+
+def test_go_engine_list():
+    """測試 Go-OpenCL 引擎在 UI 下拉選單中的整合狀態與可用性偵測"""
+    root = safe_init_tk()
+    root.withdraw()
+    try:
+        app = ForzaStudioGUI(root)
+        
+        # 尋找 Go-OpenCL 引擎
+        go_meta = None
+        for e in app.available_evaluators:
+            if e["code"] == "GO_OPENCL":
+                go_meta = e
+                break
+                
+        assert go_meta is not None
+        
+        # 驗證 Go 引擎可用性應與實際二進位檔是否存在一致
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        go_binary_path = os.path.join(project_root, "tools", "bin", "forza-painter-geometrize-go.exe")
+        has_go_file = os.path.exists(go_binary_path)
+        assert go_meta["available"] == has_go_file
+        
+    finally:
+        root.destroy()
+

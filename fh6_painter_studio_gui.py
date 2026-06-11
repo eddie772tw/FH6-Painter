@@ -639,6 +639,10 @@ class ForzaStudioGUI:
             fg=self.fg_secondary,
         ).grid(row=4, column=0, sticky="w", pady=4)
 
+        # Check if Go-OpenCL binary is present
+        go_binary_path = os.path.join(get_project_root(), "tools", "bin", "forza-painter-geometrize-go.exe")
+        has_go = os.path.exists(go_binary_path)
+
         if (
             HAS_LIBS
             and "EvaluatorFactory" in globals()
@@ -663,6 +667,11 @@ class ForzaStudioGUI:
                     "available": True,
                 },
             ]
+        self.available_evaluators.append({
+            "code": "GO_OPENCL",
+            "name": "Go-OpenCL GPU (Binary Engine)",
+            "available": has_go,
+        })
         evaluator_names = []
         for e in self.available_evaluators:
             if e["available"]:
@@ -1952,15 +1961,17 @@ class ForzaStudioGUI:
             return
 
         img_path = self.entry_file_path.get().strip()
+        resume_path = None
 
         # If the input path is a JSON file but we have a stored image path, use the stored image path instead
         if img_path.lower().endswith(".json"):
+            resume_path = img_path
             if getattr(self, "last_generated_image_path", None) and os.path.exists(
                 self.last_generated_image_path
             ):
                 img_path = self.last_generated_image_path
             else:
-                messagebox.showerror("Error", f"Input file not found:\n{img_path}")
+                messagebox.showerror("Error", "Please select or generate from the original image first, then drop the JSON to resume.")
                 return
         else:
             # Store the current image path for future regeneration
@@ -2074,26 +2085,42 @@ class ForzaStudioGUI:
         use_pure_gpu = not self.var_hybrid.get()
 
         # Launch Worker Thread in Safe Wrapper to prevent silent thread deaths
-        self.active_thread = threading.Thread(
-            target=self.safe_run_generator,
-            args=(
-                img_path,
-                output_json,
-                profile_path,
-                layers,
-                candidates,
-                steps,
-                generator_cb,
-                self.opt_settings,
-                engine_code,
-            ),
-            kwargs={
-                "taichi_arch": taichi_arch,
-                "taichi_device_id": taichi_device_id,
-                "use_pure_gpu": use_pure_gpu,
-            },
-            daemon=True,
-        )
+        if engine_code == "GO_OPENCL":
+            self.active_thread = threading.Thread(
+                target=self.safe_run_go_generator,
+                args=(
+                    img_path,
+                    output_json,
+                    profile_path,
+                    layers,
+                ),
+                kwargs={
+                    "resume_path": resume_path,
+                },
+                daemon=True,
+            )
+        else:
+            self.active_thread = threading.Thread(
+                target=self.safe_run_generator,
+                args=(
+                    img_path,
+                    output_json,
+                    profile_path,
+                    layers,
+                    candidates,
+                    steps,
+                    generator_cb,
+                    self.opt_settings,
+                    engine_code,
+                ),
+                kwargs={
+                    "taichi_arch": taichi_arch,
+                    "taichi_device_id": taichi_device_id,
+                    "use_pure_gpu": use_pure_gpu,
+                    "resume_path": resume_path,
+                },
+                daemon=True,
+            )
         self.active_thread.start()
 
     def safe_run_generator(self, *args, **kwargs):
@@ -2117,6 +2144,147 @@ class ForzaStudioGUI:
             err_msg = f"{e}\n\n[Traceback]\n{tb}"
             self.root.after(0, lambda msg=err_msg: self.on_generation_failed(msg))
 
+    def safe_run_go_generator(self, img_path, output_json, profile_path, layers, resume_path=None):
+        """安全地調用 Go-OpenCL 二進位生成器"""
+        try:
+            import subprocess
+            import re
+            
+            project_root = get_project_root()
+            go_bin = os.path.join(project_root, "tools", "bin", "forza-painter-geometrize-go.exe")
+            
+            output_base = output_json.replace(".json", "")
+            output_dir = os.path.dirname(output_json)
+            preview_base = os.path.join(output_dir, "preview")
+            
+            preview_png = os.path.join(output_dir, "preview.png")
+            if os.path.exists(preview_png):
+                try:
+                    os.unlink(preview_png)
+                except OSError:
+                    pass
+            
+            cmd = [
+                go_bin,
+                img_path,
+                "-settings",
+                profile_path,
+                "-output",
+                output_base,
+                "-preview",
+                preview_png,
+            ]
+            if resume_path:
+                cmd.extend(["-resume", resume_path])
+                
+            self.log_to_console(f"[System] Spawning Go-OpenCL binary process...\n")
+            self.log_to_console(f"[System] Command: {subprocess.list2cmdline(cmd)}\n")
+            
+            flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+            
+            env = os.environ.copy()
+            path_val = env.get("PATH", "")
+            clean_paths = []
+            for item in path_val.split(os.pathsep):
+                item_lower = item.lower()
+                if ".venv" in item_lower or "venv" in item_lower or "python" in item_lower:
+                    continue
+                clean_paths.append(item)
+            env["PATH"] = os.pathsep.join(clean_paths)
+            
+            self.generator_proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                creationflags=flags,
+                env=env,
+            )
+            
+            progress_re = re.compile(r"\[(\d+)/(\d+)\]\s+(.*)")
+            start_time = time.time()
+            last_progress_update = 0.0
+            
+            for line in self.generator_proc.stdout:
+                line_str = line.strip()
+                if not line_str:
+                    continue
+                
+                sys.stdout.write(f"{line_str}\n")
+                sys.stdout.flush()
+                
+                match = progress_re.match(line_str)
+                if match:
+                    curr = int(match.group(1))
+                    total = int(match.group(2))
+                    detail = match.group(3)
+                    
+                    now = time.time()
+                    elapsed = now - start_time
+                    speed = curr / elapsed if elapsed > 0 else 0.0
+                    eta = (layers - curr) / speed if speed > 0 else 0.0
+                    
+                    if now - last_progress_update >= 0.05 or curr == total:
+                        with self.preview_image_lock:
+                            self.latest_progress = (curr, total, speed, eta)
+                            try:
+                                if os.path.exists(preview_png):
+                                    with Image.open(preview_png) as pil_img:
+                                        arr = np.array(pil_img.convert("RGB"), dtype=np.float32)
+                                        self.latest_canvas_array = arr
+                                        self.need_preview_update = True
+                            except Exception:
+                                pass
+                        last_progress_update = now
+                        
+                if self.cancel_generation_flag:
+                    break
+                    
+            self.generator_proc.stdout.close()
+            if self.cancel_generation_flag:
+                self.kill_generator_process()
+            else:
+                self.generator_proc.wait()
+                res = self.generator_proc.returncode
+                if res != 0:
+                    self.root.after(
+                        0,
+                        lambda: self.on_generation_failed(
+                            f"Go Generator process exited with non-zero code {res}."
+                        ),
+                    )
+        except Exception as e:
+            import traceback
+            tb = traceback.format_exc()
+            err_msg = f"{e}\n\n[Traceback]\n{tb}"
+            self.root.after(0, lambda msg=err_msg: self.on_generation_failed(msg))
+        finally:
+            self.generator_proc = None
+
+    def kill_generator_process(self):
+        """結束執行中的 Go 執行檔行程"""
+        proc = getattr(self, "generator_proc", None)
+        if proc is not None:
+            try:
+                if sys.platform == "win32":
+                    import subprocess
+                    subprocess.run(
+                        ["taskkill", "/PID", str(proc.pid), "/T", "/F"],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        creationflags=subprocess.CREATE_NO_WINDOW,
+                        timeout=5,
+                    )
+                else:
+                    proc.terminate()
+            except Exception:
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+
     def on_generation_failed(self, error_message):
         """當生圖引擎異常崩潰時，優雅地通知使用者並完全重置 UI 狀態"""
         self.is_generating = False
@@ -2139,6 +2307,7 @@ class ForzaStudioGUI:
             return
 
         self.cancel_generation_flag = True
+        self.kill_generator_process()
         self.log_to_console(
             "\n[System] Stop requested. Gracefully finalizing current layer and saving progress...\n"
         )

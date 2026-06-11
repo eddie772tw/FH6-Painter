@@ -130,6 +130,7 @@ def run_generator(
     taichi_arch=None,
     taichi_device_id=None,
     use_pure_gpu=False,
+    resume_path=None,
 ):
     if not os.path.exists(image_path):
         print(f"ERROR: Image not found: {image_path}", file=sys.stderr)
@@ -230,6 +231,20 @@ def run_generator(
     early_threshold = opt_early.get("redundancy_threshold", 0.75)
     early_step = opt_early.get("convergence_step", 50)
 
+    resume_shapes = []
+    if resume_path and os.path.exists(resume_path):
+        try:
+            with open(resume_path, "r", encoding="utf-8") as f:
+                res_data = json.load(f)
+                resume_shapes = res_data.get("shapes", [])
+                print(f"[Engine] Loaded {len(resume_shapes)} shapes from resume JSON: {resume_path}")
+        except Exception as e:
+            print(f"Warning: Failed to load resume JSON {resume_path}: {e}", file=sys.stderr)
+
+    if resume_shapes:
+        pyramid_enabled = False
+        print("[Engine] Resume mode active. Image pyramid disabled.")
+
     if profile_path:
         print(f"Profile: {os.path.basename(profile_path)}")
     print(f"Target: {image_path} -> Output: {output_path}")
@@ -240,6 +255,10 @@ def run_generator(
     has_alpha = img_raw.mode in ("RGBA", "LA") or (
         img_raw.mode == "P" and "transparency" in img_raw.info
     )
+    if resume_shapes:
+        header = resume_shapes[0]
+        if header.get("type") == 1 and len(header.get("color", [])) >= 4:
+            has_alpha = (header["color"][3] <= 0)
     if has_alpha:
         img = img_raw.convert("RGBA")
         print("Detected transparent background. Enabling Alpha-guided Ambient Padding.")
@@ -290,6 +309,14 @@ def run_generator(
         avg_r = np.mean(target[:, :, 0])
         avg_g = np.mean(target[:, :, 1])
         avg_b = np.mean(target[:, :, 2])
+
+    if resume_shapes:
+        header = resume_shapes[0]
+        if header.get("type") == 1 and len(header.get("color", [])) >= 4:
+            avg_r_res, avg_g_res, avg_b_res, avg_a_res = header["color"]
+            avg_r = float(avg_r_res)
+            avg_g = float(avg_g_res)
+            avg_b = float(avg_b_res)
 
     # Image pyramid multi-resolution preparation
     target_1_1 = target.copy()
@@ -376,6 +403,8 @@ def run_generator(
     }
     shapes_list.append(header)
 
+
+
     error_prob = None
     if importance_enabled:
         diff_mat = np.abs(target - canvas)
@@ -413,6 +442,18 @@ def run_generator(
             width, height, has_alpha, uncovered_bias
         )
 
+    if resume_shapes:
+        for s in resume_shapes[1:]:
+            if s.get("type") == 32:
+                shapes_list.append(s)
+                x_c, y_c, r_x, r_y, theta_deg = s["data"]
+                r, g, b, alpha = s["color"]
+                theta = math.radians(theta_deg)
+                evaluator.draw_shape_on_canvas(canvas, x_c, y_c, r_x, r_y, theta, r, g, b, alpha)
+                if uncovered_enabled and uncovered_map is not None:
+                    evaluator.update_uncovered_mask(uncovered_map, x_c, y_c, r_x, r_y, theta)
+        print(f"[Engine] Successfully resumed canvas state with {len(shapes_list) - 1} shapes.")
+
     base_max_r = max(10.0, min(width, height) / 3.0)
 
     gc.disable()
@@ -435,6 +476,8 @@ def run_generator(
     original_layers = layers
     prev_valid_layers = 0
     early_triggered = False
+
+    starting_layer_count = len(shapes_list) - 1
 
     try:
         while (len(shapes_list) - 1 < layers) and (attempts < max_attempts):
@@ -772,7 +815,8 @@ def run_generator(
 
             now = time.time()
             elapsed = now - start_time
-            speed = current_layer / elapsed if elapsed > 0 else 0.0
+            generated_in_session = current_layer - starting_layer_count
+            speed = generated_in_session / elapsed if elapsed > 0 else 0.0
             eta = (layers - current_layer) / speed if speed > 0 else 0.0
 
             if progress_callback:
@@ -892,6 +936,11 @@ def main():
         choices=["NUMBA", "TAICHI", "PURE_PYTHON"],
         help="Computational engine plugin to use (NUMBA, TAICHI, PURE_PYTHON)",
     )
+    parser.add_argument(
+        "--resume",
+        "-resume",
+        help="Path to resume JSON checkpoint file",
+    )
 
     args = parser.parse_args()
     return run_generator(
@@ -902,6 +951,7 @@ def main():
         candidates_limit=args.candidates,
         steps_limit=args.steps,
         engine_name=args.engine,
+        resume_path=args.resume,
     )
 
 
