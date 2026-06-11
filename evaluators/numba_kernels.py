@@ -112,53 +112,98 @@ def evaluate_candidate(
     sum_ct_b = np.float32(0.0)
 
     # Heavy Accumulation Loop: Contiguous memory access, zero branching, highly vectorizable (AVX2/FMA3)
-    for y in range(min_y, max_y + 1, sample_step):
-        dy = np.float32(y - y_c)
-        b_quad = dy * b_coeff
-        discriminant = a - dy * dy * inv_rx2_ry2
-        if discriminant >= 0.0:
-            sqrt_d = math.sqrt(discriminant)
-            dx_min = (-b_quad - sqrt_d) * inv_a
-            dx_max = (-b_quad + sqrt_d) * inv_a
-            x_start = max(min_x, int(math.ceil(x_c + dx_min)))
-            x_end = min(max_x, int(math.floor(x_c + dx_max)))
+    if not use_weight and not use_uncovered:
+        # Fast Path (No weights)
+        for y in range(min_y, max_y + 1, sample_step):
+            dy = np.float32(y - y_c)
+            b_quad = dy * b_coeff
+            discriminant = a - dy * dy * inv_rx2_ry2
+            if discriminant >= 0.0:
+                sqrt_d = math.sqrt(discriminant)
+                dx_min = (-b_quad - sqrt_d) * inv_a
+                dx_max = (-b_quad + sqrt_d) * inv_a
+                x_start = max(min_x, int(math.ceil(x_c + dx_min)))
+                x_end = min(max_x, int(math.floor(x_c + dx_max)))
 
-            for x in range(x_start, x_end + 1, sample_step):
-                # Check transparent background boundaries
-                if check_contour and alpha_mask[y, x] <= 10.0:
-                    count_transparent += 1.0
-                    continue
+                for x in range(x_start, x_end + 1, sample_step):
+                    # Check transparent background boundaries
+                    if check_contour and alpha_mask[y, x] <= 10.0:
+                        count_transparent += 1.0
+                        continue
 
-                t_r = target_r[y, x]
-                t_g = target_g[y, x]
-                t_b = target_b[y, x]
+                    t_r = target_r[y, x]
+                    t_g = target_g[y, x]
+                    t_b = target_b[y, x]
 
-                c_r = canvas_r[y, x]
-                c_g = canvas_g[y, x]
-                c_b = canvas_b[y, x]
+                    c_r = canvas_r[y, x]
+                    c_g = canvas_g[y, x]
+                    c_b = canvas_b[y, x]
 
-                w = np.float32(1.0)
-                if use_weight:
-                    w = weight_map[y, x]
-                if use_uncovered:
-                    w = w * uncovered_map[y, x]
+                    count += np.float32(1.0)
+                    sum_t_r += t_r
+                    sum_t_g += t_g
+                    sum_t_b += t_b
 
-                count += w
-                sum_t_r += t_r * w
-                sum_t_g += t_g * w
-                sum_t_b += t_b * w
+                    sum_c_r += c_r
+                    sum_c_g += c_g
+                    sum_c_b += c_b
 
-                sum_c_r += c_r * w
-                sum_c_g += c_g * w
-                sum_c_b += c_b * w
+                    sum_c2_r += (c_r * c_r)
+                    sum_c2_g += (c_g * c_g)
+                    sum_c2_b += (c_b * c_b)
 
-                sum_c2_r += (c_r * c_r) * w
-                sum_c2_g += (c_g * c_g) * w
-                sum_c2_b += (c_b * c_b) * w
+                    sum_ct_r += (c_r * t_r)
+                    sum_ct_g += (c_g * t_g)
+                    sum_ct_b += (c_b * t_b)
+    else:
+        # Slow Path (With weights)
+        for y in range(min_y, max_y + 1, sample_step):
+            dy = np.float32(y - y_c)
+            b_quad = dy * b_coeff
+            discriminant = a - dy * dy * inv_rx2_ry2
+            if discriminant >= 0.0:
+                sqrt_d = math.sqrt(discriminant)
+                dx_min = (-b_quad - sqrt_d) * inv_a
+                dx_max = (-b_quad + sqrt_d) * inv_a
+                x_start = max(min_x, int(math.ceil(x_c + dx_min)))
+                x_end = min(max_x, int(math.floor(x_c + dx_max)))
 
-                sum_ct_r += (c_r * t_r) * w
-                sum_ct_g += (c_g * t_g) * w
-                sum_ct_b += (c_b * t_b) * w
+                for x in range(x_start, x_end + 1, sample_step):
+                    # Check transparent background boundaries
+                    if check_contour and alpha_mask[y, x] <= 10.0:
+                        count_transparent += 1.0
+                        continue
+
+                    t_r = target_r[y, x]
+                    t_g = target_g[y, x]
+                    t_b = target_b[y, x]
+
+                    c_r = canvas_r[y, x]
+                    c_g = canvas_g[y, x]
+                    c_b = canvas_b[y, x]
+
+                    w = np.float32(1.0)
+                    if use_weight:
+                        w = weight_map[y, x]
+                    if use_uncovered:
+                        w = w * uncovered_map[y, x]
+
+                    count += w
+                    sum_t_r += t_r * w
+                    sum_t_g += t_g * w
+                    sum_t_b += t_b * w
+
+                    sum_c_r += c_r * w
+                    sum_c_g += c_g * w
+                    sum_c_b += c_b * w
+
+                    sum_c2_r += (c_r * c_r) * w
+                    sum_c2_g += (c_g * c_g) * w
+                    sum_c2_b += (c_b * c_b) * w
+
+                    sum_ct_r += (c_r * t_r) * w
+                    sum_ct_g += (c_g * t_g) * w
+                    sum_ct_b += (c_b * t_b) * w
 
     # Overhang Tolerance Check: reject if shape has >1% transparent overhang or no opaque pixels
     if count == 0.0 or (check_contour and (count_transparent * 100.0 > count)):
