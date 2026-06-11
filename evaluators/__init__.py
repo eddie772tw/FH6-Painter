@@ -16,6 +16,7 @@ try:
 except ImportError:
     TaichiEvaluator = None
 
+from evaluators.go_opencl_evaluator import GoOpenCLEvaluator
 from evaluators.pure_python_evaluator import PurePythonEvaluator
 
 
@@ -27,18 +28,21 @@ class EvaluatorFactory:
         """
         evaluators = []
 
+        # 1. Numba JIT Engine
         numba_avail = False
+        numba_name = "Numba JIT (CPU Multithreading)"
         if NumbaEvaluator is not None:
             try:
                 inst = NumbaEvaluator(np.zeros((2, 2, 3), dtype=np.float32))
                 numba_avail = inst.is_available()
+                numba_name = inst.get_name()
             except Exception:
                 numba_avail = False
 
         evaluators.append(
             {
                 "code": "NUMBA",
-                "name": "Numba JIT (CPU, Recommanded)",
+                "name": numba_name,
                 "available": numba_avail,
                 "device": "CPU",
                 "class": NumbaEvaluator,
@@ -53,26 +57,69 @@ class EvaluatorFactory:
         from evaluators.taichi_evaluator import HAS_TAICHI
 
         taichi_avail = HAS_TAICHI and not is_python_314_or_newer
+        taichi_name = "Taichi JIT (GPU)"
+        if TaichiEvaluator is not None:
+            try:
+                inst = TaichiEvaluator(np.zeros((2, 2, 3), dtype=np.float32))
+                taichi_avail = inst.is_available()
+                taichi_name = inst.get_name()
+            except Exception:
+                pass
 
         evaluators.append(
             {
                 "code": "TAICHI",
-                "name": "Taichi JIT (GPU)",
+                "name": taichi_name,
                 "available": taichi_avail,
                 "device": "GPU",
                 "class": TaichiEvaluator,
             }
         )
 
+        # 3. Go-OpenCL GPU Engine
+        go_avail = False
+        go_name = "Go OpenCL (GPU, Fastest)"
+        try:
+            inst = GoOpenCLEvaluator(np.zeros((2, 2, 3), dtype=np.float32))
+            go_avail = inst.is_available()
+            go_name = inst.get_name()
+        except Exception:
+            go_avail = False
+
+        evaluators.append(
+            {
+                "code": "GO_OPENCL",
+                "name": go_name,
+                "available": go_avail,
+                "device": "GPU",
+                "class": GoOpenCLEvaluator,
+            }
+        )
+
+        # 4. Pure Python Engine
+        pure_name = "Pure Python (Baseline)"
+        pure_avail = False
+        try:
+            inst = PurePythonEvaluator(np.zeros((2, 2, 3), dtype=np.float32))
+            pure_avail = inst.is_available()
+            pure_name = inst.get_name()
+        except Exception:
+            pure_avail = True
+
         evaluators.append(
             {
                 "code": "PURE_PYTHON",
-                "name": "Pure Python (Slow, for Compatiblity)",
-                "available": True,
+                "name": pure_name,
+                "available": pure_avail,
                 "device": "CPU",
                 "class": PurePythonEvaluator,
             }
         )
+
+        # 確保 Pure Python 始終在清單的最下方
+        evaluators = [e for e in evaluators if e["code"] != "PURE_PYTHON"] + [
+            e for e in evaluators if e["code"] == "PURE_PYTHON"
+        ]
 
         return evaluators
 

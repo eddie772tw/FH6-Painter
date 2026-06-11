@@ -26,6 +26,8 @@ def safe_init_tk():
             or "no display name" in err_msg
             or "Tcl_Init" in err_msg
             or "cannot open display" in err_msg
+            or "usable init.tcl" in err_msg
+            or "wasn't installed properly" in err_msg
         )
         if is_env_error:
             pytest.skip(
@@ -129,6 +131,110 @@ def test_settings_recreation_on_corruption(tmp_path):
         with open(app.settings_path, "r", encoding="utf-8") as f:
             data = json.load(f)
         assert data["window_geometry"] == "1216x863"
+
+    finally:
+        root.destroy()
+
+
+def test_go_engine_list():
+    """測試 Go-OpenCL 引擎在 UI 下拉選單中的整合狀態與可用性偵測"""
+    root = safe_init_tk()
+    root.withdraw()
+    try:
+        app = ForzaStudioGUI(root)
+
+        # 尋找 Go-OpenCL 引擎
+        go_meta = None
+        for e in app.available_evaluators:
+            if e["code"] == "GO_OPENCL":
+                go_meta = e
+                break
+
+        assert go_meta is not None
+
+        # 驗證 Go 引擎可用性應與實際二進位檔是否存在一致
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        go_binary_path = os.path.join(
+            project_root, "tools", "bin", "forza-painter-geometrize-go.exe"
+        )
+        has_go_file = os.path.exists(go_binary_path)
+        assert go_meta["available"] == has_go_file
+
+    finally:
+        root.destroy()
+
+
+def test_engine_selection_and_order():
+    """測試 JIT 引擎下拉選單的排序（Pure Python 必在最下）以及選取 Go 引擎時停用進階優化選項，同時非 Taichi 時隱藏 Taichi 元件"""
+    root = safe_init_tk()
+    root.withdraw()
+    try:
+        app = ForzaStudioGUI(root)
+
+        # 1. 驗證 Pure Python 始終在清單的最下方
+        assert app.available_evaluators[-1]["code"] == "PURE_PYTHON"
+
+        # 2. 模擬選取 GO_OPENCL 引擎並驗證優化選項 state 與 Taichi 專屬元件隱藏
+        go_idx = None
+        numba_idx = None
+        taichi_idx = None
+        for idx, e in enumerate(app.available_evaluators):
+            if e["code"] == "GO_OPENCL":
+                e["available"] = True
+                go_idx = idx
+            elif e["code"] == "NUMBA":
+                e["available"] = True
+                numba_idx = idx
+            elif e["code"] == "TAICHI":
+                e["available"] = True
+                taichi_idx = idx
+
+        assert go_idx is not None
+        assert numba_idx is not None
+        assert taichi_idx is not None
+
+        # 切換到 GO_OPENCL 引擎
+        app.combo_engine.current(go_idx)
+        app.on_engine_selected(None)
+
+        # 驗證 Card 2.5 (Advanced Optimizations) 卡片被隱藏 (pack_info() 會拋出 TclError)
+        with pytest.raises(Exception) as excinfo:
+            app.card_opts.pack_info()
+        assert "isn't packed" in str(excinfo.value)
+
+        # 驗證 Taichi 專屬元件被隱藏 (grid_info() 為空)
+        assert not app.lbl_taichi_arch.grid_info()
+        assert not app.taichi_arch_container.grid_info()
+        assert not app.lbl_taichi_device.grid_info()
+        assert not app.combo_taichi_device.grid_info()
+
+        # 切換到 TAICHI 引擎
+        app.combo_engine.current(taichi_idx)
+        app.on_engine_selected(None)
+
+        # 驗證 Taichi 專屬元件被顯示，且在對應 row
+        assert int(app.lbl_taichi_arch.grid_info()["row"]) == 5
+        assert int(app.taichi_arch_container.grid_info()["row"]) == 5
+        assert int(app.lbl_taichi_device.grid_info()["row"]) == 6
+        assert int(app.combo_taichi_device.grid_info()["row"]) == 6
+
+        # 驗證 Card 2.5 (Advanced Optimizations) 被重新顯示 (pack_info() 正常回傳)
+        pack_meta = app.card_opts.pack_info()
+        assert pack_meta["fill"] == "x"
+
+        # 切換回 NUMBA 引擎
+        app.combo_engine.current(numba_idx)
+        app.on_engine_selected(None)
+
+        # 驗證 Card 2.5 (Advanced Optimizations) 依然被顯示 (pack_info() 正常回傳)
+        pack_meta2 = app.card_opts.pack_info()
+        assert pack_meta2["fill"] == "x"
+
+        # 驗證 Taichi 專屬元件被隱藏 (grid_info() 為空)
+        assert not app.lbl_taichi_arch.grid_info()
+        assert not app.taichi_arch_container.grid_info()
+        assert not app.lbl_taichi_device.grid_info()
+        assert not app.combo_taichi_device.grid_info()
 
     finally:
         root.destroy()

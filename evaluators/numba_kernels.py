@@ -27,11 +27,14 @@ def evaluate_candidate(
     weight_map,
     use_uncovered,
     uncovered_map,
+    sample_step=1,
+    analytical_color_enabled=True,
+    force_opaque=True,
 ):
     """Evaluates a candidate rotated ellipse against the target image channels.
     Uses separate contiguous planar target/canvas channels (unit stride) and an
-    analytical scanline solver to solve the boundary of the ellipse for each row y,
-    eliminating the inner loop 'if' condition and early returns to unlock AVX2 vectorization.
+    analytical scanline solver to solve the boundary of the ellipse for each row y.
+    Supports progressive pixel sampling, analytical optimal color, and overhang tolerance.
     """
     height = target_r.shape[0]
     width = target_r.shape[1]
@@ -44,10 +47,10 @@ def evaluate_candidate(
     y_half = math.sqrt(r_x * r_x * sin_t * sin_t + r_y * r_y * cos_t * cos_t)
 
     if (
-        (x_c - x_half < 0.0)
-        or (x_c + x_half > np.float32(width))
-        or (y_c - y_half < 0.0)
-        or (y_c + y_half > np.float32(height))
+        (x_c - x_half < -10.0)
+        or (x_c + x_half > np.float32(width) + 10.0)
+        or (y_c - y_half < -10.0)
+        or (y_c + y_half > np.float32(height) + 10.0)
     ):
         return np.float32(0.0), np.float32(0.0), np.float32(0.0), np.float32(99999999.0)
 
@@ -67,10 +70,9 @@ def evaluate_candidate(
 
     inv_a = np.float32(1.0 / a) if a > 0 else np.float32(0.0)
 
-    # Validation Pass: Check contour and freeze mask first in a scalar loop with early return
-    # This isolates early exits from the heavy accumulation loop so LLVM can vectorize
-    if check_contour or use_freeze:
-        for y in range(min_y, max_y + 1):
+    # Validation Pass: Check freeze mask first (contour check is integrated into main loop for overhang tolerance)
+    if use_freeze:
+        for y in range(min_y, max_y + 1, sample_step):
             dy = np.float32(y - y_c)
             b_quad = dy * b_coeff
             discriminant = a - dy * dy * inv_rx2_ry2
@@ -81,15 +83,8 @@ def evaluate_candidate(
                 x_start = max(min_x, int(math.ceil(x_c + dx_min)))
                 x_end = min(max_x, int(math.floor(x_c + dx_max)))
 
-                for x in range(x_start, x_end + 1):
-                    if check_contour and alpha_mask[y, x] <= 10.0:
-                        return (
-                            np.float32(0.0),
-                            np.float32(0.0),
-                            np.float32(0.0),
-                            np.float32(99999999.0),
-                        )
-                    if use_freeze and freeze_mask[y, x] == 1:
+                for x in range(x_start, x_end + 1, sample_step):
+                    if freeze_mask[y, x] == 1:
                         return (
                             np.float32(0.0),
                             np.float32(0.0),
@@ -99,6 +94,7 @@ def evaluate_candidate(
 
     # Accumulation Pass variables
     count = 0.0
+    count_transparent = 0.0
     sum_t_r = np.float32(0.0)
     sum_t_g = np.float32(0.0)
     sum_t_b = np.float32(0.0)
@@ -116,122 +112,132 @@ def evaluate_candidate(
     sum_ct_b = np.float32(0.0)
 
     # Heavy Accumulation Loop: Contiguous memory access, zero branching, highly vectorizable (AVX2/FMA3)
-    if not use_weight and not use_uncovered:
-        # Fast Path (No weights)
-        for y in range(min_y, max_y + 1):
-            dy = np.float32(y - y_c)
-            b_quad = dy * b_coeff
-            discriminant = a - dy * dy * inv_rx2_ry2
-            if discriminant >= 0.0:
-                sqrt_d = math.sqrt(discriminant)
-                dx_min = (-b_quad - sqrt_d) * inv_a
-                dx_max = (-b_quad + sqrt_d) * inv_a
-                x_start = max(min_x, int(math.ceil(x_c + dx_min)))
-                x_end = min(max_x, int(math.floor(x_c + dx_max)))
+    for y in range(min_y, max_y + 1, sample_step):
+        dy = np.float32(y - y_c)
+        b_quad = dy * b_coeff
+        discriminant = a - dy * dy * inv_rx2_ry2
+        if discriminant >= 0.0:
+            sqrt_d = math.sqrt(discriminant)
+            dx_min = (-b_quad - sqrt_d) * inv_a
+            dx_max = (-b_quad + sqrt_d) * inv_a
+            x_start = max(min_x, int(math.ceil(x_c + dx_min)))
+            x_end = min(max_x, int(math.floor(x_c + dx_max)))
 
-                for x in range(x_start, x_end + 1):
-                    t_r = target_r[y, x]
-                    t_g = target_g[y, x]
-                    t_b = target_b[y, x]
+            for x in range(x_start, x_end + 1, sample_step):
+                # Check transparent background boundaries
+                if check_contour and alpha_mask[y, x] <= 10.0:
+                    count_transparent += 1.0
+                    continue
 
-                    c_r = canvas_r[y, x]
-                    c_g = canvas_g[y, x]
-                    c_b = canvas_b[y, x]
+                t_r = target_r[y, x]
+                t_g = target_g[y, x]
+                t_b = target_b[y, x]
 
-                    count += np.float32(1.0)
-                    sum_t_r += t_r
-                    sum_t_g += t_g
-                    sum_t_b += t_b
+                c_r = canvas_r[y, x]
+                c_g = canvas_g[y, x]
+                c_b = canvas_b[y, x]
 
-                    sum_c_r += c_r
-                    sum_c_g += c_g
-                    sum_c_b += c_b
+                w = np.float32(1.0)
+                if use_weight:
+                    w = weight_map[y, x]
+                if use_uncovered:
+                    w = w * uncovered_map[y, x]
 
-                    sum_c2_r += c_r * c_r
-                    sum_c2_g += c_g * c_g
-                    sum_c2_b += c_b * c_b
+                count += w
+                sum_t_r += t_r * w
+                sum_t_g += t_g * w
+                sum_t_b += t_b * w
 
-                    sum_ct_r += c_r * t_r
-                    sum_ct_g += c_g * t_g
-                    sum_ct_b += c_b * t_b
-    else:
-        # Slow Path (With weights)
-        for y in range(min_y, max_y + 1):
-            dy = np.float32(y - y_c)
-            b_quad = dy * b_coeff
-            discriminant = a - dy * dy * inv_rx2_ry2
-            if discriminant >= 0.0:
-                sqrt_d = math.sqrt(discriminant)
-                dx_min = (-b_quad - sqrt_d) * inv_a
-                dx_max = (-b_quad + sqrt_d) * inv_a
-                x_start = max(min_x, int(math.ceil(x_c + dx_min)))
-                x_end = min(max_x, int(math.floor(x_c + dx_max)))
+                sum_c_r += c_r * w
+                sum_c_g += c_g * w
+                sum_c_b += c_b * w
 
-                for x in range(x_start, x_end + 1):
-                    t_r = target_r[y, x]
-                    t_g = target_g[y, x]
-                    t_b = target_b[y, x]
+                sum_c2_r += (c_r * c_r) * w
+                sum_c2_g += (c_g * c_g) * w
+                sum_c2_b += (c_b * c_b) * w
 
-                    c_r = canvas_r[y, x]
-                    c_g = canvas_g[y, x]
-                    c_b = canvas_b[y, x]
+                sum_ct_r += (c_r * t_r) * w
+                sum_ct_g += (c_g * t_g) * w
+                sum_ct_b += (c_b * t_b) * w
 
-                    w = np.float32(1.0)
-                    if use_weight:
-                        w = weight_map[y, x]
-                    if use_uncovered:
-                        w = w * uncovered_map[y, x]
-
-                    count += w
-                    sum_t_r += t_r * w
-                    sum_t_g += t_g * w
-                    sum_t_b += t_b * w
-
-                    sum_c_r += c_r * w
-                    sum_c_g += c_g * w
-                    sum_c_b += c_b * w
-
-                    sum_c2_r += (c_r * c_r) * w
-                    sum_c2_g += (c_g * c_g) * w
-                    sum_c2_b += (c_b * c_b) * w
-
-                    sum_ct_r += (c_r * t_r) * w
-                    sum_ct_g += (c_g * t_g) * w
-                    sum_ct_b += (c_b * t_b) * w
-
-    if count == 0:
+    # Overhang Tolerance Check: reject if shape has >1% transparent overhang or no opaque pixels
+    if count == 0.0 or (check_contour and (count_transparent * 100.0 > count)):
         return np.float32(0.0), np.float32(0.0), np.float32(0.0), np.float32(99999999.0)
 
     inv_count = np.float32(1.0) / count
-    avg_r = sum_t_r * inv_count
-    avg_g = sum_t_g * inv_count
-    avg_b = sum_t_b * inv_count
 
     a_f = np.float32(alpha * 0.00392156862745098)
-    a2_minus_2a = np.float32(a_f * a_f - 2.0 * a_f)
-    two_a = np.float32(2.0 * a_f)
-    two_a_one_minus_a = np.float32(2.0 * a_f * (1.0 - a_f))
+    if a_f < np.float32(1e-3):
+        a_f = np.float32(1e-3)
 
-    delta_r = (
-        a2_minus_2a * sum_c2_r
-        + two_a * sum_ct_r
-        + two_a_one_minus_a * avg_r * sum_c_r
-        + a2_minus_2a * avg_r * sum_t_r
-    )
-    delta_g = (
-        a2_minus_2a * sum_c2_g
-        + two_a * sum_ct_g
-        + two_a_one_minus_a * avg_g * sum_c_g
-        + a2_minus_2a * avg_g * sum_t_g
-    )
-    delta_b = (
-        a2_minus_2a * sum_c2_b
-        + two_a * sum_ct_b
-        + two_a_one_minus_a * avg_b * sum_c_b
-        + a2_minus_2a * avg_b * sum_t_b
-    )
+    if analytical_color_enabled:
+        # True Analytical Optimal Color: o = (mean(t) - mean(s)*(1-alpha)) / alpha
+        inv_a = np.float32(1.0) - a_f
+        avg_r = (sum_t_r * inv_count - (sum_c_r * inv_count) * inv_a) / a_f
+        avg_g = (sum_t_g * inv_count - (sum_c_g * inv_count) * inv_a) / a_f
+        avg_b = (sum_t_b * inv_count - (sum_c_b * inv_count) * inv_a) / a_f
+
+        avg_r = max(np.float32(0.0), min(np.float32(255.0), avg_r))
+        avg_g = max(np.float32(0.0), min(np.float32(255.0), avg_g))
+        avg_b = max(np.float32(0.0), min(np.float32(255.0), avg_b))
+    else:
+        avg_r = sum_t_r * inv_count
+        avg_g = sum_t_g * inv_count
+        avg_b = sum_t_b * inv_count
+
+    a2 = a_f * a_f
+    two_a = np.float32(2.0) * a_f
+
+    if analytical_color_enabled:
+        # Exact MSE delta error formula (same as Go-OpenCL)
+        delta_r = a2 * (
+            count * avg_r * avg_r - np.float32(2.0) * avg_r * sum_c_r + sum_c2_r
+        ) - two_a * (avg_r * sum_t_r - avg_r * sum_c_r - sum_ct_r + sum_c2_r)
+        delta_g = a2 * (
+            count * avg_g * avg_g - np.float32(2.0) * avg_g * sum_c_g + sum_c2_g
+        ) - two_a * (avg_g * sum_t_g - avg_g * sum_c_g - sum_ct_g + sum_c2_g)
+        delta_b = a2 * (
+            count * avg_b * avg_b - np.float32(2.0) * avg_b * sum_c_b + sum_c2_b
+        ) - two_a * (avg_b * sum_t_b - avg_b * sum_c_b - sum_ct_b + sum_c2_b)
+    else:
+        # Old formula for target mean
+        a2_minus_2a = a_f * a_f - np.float32(2.0) * a_f
+        two_a_one_minus_a = np.float32(2.0) * a_f * (np.float32(1.0) - a_f)
+        delta_r = (
+            a2_minus_2a * sum_c2_r
+            + two_a * sum_ct_r
+            + two_a_one_minus_a * avg_r * sum_c_r
+            + a2_minus_2a * avg_r * sum_t_r
+        )
+        delta_g = (
+            a2_minus_2a * sum_c2_g
+            + two_a * sum_ct_g
+            + two_a_one_minus_a * avg_g * sum_c_g
+            + a2_minus_2a * avg_g * sum_t_g
+        )
+        delta_b = (
+            a2_minus_2a * sum_c2_b
+            + two_a * sum_ct_b
+            + two_a_one_minus_a * avg_b * sum_c_b
+            + a2_minus_2a * avg_b * sum_t_b
+        )
 
     total_delta_mse = delta_r + delta_g + delta_b
+
+    # Scale delta error to account for the stride of sample_step
+    if sample_step > 1:
+        total_delta_mse *= np.float32(sample_step * sample_step)
+
+    # Soft penalty for allowed overhang
+    if count_transparent > 0.0:
+        penalty = (
+            a2
+            * np.float32(count_transparent)
+            * (avg_r * avg_r + avg_g * avg_g + avg_b * avg_b + np.float32(65025.0))
+        )
+        if sample_step > 1:
+            penalty *= np.float32(sample_step * sample_step)
+        total_delta_mse += penalty
 
     return avg_r, avg_g, avg_b, total_delta_mse
 
@@ -367,6 +373,9 @@ def parallel_random_search(
     weight_map=None,
     use_uncovered=False,
     uncovered_map=None,
+    sample_step=1,
+    analytical_color_enabled=True,
+    force_opaque=True,
 ):
 
     if use_importance and error_prob.shape[0] > 1:
@@ -401,7 +410,11 @@ def parallel_random_search(
     r_x_arr = np.random.uniform(2.0, max_r, num_candidates).astype(np.float32)
     r_y_arr = np.random.uniform(2.0, max_r, num_candidates).astype(np.float32)
     theta_arr = np.random.uniform(0.0, 2.0 * math.pi, num_candidates).astype(np.float32)
-    alpha_arr = np.full(num_candidates, 255.0, dtype=np.float32)
+
+    if force_opaque:
+        alpha_arr = np.full(num_candidates, 255.0, dtype=np.float32)
+    else:
+        alpha_arr = np.random.uniform(76.0, 255.0, num_candidates).astype(np.float32)
 
     deltas = np.zeros(num_candidates, dtype=np.float32)
     colors = np.zeros((num_candidates, 3), dtype=np.float32)
@@ -428,6 +441,9 @@ def parallel_random_search(
             weight_map,
             use_uncovered,
             uncovered_map,
+            sample_step,
+            analytical_color_enabled,
+            force_opaque,
         )
         deltas[i] = np.float32(delta)
         colors[i, 0] = np.float32(r)
@@ -481,6 +497,9 @@ def serial_hill_climb(
     weight_map=None,
     use_uncovered=False,
     uncovered_map=None,
+    sample_step=1,
+    analytical_color_enabled=True,
+    force_opaque=True,
 ):
     curr_x_c = np.float32(x_c)
     curr_y_c = np.float32(y_c)
@@ -516,7 +535,11 @@ def serial_hill_climb(
             min(max_r_f, curr_r_y + np.float32(np.random.normal(0.0, 6.0 * scale))),
         )
         ntheta = curr_theta + np.float32(np.random.normal(0.0, 0.25 * scale))
-        nalpha = 255
+        nalpha = curr_alpha
+        if not force_opaque:
+            nalpha = max(
+                76, min(255, int(curr_alpha + np.random.normal(0.0, 15.0 * scale)))
+            )
 
         nr, ng, nb, delta = evaluate_candidate(
             target_r,
@@ -539,6 +562,9 @@ def serial_hill_climb(
             weight_map,
             use_uncovered,
             uncovered_map,
+            sample_step,
+            analytical_color_enabled,
+            force_opaque,
         )
 
         diff = delta - curr_delta

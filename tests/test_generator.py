@@ -199,3 +199,59 @@ def test_redundant_layer_consolidation():
     assert res[2]["data"][1] == 8.0
     assert res[2]["data"][2] == 0.01
     assert res[2]["data"][3] == 0.01
+
+
+def test_generator_resume(temp_image_path):
+    """測試續作功能：從現有 JSON 開始，成功繼續生成 shape 到設定的上限。"""
+    with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f1:
+        out_path1 = f1.name
+    with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f2:
+        out_path2 = f2.name
+
+    os.remove(out_path1)
+    os.remove(out_path2)
+
+    try:
+        # 1. 產生初始 3 個圖層 (1個背景矩形 + 2個橢圓)
+        res1 = run_generator(
+            image_path=temp_image_path,
+            output_path=out_path1,
+            layers_limit=2,
+            candidates_limit=20,
+            steps_limit=5,
+            engine_name="PURE_PYTHON",
+            opt_settings={"image_pyramid": {"enabled": False}},
+        )
+        assert res1 == 0
+        assert os.path.exists(out_path1)
+
+        with open(out_path1, "r", encoding="utf-8") as f:
+            data1 = json.load(f)
+        shapes1 = data1["shapes"]
+        assert len(shapes1) == 3  # 1 background + 2 ellipses
+
+        # 2. 從該 JSON 續作，設定目標為 4 個圖層 (1個背景矩形 + 3個橢圓)
+        res2 = run_generator(
+            image_path=temp_image_path,
+            output_path=out_path2,
+            layers_limit=3,
+            candidates_limit=20,
+            steps_limit=5,
+            engine_name="PURE_PYTHON",
+            resume_path=out_path1,
+            opt_settings={"image_pyramid": {"enabled": False}},
+        )
+        assert res2 == 0
+        assert os.path.exists(out_path2)
+
+        with open(out_path2, "r", encoding="utf-8") as f:
+            data2 = json.load(f)
+        shapes2 = data2["shapes"]
+        # 應該包含 1 背景 + 3 橢圓 = 4 個 shape
+        assert len(shapes2) == 4
+
+    finally:
+        if os.path.exists(out_path1):
+            os.remove(out_path1)
+        if os.path.exists(out_path2):
+            os.remove(out_path2)

@@ -74,7 +74,7 @@ def get_boundary_weight_map(alpha_mask, bias):
 def scale_shapes_list(shapes, factor):
     """Scale all shape coordinates and radii by the given factor."""
     for s in shapes:
-        if s["type"] == 32:
+        if s["type"] in (16, 32):
             s["data"][0] = float(s["data"][0] * factor)  # X
             s["data"][1] = float(s["data"][1] * factor)  # Y
             s["data"][2] = float(s["data"][2] * factor)  # rX
@@ -109,7 +109,7 @@ def rebuild_uncovered_map_from_shapes(
     """Rebuilds the uncovered map by drawing all active shapes onto a fresh mask."""
     uncovered_map = evaluator.init_uncovered_map(width, height, has_alpha, bias)
     for s in shapes_list:
-        if s["type"] == 32:
+        if s["type"] in (16, 32):
             data = s["data"]
             x_c, y_c, r_x, r_y, theta_deg = data
             theta = math.radians(theta_deg)
@@ -130,6 +130,7 @@ def run_generator(
     taichi_arch=None,
     taichi_device_id=None,
     use_pure_gpu=False,
+    resume_path=None,
 ):
     if not os.path.exists(image_path):
         print(f"ERROR: Image not found: {image_path}", file=sys.stderr)
@@ -197,7 +198,9 @@ def run_generator(
                 )
 
     opt_pyramid = opt_settings.get("image_pyramid", {})
-    pyramid_enabled = opt_pyramid.get("enabled", False)
+    pyramid_enabled_raw = opt_pyramid.get("enabled", False)
+    progressive_sampling_enabled = pyramid_enabled_raw
+    pyramid_enabled = False
     pyramid_layers_threshold = opt_pyramid.get("pyramid_layers_threshold", 500)
     pyramid_stagnation = opt_pyramid.get("stagnation_threshold", 0.005)
 
@@ -206,7 +209,9 @@ def run_generator(
     importance_interval = opt_importance.get("update_interval", 10)
 
     opt_sa = opt_settings.get("simulated_annealing", {})
-    sa_enabled = opt_sa.get("enabled", False)
+    sa_enabled_raw = opt_sa.get("enabled", False)
+    analytical_color_enabled = sa_enabled_raw
+    sa_enabled = False
     sa_initial_temp = opt_sa.get("initial_temperature", 5000.0)
     sa_cooling_rate = opt_sa.get("cooling_rate", 0.95)
 
@@ -230,6 +235,26 @@ def run_generator(
     early_threshold = opt_early.get("redundancy_threshold", 0.75)
     early_step = opt_early.get("convergence_step", 50)
 
+    resume_shapes = []
+    if resume_path and os.path.exists(resume_path):
+        try:
+            with open(resume_path, "r", encoding="utf-8") as f:
+                res_data = json.load(f)
+                resume_shapes = res_data.get("shapes", [])
+                print(
+                    f"[Engine] Loaded {len(resume_shapes)} shapes from resume JSON: {resume_path}"
+                )
+        except Exception as e:
+            print(
+                f"Warning: Failed to load resume JSON {resume_path}: {e}",
+                file=sys.stderr,
+            )
+
+    if resume_shapes:
+        pyramid_enabled = False
+        progressive_sampling_enabled = False
+        print("[Engine] Resume mode active. Progressive sampling disabled.")
+
     if profile_path:
         print(f"Profile: {os.path.basename(profile_path)}")
     print(f"Target: {image_path} -> Output: {output_path}")
@@ -240,6 +265,10 @@ def run_generator(
     has_alpha = img_raw.mode in ("RGBA", "LA") or (
         img_raw.mode == "P" and "transparency" in img_raw.info
     )
+    if resume_shapes:
+        header = resume_shapes[0]
+        if header.get("type") == 1 and len(header.get("color", [])) >= 4:
+            has_alpha = header["color"][3] <= 0
     if has_alpha:
         img = img_raw.convert("RGBA")
         print("Detected transparent background. Enabling Alpha-guided Ambient Padding.")
@@ -290,6 +319,14 @@ def run_generator(
         avg_r = np.mean(target[:, :, 0])
         avg_g = np.mean(target[:, :, 1])
         avg_b = np.mean(target[:, :, 2])
+
+    if resume_shapes:
+        header = resume_shapes[0]
+        if header.get("type") == 1 and len(header.get("color", [])) >= 4:
+            avg_r_res, avg_g_res, avg_b_res, avg_a_res = header["color"]
+            avg_r = float(avg_r_res)
+            avg_g = float(avg_g_res)
+            avg_b = float(avg_b_res)
 
     # Image pyramid multi-resolution preparation
     target_1_1 = target.copy()
@@ -413,6 +450,24 @@ def run_generator(
             width, height, has_alpha, uncovered_bias
         )
 
+    if resume_shapes:
+        for s in resume_shapes[1:]:
+            if s.get("type") in (16, 32):
+                shapes_list.append(s)
+                x_c, y_c, r_x, r_y, theta_deg = s["data"]
+                r, g, b, alpha = s["color"]
+                theta = math.radians(theta_deg)
+                evaluator.draw_shape_on_canvas(
+                    canvas, x_c, y_c, r_x, r_y, theta, r, g, b, alpha
+                )
+                if uncovered_enabled and uncovered_map is not None:
+                    evaluator.update_uncovered_mask(
+                        uncovered_map, x_c, y_c, r_x, r_y, theta
+                    )
+        print(
+            f"[Engine] Successfully resumed canvas state with {len(shapes_list) - 1} shapes."
+        )
+
     base_max_r = max(10.0, min(width, height) / 3.0)
 
     gc.disable()
@@ -436,6 +491,8 @@ def run_generator(
     prev_valid_layers = 0
     early_triggered = False
 
+    starting_layer_count = len(shapes_list) - 1
+
     try:
         while (len(shapes_list) - 1 < layers) and (attempts < max_attempts):
             attempts += 1
@@ -446,6 +503,17 @@ def run_generator(
                 current_max_r = max(
                     decay_min_max_r, base_max_r * (1.0 - progress_ratio**2)
                 )
+
+            # Calculate dynamic sample_step for progressive pixel sampling
+            progress_ratio = (len(shapes_list) - 1) / layers if layers > 0 else 0.0
+            sample_step = 1
+            if progressive_sampling_enabled:
+                if progress_ratio < 0.25:
+                    sample_step = 4
+                elif progress_ratio < 0.50:
+                    sample_step = 2
+
+            force_opaque = opt_settings.get("force_opaque", True)
 
             eval_params = {
                 "optimization_steps": steps,
@@ -463,6 +531,9 @@ def run_generator(
                 "use_uncovered": uncovered_enabled,
                 "uncovered_map": uncovered_map,
                 "use_pure_gpu": use_pure_gpu,
+                "sample_step": sample_step,
+                "analytical_color_enabled": analytical_color_enabled,
+                "force_opaque": force_opaque,
             }
 
             best_shape_params, delta = evaluator.search_best_shape(
@@ -772,7 +843,8 @@ def run_generator(
 
             now = time.time()
             elapsed = now - start_time
-            speed = current_layer / elapsed if elapsed > 0 else 0.0
+            generated_in_session = current_layer - starting_layer_count
+            speed = generated_in_session / elapsed if elapsed > 0 else 0.0
             eta = (layers - current_layer) / speed if speed > 0 else 0.0
 
             if progress_callback:
@@ -892,6 +964,11 @@ def main():
         choices=["NUMBA", "TAICHI", "PURE_PYTHON"],
         help="Computational engine plugin to use (NUMBA, TAICHI, PURE_PYTHON)",
     )
+    parser.add_argument(
+        "--resume",
+        "-resume",
+        help="Path to resume JSON checkpoint file",
+    )
 
     args = parser.parse_args()
     return run_generator(
@@ -902,6 +979,7 @@ def main():
         candidates_limit=args.candidates,
         steps_limit=args.steps,
         engine_name=args.engine,
+        resume_path=args.resume,
     )
 
 

@@ -582,7 +582,7 @@ class PurePythonEvaluator(BaseEvaluator):
             canvas[:, :, 3] = avg_a
 
         for s in shapes_list:
-            if s["type"] == 32:
+            if s["type"] in (16, 32):
                 data = s["data"]
                 color = s["color"]
                 x_c, y_c, r_x, r_y, theta_deg = data

@@ -56,6 +56,61 @@ def get_project_root():
     return os.path.dirname(os.path.abspath(__file__))
 
 
+# --- Lightweight Custom Tooltip Helper ---
+class Tooltip:
+    def __init__(self, widget, text):
+        self.widget = widget
+        self.text = text
+        self.tip_window = None
+        self.id = None
+        self.widget.bind("<Enter>", self.enter)
+        self.widget.bind("<Leave>", self.leave)
+        self.widget.bind("<ButtonPress>", self.leave)
+
+    def enter(self, event=None):
+        self.schedule()
+
+    def leave(self, event=None):
+        self.unschedule()
+        self.hide_tip()
+
+    def schedule(self):
+        self.unschedule()
+        self.id = self.widget.after(500, self.show_tip)
+
+    def unschedule(self):
+        id_ = self.id
+        self.id = None
+        if id_:
+            self.widget.after_cancel(id_)
+
+    def show_tip(self, event=None):
+        x = self.widget.winfo_rootx() + 25
+        y = self.widget.winfo_rooty() + 20
+        self.tip_window = tw = tk.Toplevel(self.widget)
+        tw.wm_overrideredirect(1)
+        tw.wm_geometry(f"+{x}+{y}")
+        label = tk.Label(
+            tw,
+            text=self.text,
+            justify="left",
+            background="#2e2e2e",
+            foreground="#e0e0e0",
+            relief="solid",
+            border=1,
+            font=("Microsoft JhengHei", 9),
+            padx=8,
+            pady=6,
+        )
+        label.pack(ipadx=1)
+
+    def hide_tip(self):
+        tw = self.tip_window
+        self.tip_window = None
+        if tw:
+            tw.destroy()
+
+
 # --- Premium Dark Studio GUI Application ---
 class ForzaStudioGUI:
     def __init__(self, root, preload_file=None):
@@ -66,7 +121,7 @@ class ForzaStudioGUI:
             and EvaluatorFactory is not None
         ):
             try:
-                engines = EvaluatorFactory.get_available_evaluators()
+                engines = list(EvaluatorFactory.get_available_evaluators())
                 print(
                     "===================================================================="
                 )
@@ -76,11 +131,13 @@ class ForzaStudioGUI:
                 )
                 print("\n[Diagnostic] Computational Engine Plugins Status:")
                 for e in engines:
-                    status_str = (
-                        "[ENABLED]"
-                        if e["available"]
-                        else f"[DISABLED] (Missing library, run: pip install {'numba' if e['code'] == 'NUMBA' else 'taichi'} to enable)"
-                    )
+                    if e["available"]:
+                        status_str = "[ENABLED]"
+                    else:
+                        if e["code"] == "GO_OPENCL":
+                            status_str = "[DISABLED] (Missing binary at tools/bin/forza-painter-geometrize-go.exe)"
+                        else:
+                            status_str = f"[DISABLED] (Missing library, run: pip install {'numba' if e['code'] == 'NUMBA' else 'taichi'} to enable)"
                     print(
                         f" - {e['name']:<32} | Code: {e['code']:<12} | Status: {status_str}"
                     )
@@ -646,6 +703,11 @@ class ForzaStudioGUI:
         ):
             self.available_evaluators = EvaluatorFactory.get_available_evaluators()
         else:
+            # Fallback mock setup if library not available (e.g. frozen PyInstaller build)
+            go_binary_path = os.path.join(
+                get_project_root(), "tools", "bin", "forza-painter-geometrize-go.exe"
+            )
+            has_go = os.path.exists(go_binary_path)
             self.available_evaluators = [
                 {
                     "code": "NUMBA",
@@ -656,6 +718,11 @@ class ForzaStudioGUI:
                     "code": "TAICHI",
                     "name": "Taichi JIT (GPU, High-perf)",
                     "available": False,
+                },
+                {
+                    "code": "GO_OPENCL",
+                    "name": "Go-OpenCL (GPU, Fastest)",
+                    "available": has_go,
                 },
                 {
                     "code": "PURE_PYTHON",
@@ -695,11 +762,13 @@ class ForzaStudioGUI:
         self.lbl_taichi_arch.grid(row=5, column=0, sticky="w", pady=4)
 
         # Container to place Combobox and Hybrid checkbox side-by-side perfectly
-        taichi_arch_container = tk.Frame(params_body, bg=self.bg_card)
-        taichi_arch_container.grid(row=5, column=1, sticky="we", pady=4, padx=(10, 0))
+        self.taichi_arch_container = tk.Frame(params_body, bg=self.bg_card)
+        self.taichi_arch_container.grid(
+            row=5, column=1, sticky="we", pady=4, padx=(10, 0)
+        )
 
         self.combo_taichi_arch = ttk.Combobox(
-            taichi_arch_container,
+            self.taichi_arch_container,
             values=["Vulkan", "CUDA", "OpenGL", "CPU"],
             state="readonly",
             width=18,
@@ -709,7 +778,7 @@ class ForzaStudioGUI:
 
         self.var_hybrid = tk.BooleanVar(value=True)
         self.chk_hybrid = tk.Checkbutton(
-            taichi_arch_container,
+            self.taichi_arch_container,
             text="啟用混合模式 (Hybrid)",
             variable=self.var_hybrid,
             font=("Microsoft JhengHei", 9),
@@ -811,16 +880,16 @@ class ForzaStudioGUI:
         self.on_profile_selected(None)
 
         # Card 2.5: Advanced Optimization Algorithms
-        card_opts = ttk.Frame(left_panel, style="Card.TFrame")
-        card_opts.pack(fill="x", pady=(0, 8), ipady=4)
+        self.card_opts = ttk.Frame(left_panel, style="Card.TFrame")
+        self.card_opts.pack(fill="x", pady=(0, 8), ipady=4)
 
         self.create_card_header(
-            card_opts,
+            self.card_opts,
             "2.5 ADVANCED OPTIMIZATIONS",
             "Toggle high-performance optimization algorithms",
         )
 
-        opts_body = tk.Frame(card_opts, bg=self.bg_card)
+        opts_body = tk.Frame(self.card_opts, bg=self.bg_card)
         opts_body.pack(fill="x", padx=15, pady=5)
 
         # 設置兩欄平分寬度
@@ -848,7 +917,7 @@ class ForzaStudioGUI:
 
         self.chk_pyramid = tk.Checkbutton(
             opts_body,
-            text="影像金字塔優化 (Image Pyramid)",
+            text="漸進式像素採樣 (Progressive Sampling)",
             variable=self.var_pyramid,
             font=("Microsoft JhengHei", 9),
             bg=self.bg_card,
@@ -908,7 +977,7 @@ class ForzaStudioGUI:
 
         self.chk_annealing = tk.Checkbutton(
             opts_body,
-            text="模擬退火演算法 (Annealing)",
+            text="解析解最佳色彩 (Analytical Color)",
             variable=self.var_annealing,
             font=("Microsoft JhengHei", 9),
             bg=self.bg_card,
@@ -935,6 +1004,32 @@ class ForzaStudioGUI:
             command=self.on_opt_changed,
         )
         self.chk_decay.grid(row=2, column=1, sticky="w", pady=3)
+
+        # Bind Tooltips for Step 2.5
+        Tooltip(
+            self.chk_pyramid,
+            "【漸進式像素採樣】\n在生成前期（形狀較大時）跳過部分像素以大幅提速，隨進度逐漸恢復全像素精細評估。",
+        )
+        Tooltip(
+            self.chk_freeze,
+            "【動態凍結遮罩】\n自動鎖定已經完美匹配的像素區域，避開重複評估以大幅減少運算負擔。",
+        )
+        Tooltip(
+            self.chk_importance,
+            "【錯誤驅動重點採樣】\n依據殘餘誤差圖進行重點採樣，將隨機橢圓生成優先配置於高誤差區域。",
+        )
+        Tooltip(
+            self.chk_weight,
+            "【區域誤差加權】\n根據像素的空間特徵（如前景或邊緣）對誤差進行加權，提升邊緣清晰度。",
+        )
+        Tooltip(
+            self.chk_annealing,
+            "【解析解最佳色彩】\n在評估幾何時利用解析解直接算出最優顏色，使爬山收斂速度倍增，無需隨機模擬退火。",
+        )
+        Tooltip(
+            self.chk_decay,
+            "【衰減式形狀限縮】\n隨著貼圖數量增加，動態縮小橢圓最大半徑以避免破壞已有的微小細節。",
+        )
 
         # --- RIGHT PANEL CARDS ---
         # Card 3: Action Panel (Double-Button Execution) - Moved to Right Panel Bottom
@@ -1120,17 +1215,31 @@ class ForzaStudioGUI:
         )
 
         if engine_code == "TAICHI":
+            # 顯示 Taichi 專屬元件
+            self.lbl_taichi_arch.grid(row=5, column=0, sticky="w", pady=4)
+            self.taichi_arch_container.grid(
+                row=5, column=1, sticky="we", pady=4, padx=(10, 0)
+            )
+            self.lbl_taichi_device.grid(row=6, column=0, sticky="w", pady=4)
+            self.combo_taichi_device.grid(
+                row=6, column=1, sticky="we", pady=4, padx=(10, 0)
+            )
+
             self.combo_taichi_arch.configure(state="readonly")
             self.combo_taichi_device.configure(state="readonly")
             self.chk_hybrid.configure(state="normal")
-        elif engine_code == "NUMBA":
-            self.combo_taichi_arch.configure(state="disabled")
-            self.combo_taichi_device.configure(state="disabled")
-            self.chk_hybrid.configure(state="disabled")
         else:
-            self.combo_taichi_arch.configure(state="disabled")
-            self.combo_taichi_device.configure(state="disabled")
-            self.chk_hybrid.configure(state="disabled")
+            # 隱藏 Taichi 專屬元件
+            self.lbl_taichi_arch.grid_remove()
+            self.taichi_arch_container.grid_remove()
+            self.lbl_taichi_device.grid_remove()
+            self.combo_taichi_device.grid_remove()
+
+        # 當選擇 Go 引擎時，隱藏 2.5 的六個優化選項卡片而不只是停用它們
+        if engine_code == "GO_OPENCL":
+            self.card_opts.pack_forget()
+        else:
+            self.card_opts.pack(fill="x", pady=(0, 8), ipady=4)
 
     def draw_cyber_placeholder(self, text="STUDIO READY"):
         """Draws a clean, dark tech cyberpunk graphic when no active simulation is running."""
@@ -1952,15 +2061,20 @@ class ForzaStudioGUI:
             return
 
         img_path = self.entry_file_path.get().strip()
+        resume_path = None
 
         # If the input path is a JSON file but we have a stored image path, use the stored image path instead
         if img_path.lower().endswith(".json"):
+            resume_path = img_path
             if getattr(self, "last_generated_image_path", None) and os.path.exists(
                 self.last_generated_image_path
             ):
                 img_path = self.last_generated_image_path
             else:
-                messagebox.showerror("Error", f"Input file not found:\n{img_path}")
+                messagebox.showerror(
+                    "Error",
+                    "Please select or generate from the original image first, then drop the JSON to resume.",
+                )
                 return
         else:
             # Store the current image path for future regeneration
@@ -2074,26 +2188,42 @@ class ForzaStudioGUI:
         use_pure_gpu = not self.var_hybrid.get()
 
         # Launch Worker Thread in Safe Wrapper to prevent silent thread deaths
-        self.active_thread = threading.Thread(
-            target=self.safe_run_generator,
-            args=(
-                img_path,
-                output_json,
-                profile_path,
-                layers,
-                candidates,
-                steps,
-                generator_cb,
-                self.opt_settings,
-                engine_code,
-            ),
-            kwargs={
-                "taichi_arch": taichi_arch,
-                "taichi_device_id": taichi_device_id,
-                "use_pure_gpu": use_pure_gpu,
-            },
-            daemon=True,
-        )
+        if engine_code == "GO_OPENCL":
+            self.active_thread = threading.Thread(
+                target=self.safe_run_go_generator,
+                args=(
+                    img_path,
+                    output_json,
+                    profile_path,
+                    layers,
+                ),
+                kwargs={
+                    "resume_path": resume_path,
+                },
+                daemon=True,
+            )
+        else:
+            self.active_thread = threading.Thread(
+                target=self.safe_run_generator,
+                args=(
+                    img_path,
+                    output_json,
+                    profile_path,
+                    layers,
+                    candidates,
+                    steps,
+                    generator_cb,
+                    self.opt_settings,
+                    engine_code,
+                ),
+                kwargs={
+                    "taichi_arch": taichi_arch,
+                    "taichi_device_id": taichi_device_id,
+                    "use_pure_gpu": use_pure_gpu,
+                    "resume_path": resume_path,
+                },
+                daemon=True,
+            )
         self.active_thread.start()
 
     def safe_run_generator(self, *args, **kwargs):
@@ -2117,6 +2247,91 @@ class ForzaStudioGUI:
             err_msg = f"{e}\n\n[Traceback]\n{tb}"
             self.root.after(0, lambda msg=err_msg: self.on_generation_failed(msg))
 
+    def safe_run_go_generator(
+        self, img_path, output_json, profile_path, layers, resume_path=None
+    ):
+        """安全地調用 Go-OpenCL 二進位生成器（已標準化重構為 Evaluator 插件）"""
+        try:
+            # 獲取當前選定的 GoOpenCLEvaluator 類別並實例化之
+            engine_idx = self.combo_engine.current()
+            evaluator_cls = self.available_evaluators[engine_idx]["class"]
+
+            # 使用目前的 canvas 圖像尺寸來實例化，以維持 BaseEvaluator 行為
+            arr_shape = (2, 2, 3)
+            if self.latest_canvas_array is not None:
+                arr_shape = self.latest_canvas_array.shape
+
+            evaluator = evaluator_cls(
+                self.latest_canvas_array
+                if self.latest_canvas_array is not None
+                else np.zeros(arr_shape, dtype=np.float32)
+            )
+
+            self.current_go_evaluator = evaluator
+
+            def on_progress(curr, total, speed, eta):
+                with self.preview_image_lock:
+                    self.latest_progress = (curr, total, speed, eta)
+
+            def on_log(msg):
+                self.log_to_console(msg)
+
+            def on_preview(arr):
+                with self.preview_image_lock:
+                    self.latest_canvas_array = arr
+                    self.need_preview_update = True
+
+            def on_success():
+                pass
+
+            def on_failed(msg):
+                self.root.after(0, lambda: self.on_generation_failed(msg))
+
+            evaluator.run_generator(
+                img_path=img_path,
+                output_json=output_json,
+                profile_path=profile_path,
+                layers=layers,
+                resume_path=resume_path,
+                progress_callback=on_progress,
+                log_callback=on_log,
+                preview_callback=on_preview,
+                on_success_callback=on_success,
+                on_failed_callback=on_failed,
+            )
+
+        except Exception as e:
+            import traceback
+
+            tb = traceback.format_exc()
+            err_msg = f"{e}\n\n[Traceback]\n{tb}"
+            self.root.after(0, lambda msg=err_msg: self.on_generation_failed(msg))
+        finally:
+            self.current_go_evaluator = None
+
+    def kill_generator_process(self):
+        """結束執行中的 Go 執行檔行程"""
+        proc = getattr(self, "generator_proc", None)
+        if proc is not None:
+            try:
+                if sys.platform == "win32":
+                    import subprocess
+
+                    subprocess.run(
+                        ["taskkill", "/PID", str(proc.pid), "/T", "/F"],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        creationflags=subprocess.CREATE_NO_WINDOW,
+                        timeout=5,
+                    )
+                else:
+                    proc.terminate()
+            except Exception:
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+
     def on_generation_failed(self, error_message):
         """當生圖引擎異常崩潰時，優雅地通知使用者並完全重置 UI 狀態"""
         self.is_generating = False
@@ -2139,6 +2354,13 @@ class ForzaStudioGUI:
             return
 
         self.cancel_generation_flag = True
+
+        # 如果當前有運行中的 Go 評估器，調用它的 stop_generator 方法
+        go_eval = getattr(self, "current_go_evaluator", None)
+        if go_eval:
+            go_eval.stop_generator()
+        else:
+            self.kill_generator_process()
         self.log_to_console(
             "\n[System] Stop requested. Gracefully finalizing current layer and saving progress...\n"
         )
