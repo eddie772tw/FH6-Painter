@@ -128,7 +128,7 @@ def test_go_opencl_evaluator():
     target = np.zeros((16, 16, 3), dtype=np.float32)
     evaluator = GoOpenCLEvaluator(target)
 
-    assert evaluator.get_name() == "Go-OpenCL GPU (Binary Engine)"
+    assert evaluator.get_name() == "Go OpenCL (GPU, Fastest)"
     assert evaluator.get_device_type() == "GPU"
 
     # 測試 JIT 方法應拋出 NotImplementedError
