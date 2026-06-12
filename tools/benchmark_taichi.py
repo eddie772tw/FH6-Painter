@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import sys
 import os
+os.environ["TI_ENABLE_VERSION_CHECK"] = "0"
 import time
 import json
 import platform
@@ -37,11 +38,30 @@ def get_cpu_model():
     return platform.processor() or "Unknown CPU"
 
 def get_gpu_list():
-    """Reads GPU model description using native winreg on Windows."""
+    """偵測系統中的顯示卡列表 (支援 winreg 登錄檔、wmic 與 PowerShell 多重防禦機制，並過濾虛擬顯卡)"""
     gpus = []
+
+    # 定義排除關鍵字 (不區分大小寫)
+    exclude_keywords = [
+        "display adapter",
+        "parsec",
+        "remote",
+        "virtual",
+        "indirect",
+        "mirror",
+    ]
+
+    def is_valid_gpu(name):
+        if not name:
+            return False
+        name_lower = name.lower()
+        return not any(kw in name_lower for kw in exclude_keywords)
+
     if platform.system() == "Windows":
+        # 1. 優先採用 Python 原生 winreg 讀取登錄檔
         try:
             import winreg
+
             path = r"SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}"
             with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, path) as key:
                 for i in range(winreg.QueryInfoKey(key)[0]):
@@ -49,14 +69,66 @@ def get_gpu_list():
                         subkey_name = winreg.EnumKey(key, i)
                         if subkey_name.isdigit():
                             with winreg.OpenKey(key, subkey_name) as subkey:
-                                gpu_name, _ = winreg.QueryValueEx(subkey, "DriverDesc")
-                                if gpu_name and gpu_name not in gpus:
-                                    gpus.append(gpu_name)
+                                try:
+                                    gpu_name, _ = winreg.QueryValueEx(
+                                        subkey, "DriverDesc"
+                                    )
+                                    if (
+                                        gpu_name
+                                        and gpu_name not in gpus
+                                        and is_valid_gpu(gpu_name)
+                                    ):
+                                        gpus.append(gpu_name)
+                                except Exception:
+                                    pass
                     except Exception:
                         pass
         except Exception:
             pass
-    return gpus if gpus else ["Unknown GPU Device"]
+
+        # 2. 次要備援方案：wmic 指令
+        if not gpus:
+            try:
+                import subprocess
+
+                out = subprocess.check_output(
+                    "wmic path win32_VideoController get name",
+                    shell=True,
+                    stderr=subprocess.DEVNULL,
+                ).decode("utf-8", errors="ignore")
+                lines = [line.strip() for line in out.split("\n") if line.strip()]
+                if len(lines) > 1:
+                    for l in lines[1:]:
+                        if (
+                            l
+                            and "name" not in l.lower()
+                            and l not in gpus
+                            and is_valid_gpu(l)
+                        ):
+                            gpus.append(l)
+            except Exception:
+                pass
+
+        # 3. 終極備援方案：PowerShell
+        if not gpus:
+            try:
+                import subprocess
+
+                out = subprocess.check_output(
+                    'powershell -Command "Get-CimInstance Win32_VideoController | Select-Object -ExpandProperty Name"',
+                    shell=True,
+                    stderr=subprocess.DEVNULL,
+                ).decode("utf-8", errors="ignore")
+                lines = [line.strip() for line in out.split("\n") if line.strip()]
+                for l in lines:
+                    if l and l not in gpus and is_valid_gpu(l):
+                        gpus.append(l)
+            except Exception:
+                pass
+
+    if not gpus:
+        gpus = ["Default GPU (Device 0)"]
+    return gpus
 
 def get_git_info():
     """Gathers current Git branch, commit hash, and last message summary."""
@@ -217,6 +289,8 @@ def run_benchmarks():
                 continue
             
             code = e["code"]
+            if code == "PURE_PYTHON":
+                continue
             if code == "TAICHI":
                 try:
                     eval_inst = EvaluatorFactory.create_evaluator(
@@ -228,7 +302,7 @@ def run_benchmarks():
                     if eval_inst.is_available():
                         # For Taichi, we benchmark both Hybrid Mode and Pure GPU Mode sharing the same instance
                         for mode in [True, False]:
-                            mode_str = "Pure GPU Mode" if mode else "Hybrid Mode"
+                            mode_str = "CPU-Guided GPU Batch (Optimized)" if mode else "CPU Numba Hybrid (Optimized)"
                             active_test_configs.append({
                                 "id": f"TAICHI_{'PURE' if mode else 'HYBRID'}",
                                 "name": f"Taichi JIT ({eval_inst.get_name().split('(')[-1].rstrip(')')}, {mode_str})",

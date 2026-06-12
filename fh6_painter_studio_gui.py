@@ -751,10 +751,10 @@ class ForzaStudioGUI:
         self.combo_engine.current(default_idx)
         self.combo_engine.bind("<<ComboboxSelected>>", self.on_engine_selected)
 
-        # Taichi 後端模式 (Vulkan, CUDA, OpenGL, CPU)
+        # Taichi 後端模式 (僅支援 Vulkan)
         self.lbl_taichi_arch = tk.Label(
             params_body,
-            text="Taichi Arch GPU Mode:",
+            text="Taichi GPU Backend:",
             font=("Microsoft JhengHei", 9),
             bg=self.bg_card,
             fg=self.fg_secondary,
@@ -769,8 +769,8 @@ class ForzaStudioGUI:
 
         self.combo_taichi_arch = ttk.Combobox(
             self.taichi_arch_container,
-            values=["Vulkan", "CUDA", "OpenGL", "CPU"],
-            state="readonly",
+            values=["Vulkan"],
+            state="disabled",
             width=18,
         )
         self.combo_taichi_arch.pack(side="left", fill="x", expand=True)
@@ -1225,7 +1225,7 @@ class ForzaStudioGUI:
                 row=6, column=1, sticky="we", pady=4, padx=(10, 0)
             )
 
-            self.combo_taichi_arch.configure(state="readonly")
+            self.combo_taichi_arch.configure(state="disabled")
             self.combo_taichi_device.configure(state="readonly")
             self.chk_hybrid.configure(state="normal")
         else:
@@ -2344,7 +2344,7 @@ class ForzaStudioGUI:
             "Livery Engine Error",
             f"An error occurred within the livery generation engine:\n\n{error_message}\n"
             "Suggestions:\n"
-            "1. If using Taichi, try switching 'Taichi Arch GPU Mode' to 'Vulkan' (Recommended) or 'CPU'.\n"
+            "1. If using Taichi JIT, ensure your GPU supports Vulkan (required).\n"
             "2. Switch 'JIT Engine Plugin' to 'Numba JIT' for maximum baseline compatibility.",
         )
 

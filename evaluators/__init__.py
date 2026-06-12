@@ -56,15 +56,17 @@ class EvaluatorFactory:
 
         from evaluators.taichi_evaluator import HAS_TAICHI
 
-        taichi_avail = HAS_TAICHI and not is_python_314_or_newer
+        taichi_avail = False
         taichi_name = "Taichi JIT (GPU)"
-        if TaichiEvaluator is not None:
+        if HAS_TAICHI and not is_python_314_or_newer and TaichiEvaluator is not None:
             try:
-                inst = TaichiEvaluator(np.zeros((2, 2, 3), dtype=np.float32))
-                taichi_avail = inst.is_available()
-                taichi_name = inst.get_name()
+                import taichi as ti
+                from taichi.lang.misc import is_arch_supported
+
+                if is_arch_supported(ti.vulkan):
+                    taichi_avail = True
             except Exception:
-                pass
+                taichi_avail = False
 
         evaluators.append(
             {
@@ -170,6 +172,16 @@ class EvaluatorFactory:
             print(
                 f"[Factory Exception] Failed to instantiate '{selected_engine['name']}': {e}"
             )
+            if NumbaEvaluator is not None:
+                try:
+                    numba_inst = NumbaEvaluator(target_image, alpha_mask)
+                    if numba_inst.is_available():
+                        print(
+                            f"[Factory Safe Fallback] Automatically falling back to available engine: '{numba_inst.get_name()}'"
+                        )
+                        return numba_inst
+                except Exception:
+                    pass
             print(
                 "[Factory Absolute Safe Mode] Reverting to Pure Python (Baseline) to prevent application crash."
             )

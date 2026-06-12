@@ -12,10 +12,13 @@ if getattr(sys, "frozen", False):
         if "evaluators.taichi_evaluator" in sys.modules:
             sys.modules["evaluators.taichi_evaluator"].__file__ = physical_py_file
 
+os.environ["TI_ENABLE_VERSION_CHECK"] = "0"
+
 from evaluators.base_evaluator import BaseEvaluator
 
 try:
     import taichi as ti
+    from taichi.lang.misc import is_arch_supported
 
     HAS_TAICHI = True
 except ImportError:
@@ -49,6 +52,9 @@ except ImportError:
             return object
 
     ti = FakeTi()
+
+    def is_arch_supported(arch):
+        return False
 
 
 @ti.func
@@ -124,130 +130,62 @@ def evaluate_candidate_ti(
         b_coeff = sin_cos * (inv_rx2 - inv_ry2)
         inv_rx2_ry2 = inv_rx2 * inv_ry2
 
-        # Precompute division (1.0 / a) to avoid expensive division inside tight loops
         inv_a = 1.0 / a if a > 0.0 else 0.0
 
-        # Validation Pass (Scalar constraints check)
-        if check_contour == 1 or use_freeze == 1:
-            y = min_y
-            while y <= max_y and is_valid == 1:
-                dy = ti.cast(y, ti.f32) - y_c
-                b_val = dy * b_coeff
-                discriminant = a - dy * dy * inv_rx2_ry2
-                if discriminant >= 0.0:
-                    sqrt_d = ti.math.sqrt(discriminant)
-                    dx_min = (-b_val - sqrt_d) * inv_a
-                    dx_max = (-b_val + sqrt_d) * inv_a
-                    x_start = ti.max(min_x, ti.cast(ti.math.ceil(x_c + dx_min), ti.i32))
-                    x_end = ti.min(max_x, ti.cast(ti.math.floor(x_c + dx_max), ti.i32))
+        # Single Pass: Border Validation and Accumulation combined
+        y = min_y
+        while y <= max_y and is_valid == 1:
+            dy = ti.cast(y, ti.f32) - y_c
+            b_val = dy * b_coeff
+            discriminant = a - dy * dy * inv_rx2_ry2
+            if discriminant >= 0.0:
+                sqrt_d = ti.math.sqrt(discriminant)
+                dx_min = (-b_val - sqrt_d) * inv_a
+                dx_max = (-b_val + sqrt_d) * inv_a
+                x_start = ti.max(min_x, ti.cast(ti.math.ceil(x_c + dx_min), ti.i32))
+                x_end = ti.min(max_x, ti.cast(ti.math.floor(x_c + dx_max), ti.i32))
 
-                    x = x_start
-                    while x <= x_end and is_valid == 1:
-                        if check_contour == 1 and alpha_mask[y, x] <= 10.0:
-                            is_valid = 0
-                        if use_freeze == 1 and freeze_mask[y, x] == 1:
-                            is_valid = 0
-                        x += 1
-                y += 1
+                x = x_start
+                while x <= x_end and is_valid == 1:
+                    # Validate
+                    if check_contour == 1 and alpha_mask[y, x] <= 10.0:
+                        is_valid = 0
+                    if use_freeze == 1 and freeze_mask[y, x] == 1:
+                        is_valid = 0
 
-        # Accumulation Pass (Perfect for coalesced parallel loads)
-        if is_valid == 1:
-            if use_weight == 0 and use_uncovered == 0:
-                y = min_y
-                while y <= max_y:
-                    dy = ti.cast(y, ti.f32) - y_c
-                    b_val = dy * b_coeff
-                    discriminant = a - dy * dy * inv_rx2_ry2
-                    if discriminant >= 0.0:
-                        sqrt_d = ti.math.sqrt(discriminant)
-                        dx_min = (-b_val - sqrt_d) * inv_a
-                        dx_max = (-b_val + sqrt_d) * inv_a
-                        x_start = ti.max(
-                            min_x, ti.cast(ti.math.ceil(x_c + dx_min), ti.i32)
-                        )
-                        x_end = ti.min(
-                            max_x, ti.cast(ti.math.floor(x_c + dx_max), ti.i32)
-                        )
+                    if is_valid == 1:
+                        t_r = target_r[y, x]
+                        t_g = target_g[y, x]
+                        t_b = target_b[y, x]
 
-                        x = x_start
-                        while x <= x_end:
-                            t_r = target_r[y, x]
-                            t_g = target_g[y, x]
-                            t_b = target_b[y, x]
+                        c_r = canvas_r[y, x]
+                        c_g = canvas_g[y, x]
+                        c_b = canvas_b[y, x]
 
-                            c_r = canvas_r[y, x]
-                            c_g = canvas_g[y, x]
-                            c_b = canvas_b[y, x]
+                        w = 1.0
+                        if use_weight == 1:
+                            w = weight_map[y, x]
+                        if use_uncovered == 1:
+                            w = w * uncovered_map[y, x]
 
-                            count += 1.0
-                            sum_t_r += t_r
-                            sum_t_g += t_g
-                            sum_t_b += t_b
+                        count += w
+                        sum_t_r += t_r * w
+                        sum_t_g += t_g * w
+                        sum_t_b += t_b * w
 
-                            sum_c_r += c_r
-                            sum_c_g += c_g
-                            sum_c_b += c_b
+                        sum_c_r += c_r * w
+                        sum_c_g += c_g * w
+                        sum_c_b += c_b * w
 
-                            sum_c2_r += c_r * c_r
-                            sum_c2_g += c_g * c_g
-                            sum_c2_b += c_b * c_b
+                        sum_c2_r += (c_r * c_r) * w
+                        sum_c2_g += (c_g * c_g) * w
+                        sum_c2_b += (c_b * c_b) * w
 
-                            sum_ct_r += c_r * t_r
-                            sum_ct_g += c_g * t_g
-                            sum_ct_b += c_b * t_b
-                            x += 1
-                    y += 1
-            else:
-                y = min_y
-                while y <= max_y:
-                    dy = ti.cast(y, ti.f32) - y_c
-                    b_val = dy * b_coeff
-                    discriminant = a - dy * dy * inv_rx2_ry2
-                    if discriminant >= 0.0:
-                        sqrt_d = ti.math.sqrt(discriminant)
-                        dx_min = (-b_val - sqrt_d) * inv_a
-                        dx_max = (-b_val + sqrt_d) * inv_a
-                        x_start = ti.max(
-                            min_x, ti.cast(ti.math.ceil(x_c + dx_min), ti.i32)
-                        )
-                        x_end = ti.min(
-                            max_x, ti.cast(ti.math.floor(x_c + dx_max), ti.i32)
-                        )
-
-                        x = x_start
-                        while x <= x_end:
-                            t_r = target_r[y, x]
-                            t_g = target_g[y, x]
-                            t_b = target_b[y, x]
-
-                            c_r = canvas_r[y, x]
-                            c_g = canvas_g[y, x]
-                            c_b = canvas_b[y, x]
-
-                            w = 1.0
-                            if use_weight == 1:
-                                w = weight_map[y, x]
-                            if use_uncovered == 1:
-                                w = w * uncovered_map[y, x]
-
-                            count += w
-                            sum_t_r += t_r * w
-                            sum_t_g += t_g * w
-                            sum_t_b += t_b * w
-
-                            sum_c_r += c_r * w
-                            sum_c_g += c_g * w
-                            sum_c_b += c_b * w
-
-                            sum_c2_r += (c_r * c_r) * w
-                            sum_c2_g += (c_g * c_g) * w
-                            sum_c2_b += (c_b * c_b) * w
-
-                            sum_ct_r += (c_r * t_r) * w
-                            sum_ct_g += (c_g * t_g) * w
-                            sum_ct_b += (c_b * t_b) * w
-                            x += 1
-                    y += 1
+                        sum_ct_r += (c_r * t_r) * w
+                        sum_ct_g += (c_g * t_g) * w
+                        sum_ct_b += (c_b * t_b) * w
+                    x += 1
+            y += 1
 
     avg_r = 0.0
     avg_g = 0.0
@@ -635,7 +573,9 @@ def parallel_hill_climb_gpu(
     sa_enabled: ti.i32,
     sa_initial_temp: ti.f32,
     sa_cooling_rate: ti.f32,
-    optimization_steps: ti.i32,
+    start_step: ti.i32,
+    total_steps: ti.i32,
+    steps_per_launch: ti.i32,
 ):
     for i in range(128):
         curr_x_c = best_candidate[0, 0]
@@ -651,12 +591,12 @@ def parallel_hill_climb_gpu(
         curr_delta = best_candidate[0, 9]
 
         T = sa_initial_temp
-        inv_opt_steps = (
-            1.0 / ti.cast(optimization_steps, ti.f32) if optimization_steps > 0 else 0.0
-        )
 
-        for step in range(optimization_steps):
-            scale = 1.0 - (ti.cast(step, ti.f32) * inv_opt_steps)
+        for step_idx in range(steps_per_launch):
+            global_step = start_step + step_idx
+            scale = 1.0 - (ti.cast(global_step, ti.f32) / ti.cast(total_steps, ti.f32))
+            if scale < 0.0:
+                scale = 0.0
 
             u1 = ti.random()
             u2 = ti.random()
@@ -786,13 +726,6 @@ class TaichiEvaluator(BaseEvaluator):
         self.arch_name = "N/A"
 
         if HAS_TAICHI:
-            arch_map = {
-                "Vulkan": ti.vulkan,
-                "CUDA": ti.cuda,
-                "OpenGL": ti.opengl,
-                "CPU": ti.cpu,
-            }
-
             if taichi_device_id is not None:
                 import os
 
@@ -801,23 +734,20 @@ class TaichiEvaluator(BaseEvaluator):
                 os.environ["VULKAN_PHYSICAL_DEVICE_INDEX"] = str(taichi_device_id)
 
             backends = []
-            if taichi_arch and taichi_arch in arch_map:
-                backends.append(
-                    (
-                        arch_map[taichi_arch],
-                        f"GPU - {taichi_arch}" if taichi_arch != "CPU" else "CPU",
+            if taichi_arch:
+                if taichi_arch == "Vulkan":
+                    backends.append((ti.vulkan, "GPU - Vulkan"))
+                else:
+                    print(
+                        f"[Taichi JIT Backend] Unsupported arch requested: {taichi_arch}. Only Vulkan is supported."
                     )
-                )
             else:
-                backends = [
-                    (ti.vulkan, "GPU - Vulkan"),
-                    (ti.cuda, "GPU - CUDA"),
-                    (ti.opengl, "GPU - OpenGL"),
-                    (ti.cpu, "CPU"),
-                ]
+                backends.append((ti.vulkan, "GPU - Vulkan"))
 
             for arch, name in backends:
                 try:
+                    if not is_arch_supported(arch):
+                        continue
                     ti.init(arch=arch, log_level=ti.WARN)
                     # Verify backend with a test allocation
                     test = ti.field(dtype=ti.f32, shape=1)
@@ -834,6 +764,9 @@ class TaichiEvaluator(BaseEvaluator):
                         f"[Taichi Backend Warning] Attempt to initialize {arch} failed: {e}"
                     )
                     continue
+
+            if not self.initialized:
+                raise RuntimeError("Failed to initialize Taichi JIT Vulkan backend.")
 
             if self.initialized:
                 try:
@@ -893,6 +826,10 @@ class TaichiEvaluator(BaseEvaluator):
                     self.ti_best_candidate = ti.ndarray(dtype=ti.f32, shape=(1, 10))
                     self.ti_climb_candidates = ti.ndarray(dtype=ti.f32, shape=(128, 6))
                     self.ti_climb_results = ti.ndarray(dtype=ti.f32, shape=(128, 4))
+
+                    # Pre-allocate chunking buffers to avoid dynamic allocation in loops
+                    self.ti_chunk_cands = ti.ndarray(dtype=ti.f32, shape=(4096, 6))
+                    self.ti_chunk_results = ti.ndarray(dtype=ti.f32, shape=(4096, 4))
                 except Exception as e:
                     print(f"[Taichi JIT VRAM Allocation Error] {e}")
                     self.initialized = False
@@ -935,17 +872,74 @@ class TaichiEvaluator(BaseEvaluator):
             max_r = min(max_r, current_max_r)
 
         use_importance = params.get("use_importance", False)
-        error_prob_np = params.get("error_prob")
 
-        if use_importance and error_prob_np is not None and error_prob_np.shape[0] > 1:
-            max_err_val = compute_raw_error_and_max(
-                self.ti_target,
-                self.ti_canvas,
-                self.ti_error_prob,
-                height,
-                width,
+        # 1. Generate Candidates using CPU CDF Importance Sampling
+        candidates_np = np.zeros((batch_size, 6), dtype=np.float32)
+        if use_importance:
+            # Quick CPU-based error map computation via NumPy
+            diff = np.abs(self.target_image - current_canvas)
+            error_prob_np = np.mean(diff, axis=2)
+            max_val = np.max(error_prob_np)
+            if max_val > 0.0:
+                error_prob_np = error_prob_np / max_val
+
+                # CDF Importance Sampling
+                flat_err = error_prob_np.astype(np.float64).ravel()
+                cdf = np.cumsum(flat_err)
+                total_err = cdf[-1]
+                if total_err > 0.0:
+                    rvals = np.random.rand(batch_size) * total_err
+                    indices = np.searchsorted(cdf, rvals)
+                    ys = indices // width
+                    xs = indices % width
+
+                    candidates_np[:, 0] = xs.astype(np.float32) + np.random.rand(
+                        batch_size
+                    ).astype(np.float32)
+                    candidates_np[:, 1] = ys.astype(np.float32) + np.random.rand(
+                        batch_size
+                    ).astype(np.float32)
+                else:
+                    candidates_np[:, 0] = np.random.rand(batch_size).astype(
+                        np.float32
+                    ) * float(width)
+                    candidates_np[:, 1] = np.random.rand(batch_size).astype(
+                        np.float32
+                    ) * float(height)
+            else:
+                candidates_np[:, 0] = np.random.rand(batch_size).astype(
+                    np.float32
+                ) * float(width)
+                candidates_np[:, 1] = np.random.rand(batch_size).astype(
+                    np.float32
+                ) * float(height)
+        else:
+            candidates_np[:, 0] = np.random.rand(batch_size).astype(np.float32) * float(
+                width
             )
-            normalize_error_prob(self.ti_error_prob, max_err_val, height, width)
+            candidates_np[:, 1] = np.random.rand(batch_size).astype(np.float32) * float(
+                height
+            )
+
+        candidates_np[:, 2] = 2.0 + np.random.rand(batch_size).astype(np.float32) * (
+            float(max_r) - 2.0
+        )
+        candidates_np[:, 3] = 2.0 + np.random.rand(batch_size).astype(np.float32) * (
+            float(max_r) - 2.0
+        )
+        candidates_np[:, 4] = np.random.rand(batch_size).astype(np.float32) * (
+            2.0 * np.pi
+        )
+        candidates_np[:, 5] = 255.0
+
+        if (
+            not hasattr(self, "ti_candidates")
+            or self.ti_candidates.shape[0] != batch_size
+        ):
+            self.ti_candidates = ti.ndarray(dtype=ti.f32, shape=(batch_size, 6))
+            self.ti_results = ti.ndarray(dtype=ti.f32, shape=(batch_size, 4))
+
+        self.ti_candidates.from_numpy(candidates_np)
 
         use_freeze = 1 if params.get("use_freeze", False) else 0
         freeze_mask_np = params.get("freeze_mask")
@@ -968,51 +962,90 @@ class TaichiEvaluator(BaseEvaluator):
             self.ti_uncovered.from_numpy(uncovered_map_np)
             ti_uncovered_ref = self.ti_uncovered
 
-        if (
-            not hasattr(self, "ti_candidates")
-            or self.ti_candidates.shape[0] != batch_size
-        ):
-            self.ti_candidates = ti.ndarray(dtype=ti.f32, shape=(batch_size, 6))
-            self.ti_results = ti.ndarray(dtype=ti.f32, shape=(batch_size, 4))
-
-        generate_candidates_gpu(
-            self.ti_candidates,
-            float(width),
-            float(height),
-            float(max_r),
-            1 if (use_importance and error_prob_np is not None) else 0,
-            self.ti_error_prob,
-            batch_size,
-        )
-
         # Disable contour check if alpha_mask is a placeholder
         check_contour = params.get("check_contour", False)
         if self.alpha_mask is None or self.alpha_mask.shape == (1, 1):
             check_contour = False
         check_contour_jit = 1 if check_contour else 0
 
-        taichi_parallel_search(
-            self.ti_target_r,
-            self.ti_target_g,
-            self.ti_target_b,
-            self.ti_canvas_r,
-            self.ti_canvas_g,
-            self.ti_canvas_b,
-            self.ti_candidates,
-            self.ti_results,
-            self.ti_alpha,
-            check_contour_jit,
-            use_freeze,
-            ti_freeze_ref,
-            use_weight,
-            ti_weight_ref,
-            use_uncovered,
-            ti_uncovered_ref,
-            height,
-            width,
-            batch_size,
-        )
+        # 2. Parallel Search with Batch Chunking (Prevents TDR timeout)
+        chunk_size = 4096
+        if batch_size > chunk_size:
+            num_chunks = (batch_size + chunk_size - 1) // chunk_size
+            results_list = []
 
+            # Defensive initialization if not pre-allocated
+            if not hasattr(self, "ti_chunk_cands"):
+                self.ti_chunk_cands = ti.ndarray(dtype=ti.f32, shape=(chunk_size, 6))
+                self.ti_chunk_results = ti.ndarray(dtype=ti.f32, shape=(chunk_size, 4))
+
+            for chunk_idx in range(num_chunks):
+                start_idx = chunk_idx * chunk_size
+                end_idx = min(start_idx + chunk_size, batch_size)
+                curr_chunk_size = end_idx - start_idx
+
+                chunk_data = candidates_np[start_idx:end_idx]
+                if curr_chunk_size < chunk_size:
+                    # Pad to match pre-allocated ti.ndarray shape (chunk_size, 6)
+                    chunk_data = np.pad(
+                        chunk_data,
+                        ((0, chunk_size - curr_chunk_size), (0, 0)),
+                        mode="constant",
+                    )
+
+                self.ti_chunk_cands.from_numpy(chunk_data)
+
+                taichi_parallel_search(
+                    self.ti_target_r,
+                    self.ti_target_g,
+                    self.ti_target_b,
+                    self.ti_canvas_r,
+                    self.ti_canvas_g,
+                    self.ti_canvas_b,
+                    self.ti_chunk_cands,
+                    self.ti_chunk_results,
+                    self.ti_alpha,
+                    check_contour_jit,
+                    use_freeze,
+                    ti_freeze_ref,
+                    use_weight,
+                    ti_weight_ref,
+                    use_uncovered,
+                    ti_uncovered_ref,
+                    height,
+                    width,
+                    curr_chunk_size,
+                )
+
+                chunk_res = self.ti_chunk_results.to_numpy()
+                results_list.append(chunk_res[:curr_chunk_size])
+
+            all_results = np.concatenate(results_list, axis=0)
+            self.ti_results.from_numpy(all_results)
+        else:
+            taichi_parallel_search(
+                self.ti_target_r,
+                self.ti_target_g,
+                self.ti_target_b,
+                self.ti_canvas_r,
+                self.ti_canvas_g,
+                self.ti_canvas_b,
+                self.ti_candidates,
+                self.ti_results,
+                self.ti_alpha,
+                check_contour_jit,
+                use_freeze,
+                ti_freeze_ref,
+                use_weight,
+                ti_weight_ref,
+                use_uncovered,
+                ti_uncovered_ref,
+                height,
+                width,
+                batch_size,
+            )
+
+        # 3. Retrieve Best Candidate
         find_best_candidate_gpu(
             self.ti_candidates, self.ti_results, self.ti_best_candidate, batch_size
         )
@@ -1025,39 +1058,57 @@ class TaichiEvaluator(BaseEvaluator):
         optimization_steps = params.get("optimization_steps", 50)
 
         if use_pure_gpu:
-            parallel_hill_climb_gpu(
-                self.ti_best_candidate,
-                self.ti_climb_candidates,
-                self.ti_climb_results,
-                self.ti_target_r,
-                self.ti_target_g,
-                self.ti_target_b,
-                self.ti_canvas_r,
-                self.ti_canvas_g,
-                self.ti_canvas_b,
-                self.ti_alpha,
-                check_contour_jit,
-                use_freeze,
-                ti_freeze_ref,
-                use_weight,
-                ti_weight_ref,
-                use_uncovered,
-                ti_uncovered_ref,
-                height,
-                width,
-                float(max_r),
-                sa_enabled,
-                sa_initial_temp,
-                sa_cooling_rate,
-                optimization_steps,
-            )
+            steps_per_launch = 20
+            num_launches = (
+                optimization_steps + steps_per_launch - 1
+            ) // steps_per_launch
 
-            select_final_best_gpu(
-                self.ti_climb_candidates, self.ti_climb_results, self.ti_best_candidate
-            )
+            for launch_idx in range(num_launches):
+                start_step = launch_idx * steps_per_launch
+                curr_steps = min(steps_per_launch, optimization_steps - start_step)
+
+                # Compute starting temperature for this launch
+                T_start = 0.0
+                if sa_enabled == 1:
+                    T_start = sa_initial_temp * (sa_cooling_rate**start_step)
+
+                parallel_hill_climb_gpu(
+                    self.ti_best_candidate,
+                    self.ti_climb_candidates,
+                    self.ti_climb_results,
+                    self.ti_target_r,
+                    self.ti_target_g,
+                    self.ti_target_b,
+                    self.ti_canvas_r,
+                    self.ti_canvas_g,
+                    self.ti_canvas_b,
+                    self.ti_alpha,
+                    check_contour_jit,
+                    use_freeze,
+                    ti_freeze_ref,
+                    use_weight,
+                    ti_weight_ref,
+                    use_uncovered,
+                    ti_uncovered_ref,
+                    height,
+                    width,
+                    max_r,
+                    sa_enabled,
+                    T_start,
+                    sa_cooling_rate,
+                    start_step,
+                    optimization_steps,
+                    curr_steps,
+                )
+
+                # Select best from this launch to update best_candidate for the next launch
+                select_final_best_gpu(
+                    self.ti_climb_candidates,
+                    self.ti_climb_results,
+                    self.ti_best_candidate,
+                )
 
             best_candidate_np = self.ti_best_candidate.to_numpy()
-
             x_c = float(best_candidate_np[0, 0])
             y_c = float(best_candidate_np[0, 1])
             r_x = float(best_candidate_np[0, 2])
