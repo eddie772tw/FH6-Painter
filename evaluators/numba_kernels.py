@@ -148,13 +148,13 @@ def evaluate_candidate(
                     sum_c_g += c_g
                     sum_c_b += c_b
 
-                    sum_c2_r += (c_r * c_r)
-                    sum_c2_g += (c_g * c_g)
-                    sum_c2_b += (c_b * c_b)
+                    sum_c2_r += c_r * c_r
+                    sum_c2_g += c_g * c_g
+                    sum_c2_b += c_b * c_b
 
-                    sum_ct_r += (c_r * t_r)
-                    sum_ct_g += (c_g * t_g)
-                    sum_ct_b += (c_b * t_b)
+                    sum_ct_r += c_r * t_r
+                    sum_ct_g += c_g * t_g
+                    sum_ct_b += c_b * t_b
     else:
         # Slow Path (With weights)
         for y in range(min_y, max_y + 1, sample_step):
