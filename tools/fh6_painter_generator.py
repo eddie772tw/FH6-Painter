@@ -7,6 +7,10 @@ import os
 import sys
 import time
 
+# 阻斷隱式 Vulkan Layers（如 Game Capture, OBS, Discord overlay 等）注入，防止產生大量垃圾調試輸出並提升啟動穩定度
+os.environ["VK_LOADER_LAYERS_DISABLE"] = "~implicit~"
+os.environ["DISABLE_OBS_CAPTURE"] = "1"
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
@@ -490,6 +494,7 @@ def run_generator(
     original_layers = layers
     prev_valid_layers = 0
     early_triggered = False
+    progressive_sample_step_limit = 4
 
     starting_layer_count = len(shapes_list) - 1
 
@@ -512,6 +517,10 @@ def run_generator(
                     sample_step = 4
                 elif progress_ratio < 0.50:
                     sample_step = 2
+
+                # Apply precision limit from early convergence
+                if sample_step > progressive_sample_step_limit:
+                    sample_step = progressive_sample_step_limit
 
             force_opaque = opt_settings.get("force_opaque", True)
 
@@ -800,24 +809,35 @@ def run_generator(
                                 f"\n[Early Convergence] 偵測到細節已飽和 (淘汰率 {redundancy_ratio * 100:.1f}% >= 閾值 {early_threshold * 100:.1f}%)！開始執行提早收斂..."
                             )
 
-                            # 收斂層數則以 early_step 為步進向上取整，且不得超過原定最大層數 original_layers
-                            best_t = min(
-                                int(math.ceil(current_layer / float(early_step)))
-                                * early_step,
-                                original_layers,
-                            )
-
-                            print(
-                                f"[Early Convergence] 執行補足策略：將目標層數 layers 調整為 {best_t} 層 (當前有效: {current_layer} 層)"
-                            )
-                            layers = best_t
-                            early_triggered = True
-
-                            if current_layer >= layers:
+                            if progressive_sampling_enabled and sample_step > 1:
+                                next_limit = 1
+                                if sample_step == 4:
+                                    next_limit = 2
+                                elif sample_step == 2:
+                                    next_limit = 1
+                                progressive_sample_step_limit = next_limit
                                 print(
-                                    "[Early Convergence] 當前層數已達到或超過收斂目標，停止生成。"
+                                    f"[Early Convergence] 偵測到細節已飽和，但由於啟用漸進式像素採樣，先提升像素採樣精度 (將限制最大 sample_step 為 {next_limit})，本次不收斂圖層數量。"
                                 )
-                                break
+                            else:
+                                # 收斂層數則以 early_step 為步進向上取整，且不得超過原定最大層數 original_layers
+                                best_t = min(
+                                    int(math.ceil(current_layer / float(early_step)))
+                                    * early_step,
+                                    original_layers,
+                                )
+
+                                print(
+                                    f"[Early Convergence] 執行補足策略：將目標層數 layers 調整為 {best_t} 層 (當前有效: {current_layer} 層)"
+                                )
+                                layers = best_t
+                                early_triggered = True
+
+                                if current_layer >= layers:
+                                    print(
+                                        "[Early Convergence] 當前層數已達到或超過收斂目標，停止生成。"
+                                    )
+                                    break
 
                 # 更新 prev_valid_layers 供下一次區間評估使用
                 prev_valid_layers = current_layer

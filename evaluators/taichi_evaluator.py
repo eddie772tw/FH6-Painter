@@ -291,27 +291,40 @@ def evaluate_candidate_ti(
 
 @ti.kernel
 def taichi_parallel_search(
-    target_r: ti.types.ndarray(),
-    target_g: ti.types.ndarray(),
-    target_b: ti.types.ndarray(),
-    canvas_r: ti.types.ndarray(),
-    canvas_g: ti.types.ndarray(),
-    canvas_b: ti.types.ndarray(),
-    candidates: ti.types.ndarray(),  # Shape: (batch_size, 6) -> [x_c, y_c, r_x, r_y, theta, alpha]
-    results: ti.types.ndarray(),  # Shape: (batch_size, 4) -> [r, g, b, delta_mse]
-    alpha_mask: ti.types.ndarray(),
+    target_r: ti.types.ndarray(dtype=ti.f32, ndim=2),
+    target_g: ti.types.ndarray(dtype=ti.f32, ndim=2),
+    target_b: ti.types.ndarray(dtype=ti.f32, ndim=2),
+    canvas_r: ti.types.ndarray(dtype=ti.f32, ndim=2),
+    canvas_g: ti.types.ndarray(dtype=ti.f32, ndim=2),
+    canvas_b: ti.types.ndarray(dtype=ti.f32, ndim=2),
+    candidates: ti.types.ndarray(
+        dtype=ti.f32, ndim=2
+    ),  # Shape: (batch_size, 6) -> [x_c, y_c, r_x, r_y, theta, alpha]
+    results: ti.types.ndarray(
+        dtype=ti.f32, ndim=2
+    ),  # Shape: (batch_size, 4) -> [r, g, b, delta_mse]
+    alpha_mask: ti.types.ndarray(dtype=ti.f32, ndim=2),
     check_contour: ti.i32,
     use_freeze: ti.i32,
-    freeze_mask: ti.types.ndarray(),
+    freeze_mask: ti.types.ndarray(dtype=ti.uint8, ndim=2),
     use_weight: ti.i32,
-    weight_map: ti.types.ndarray(),
+    weight_map: ti.types.ndarray(dtype=ti.f32, ndim=2),
     use_uncovered: ti.i32,
-    uncovered_map: ti.types.ndarray(),
+    uncovered_map: ti.types.ndarray(dtype=ti.f32, ndim=2),
     height: ti.i32,
     width: ti.i32,
     batch_size: ti.i32,
 ):
+    ti.loop_config(block_dim=256)
     for i in range(batch_size):
+        # Force access to prevent JIT compiler from optimizing out unused ndarray arguments on some Vulkan drivers
+        if i == -1:
+            results[0, 0] = (
+                alpha_mask[0, 0]
+                + ti.cast(freeze_mask[0, 0], ti.f32)
+                + weight_map[0, 0]
+                + uncovered_map[0, 0]
+            )
         x_c = candidates[i, 0]
         y_c = candidates[i, 1]
         r_x = candidates[i, 2]
@@ -352,9 +365,9 @@ def taichi_parallel_search(
 
 @ti.kernel
 def compute_raw_error_and_max(
-    target: ti.types.ndarray(),
-    canvas: ti.types.ndarray(),
-    error_prob: ti.types.ndarray(),
+    target: ti.types.ndarray(dtype=ti.f32, ndim=3),
+    canvas: ti.types.ndarray(dtype=ti.f32, ndim=3),
+    error_prob: ti.types.ndarray(dtype=ti.f32, ndim=2),
     height: ti.i32,
     width: ti.i32,
 ) -> ti.f32:
@@ -372,7 +385,7 @@ def compute_raw_error_and_max(
 
 @ti.kernel
 def normalize_error_prob(
-    error_prob: ti.types.ndarray(),
+    error_prob: ti.types.ndarray(dtype=ti.f32, ndim=2),
     max_val: ti.f32,
     height: ti.i32,
     width: ti.i32,
@@ -388,10 +401,10 @@ def normalize_error_prob(
 
 @ti.kernel
 def split_canvas_to_planar_gpu(
-    canvas: ti.types.ndarray(),
-    canvas_r: ti.types.ndarray(),
-    canvas_g: ti.types.ndarray(),
-    canvas_b: ti.types.ndarray(),
+    canvas: ti.types.ndarray(dtype=ti.f32, ndim=3),
+    canvas_r: ti.types.ndarray(dtype=ti.f32, ndim=2),
+    canvas_g: ti.types.ndarray(dtype=ti.f32, ndim=2),
+    canvas_b: ti.types.ndarray(dtype=ti.f32, ndim=2),
     height: ti.i32,
     width: ti.i32,
 ):
@@ -403,9 +416,9 @@ def split_canvas_to_planar_gpu(
 
 @ti.kernel
 def update_freeze_mask_gpu(
-    target: ti.types.ndarray(),
-    canvas: ti.types.ndarray(),
-    freeze_mask: ti.types.ndarray(),
+    target: ti.types.ndarray(dtype=ti.f32, ndim=3),
+    canvas: ti.types.ndarray(dtype=ti.f32, ndim=3),
+    freeze_mask: ti.types.ndarray(dtype=ti.uint8, ndim=2),
     threshold: ti.f32,
     height: ti.i32,
     width: ti.i32,
@@ -423,8 +436,8 @@ def update_freeze_mask_gpu(
 
 @ti.kernel
 def update_uncovered_mask_gpu(
-    uncovered_map: ti.types.ndarray(),
-    best_candidate: ti.types.ndarray(),
+    uncovered_map: ti.types.ndarray(dtype=ti.f32, ndim=2),
+    best_candidate: ti.types.ndarray(dtype=ti.f32, ndim=2),
     height: ti.i32,
     width: ti.i32,
 ):
@@ -473,15 +486,19 @@ def update_uncovered_mask_gpu(
 
 @ti.kernel
 def generate_candidates_gpu(
-    candidates: ti.types.ndarray(),
+    candidates: ti.types.ndarray(dtype=ti.f32, ndim=2),
     width: ti.f32,
     height: ti.f32,
     max_r: ti.f32,
     use_importance: ti.i32,
-    error_prob: ti.types.ndarray(),
+    error_prob: ti.types.ndarray(dtype=ti.f32, ndim=2),
     batch_size: ti.i32,
 ):
+    ti.loop_config(block_dim=256)
     for i in range(batch_size):
+        # Force access to prevent JIT compiler from optimizing out error_prob descriptor
+        if i == -1:
+            candidates[0, 0] = error_prob[0, 0]
         x = 0.0
         y = 0.0
 
@@ -525,8 +542,8 @@ def generate_candidates_gpu(
 
 @ti.kernel
 def draw_ellipse_gpu(
-    canvas: ti.types.ndarray(),
-    best_candidate: ti.types.ndarray(),
+    canvas: ti.types.ndarray(dtype=ti.f32, ndim=3),
+    best_candidate: ti.types.ndarray(dtype=ti.f32, ndim=2),
     height: ti.i32,
     width: ti.i32,
 ):
@@ -584,9 +601,9 @@ def draw_ellipse_gpu(
 
 @ti.kernel
 def find_best_candidate_gpu(
-    candidates: ti.types.ndarray(),
-    results: ti.types.ndarray(),
-    best_candidate: ti.types.ndarray(),
+    candidates: ti.types.ndarray(dtype=ti.f32, ndim=2),
+    results: ti.types.ndarray(dtype=ti.f32, ndim=2),
+    best_candidate: ti.types.ndarray(dtype=ti.f32, ndim=2),
     batch_size: ti.i32,
 ):
     for _ in range(1):
@@ -612,23 +629,23 @@ def find_best_candidate_gpu(
 
 @ti.kernel
 def parallel_hill_climb_gpu(
-    best_candidate: ti.types.ndarray(),
-    climb_candidates: ti.types.ndarray(),
-    climb_results: ti.types.ndarray(),
-    target_r: ti.types.ndarray(),
-    target_g: ti.types.ndarray(),
-    target_b: ti.types.ndarray(),
-    canvas_r: ti.types.ndarray(),
-    canvas_g: ti.types.ndarray(),
-    canvas_b: ti.types.ndarray(),
-    alpha_mask: ti.types.ndarray(),
+    best_candidate: ti.types.ndarray(dtype=ti.f32, ndim=2),
+    climb_candidates: ti.types.ndarray(dtype=ti.f32, ndim=2),
+    climb_results: ti.types.ndarray(dtype=ti.f32, ndim=2),
+    target_r: ti.types.ndarray(dtype=ti.f32, ndim=2),
+    target_g: ti.types.ndarray(dtype=ti.f32, ndim=2),
+    target_b: ti.types.ndarray(dtype=ti.f32, ndim=2),
+    canvas_r: ti.types.ndarray(dtype=ti.f32, ndim=2),
+    canvas_g: ti.types.ndarray(dtype=ti.f32, ndim=2),
+    canvas_b: ti.types.ndarray(dtype=ti.f32, ndim=2),
+    alpha_mask: ti.types.ndarray(dtype=ti.f32, ndim=2),
     check_contour: ti.i32,
     use_freeze: ti.i32,
-    freeze_mask: ti.types.ndarray(),
+    freeze_mask: ti.types.ndarray(dtype=ti.uint8, ndim=2),
     use_weight: ti.i32,
-    weight_map: ti.types.ndarray(),
+    weight_map: ti.types.ndarray(dtype=ti.f32, ndim=2),
     use_uncovered: ti.i32,
-    uncovered_map: ti.types.ndarray(),
+    uncovered_map: ti.types.ndarray(dtype=ti.f32, ndim=2),
     height: ti.i32,
     width: ti.i32,
     max_r: ti.f32,
@@ -638,6 +655,14 @@ def parallel_hill_climb_gpu(
     optimization_steps: ti.i32,
 ):
     for i in range(128):
+        # Force access to prevent JIT compiler from optimizing out unused ndarray arguments on some Vulkan drivers
+        if i == -1:
+            climb_results[0, 0] = (
+                alpha_mask[0, 0]
+                + ti.cast(freeze_mask[0, 0], ti.f32)
+                + weight_map[0, 0]
+                + uncovered_map[0, 0]
+            )
         curr_x_c = best_candidate[0, 0]
         curr_y_c = best_candidate[0, 1]
         curr_r_x = best_candidate[0, 2]
@@ -748,9 +773,9 @@ def parallel_hill_climb_gpu(
 
 @ti.kernel
 def select_final_best_gpu(
-    climb_candidates: ti.types.ndarray(),
-    climb_results: ti.types.ndarray(),
-    best_candidate: ti.types.ndarray(),
+    climb_candidates: ti.types.ndarray(dtype=ti.f32, ndim=2),
+    climb_results: ti.types.ndarray(dtype=ti.f32, ndim=2),
+    best_candidate: ti.types.ndarray(dtype=ti.f32, ndim=2),
 ):
     for _ in range(1):
         best_idx = 0
@@ -786,6 +811,12 @@ class TaichiEvaluator(BaseEvaluator):
         self.arch_name = "N/A"
 
         if HAS_TAICHI:
+            # 阻斷隱式 Vulkan Layers（如 Game Capture, OBS, Discord overlay 等）注入，防止產生大量垃圾調試輸出並提升啟動穩定度
+            import os
+
+            os.environ["VK_LOADER_LAYERS_DISABLE"] = "~implicit~"
+            os.environ["DISABLE_OBS_CAPTURE"] = "1"
+
             arch_map = {
                 "Vulkan": ti.vulkan,
                 "CUDA": ti.cuda,
@@ -916,6 +947,38 @@ class TaichiEvaluator(BaseEvaluator):
 
         height, width, _ = self.target_image.shape
 
+        # 動態批次大小調整 (Dynamic Batch Size Adjustment)
+        original_batch_size = batch_size
+        current_max_r = params.get("current_max_r")
+        base_max_r = max(10.0, min(width, height) / 3.0)
+
+        if current_max_r is None:
+            current_max_r = base_max_r
+
+        r_ratio = current_max_r / base_max_r
+
+        if self.get_device_type() == "GPU":
+            # GPU 模式下，形狀小時放大批次以榨乾 GPU 算力；形狀大時縮小批次以防止 TDR。
+            if r_ratio > 0.75:
+                factor = 0.5
+            elif r_ratio > 0.4:
+                factor = 1.0
+            elif r_ratio > 0.2:
+                factor = 2.0
+            else:
+                factor = 4.0
+
+            adjusted_batch_size = int(original_batch_size * factor)
+            # 對齊 128 的倍數
+            adjusted_batch_size = max(128, (adjusted_batch_size // 128) * 128)
+            batch_size = min(131072, adjusted_batch_size)
+        else:
+            # CPU 模式下，防止 Cache Thrashing 與調度瓶頸
+            factor = 0.5 if r_ratio > 0.5 else 1.0
+            adjusted_batch_size = int(original_batch_size * factor)
+            adjusted_batch_size = max(128, (adjusted_batch_size // 128) * 128)
+            batch_size = min(2000, adjusted_batch_size)
+
         if not hasattr(self, "canvas_initialized") or not self.canvas_initialized:
             self.ti_canvas.from_numpy(current_canvas.astype(np.float32))
             self.canvas_initialized = True
@@ -968,12 +1031,18 @@ class TaichiEvaluator(BaseEvaluator):
             self.ti_uncovered.from_numpy(uncovered_map_np)
             ti_uncovered_ref = self.ti_uncovered
 
-        if (
-            not hasattr(self, "ti_candidates")
-            or self.ti_candidates.shape[0] != batch_size
-        ):
-            self.ti_candidates = ti.ndarray(dtype=ti.f32, shape=(batch_size, 6))
-            self.ti_results = ti.ndarray(dtype=ti.f32, shape=(batch_size, 4))
+        # VRAM Max-Capacity 顯存緩存分配快取機制
+        current_capacity = (
+            self.ti_candidates.shape[0] if hasattr(self, "ti_candidates") else 0
+        )
+        if batch_size > current_capacity:
+            # 超出當前容量才重新配置擴大
+            alloc_capacity = (
+                batch_size * 4 if self.get_device_type() == "GPU" else batch_size
+            )
+            alloc_capacity = max(128, (alloc_capacity // 128) * 128)
+            self.ti_candidates = ti.ndarray(dtype=ti.f32, shape=(alloc_capacity, 6))
+            self.ti_results = ti.ndarray(dtype=ti.f32, shape=(alloc_capacity, 4))
 
         generate_candidates_gpu(
             self.ti_candidates,

@@ -1,6 +1,6 @@
 {
   "image_pyramid": {
-    "enabled": true,
+    "enabled": false,
     "pyramid_layers_threshold": 500,
     "stagnation_threshold": 0.001,
     "fine_phase_layer": 500

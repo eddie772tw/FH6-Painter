@@ -255,3 +255,54 @@ def test_generator_resume(temp_image_path):
             os.remove(out_path1)
         if os.path.exists(out_path2):
             os.remove(out_path2)
+
+
+def test_early_convergence_with_progressive_sampling(temp_image_path):
+    """驗證漸進式像素採樣下提早收斂優化：是否會先提升像素採樣精度，然後才收斂使用的圖層數量。"""
+    with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
+        out_path = f.name
+    os.remove(out_path)
+
+    opt_settings = {
+        "early_convergence": {
+            "enabled": True,
+            "check_interval": 2,
+            "start_eval_ratio": 0.01,
+            "redundancy_threshold": 0.0,  # 強制觸發
+            "convergence_step": 3,  # 自訂步進以利測試
+        },
+        "image_pyramid": {
+            "enabled": True,
+        }
+    }
+
+    try:
+        # 目標設為 20 層，自訂步進為 3，檢查間隔為 2
+        # 在第 2 層觸發時：sample_step > 1 -> 降為 2，不收斂，繼續生成
+        # 在第 4 層觸發時：sample_step > 1 -> 降為 1，不收斂，繼續生成
+        # 在第 6 層觸發時：sample_step 已經為 1 -> 執行收斂 -> 目標調整為 ceil(6/3)*3 = 6 層
+        # 故最後應生成 1 背景 + 6 個橢圓 = 7 個 shapes
+        res = run_generator(
+            image_path=temp_image_path,
+            output_path=out_path,
+            layers_limit=20,
+            candidates_limit=5,
+            steps_limit=2,
+            opt_settings=opt_settings,
+            engine_name="PURE_PYTHON",
+        )
+
+        assert res == 0
+        assert os.path.exists(out_path)
+
+        with open(out_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        shapes = data["shapes"]
+        assert len(shapes) == 7
+        assert shapes[0]["type"] == 1
+        assert all(s["type"] == 32 for s in shapes[1:])
+
+    finally:
+        if os.path.exists(out_path):
+            os.remove(out_path)
