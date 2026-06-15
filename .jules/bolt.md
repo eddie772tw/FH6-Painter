@@ -24,3 +24,11 @@
 ## 2026-06-04 - Scanline Discriminant Simplification
 **Learning:** The equation `b_quad * b_quad - a * c_val` inside the ellipse scanline discriminant loop simplifies to `a - dy * dy * inv_rx2 * inv_ry2`. The previous form required calculating `c_y_coeff` and then computing `c_val = dy * dy * c_y_coeff - 1.0` and `discriminant = b_quad * b_quad - a * c_val` in the innermost loop (4 multiplies, 2 subtracts). The new formula requires just `a - dy * dy * inv_rx2_ry2` (2 multiplies, 1 subtract). This mathematical simplification removes instructions from the tightest inner loop, accelerating pixel coverage determination without affecting results.
 **Action:** Look for algebraic simplifications in heavily called mathematical loops (like geometry boundary solvers). Expanding and factoring intermediate terms can often reveal a simpler, more computationally efficient equivalent.
+
+## 2026-06-05 - NumPy Vectorization in Pure Python Inner Loops
+**Learning:** In the Pure Python fallback evaluator (`evaluators/pure_python_evaluator.py`), standard python `for x in range(...)` loops for pixel accumulation and canvas drawing are extremely slow (e.g. 15s to run 1000 iterations).
+**Action:** Replace manual innermost `x` loops with NumPy array slicing. Operations like `np.sum()`, `np.any()`, and assigning slices (e.g., `canvas[y, x_start:x_end+1] = ...`) offloads the execution to NumPy's compiled C backend, giving a >10x speedup in evaluation time and avoiding the need to iterate through individual pixels in Python.
+
+## 2026-06-05 - Hoisting Array Shape Checks
+**Learning:** Constant array shape checks, specifically `canvas.shape[2] == 4`, inside of tight inner rendering loops (like in Numba `draw_ellipse` and Pure Python evaluators) adds significant interpretation or branch prediction overhead since the boolean outcome doesn't change during the loop execution.
+**Action:** Hoist checks like `has_alpha = canvas.shape[2] == 4` outside of the nested `y`/`x` processing loops. Use loop unswitching to create dedicated conditional branches for the entire loop block, removing the boolean check from the innermost iteration.

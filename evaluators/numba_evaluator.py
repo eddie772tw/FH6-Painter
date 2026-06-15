@@ -210,11 +210,13 @@ class NumbaEvaluator(BaseEvaluator):
             h_color = header.get("color", [128, 128, 128, 255])
             avg_a = h_color[3] if len(h_color) >= 4 else 255.0
 
+        has_alpha = canvas.shape[2] == 4
+
         if len(shapes_list) <= 1:
             canvas[:, :, 0] = avg_r
             canvas[:, :, 1] = avg_g
             canvas[:, :, 2] = avg_b
-            if canvas.shape[2] == 4:
+            if has_alpha:
                 canvas[:, :, 3] = avg_a
             return
 

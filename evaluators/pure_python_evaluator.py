@@ -87,15 +87,15 @@ def evaluate_candidate_py(
                 x_start = max(min_x, int(math.ceil(x_c + dx_min)))
                 x_end = min(max_x, int(math.floor(x_c + dx_max)))
 
-                for x in range(x_start, x_end + 1):
-                    if check_contour and alpha_mask[y, x] <= 10.0:
+                if x_start <= x_end:
+                    if check_contour and np.any(alpha_mask[y, x_start:x_end+1] <= 10.0):
                         return (
                             np.float32(0.0),
                             np.float32(0.0),
                             np.float32(0.0),
                             np.float32(99999999.0),
                         )
-                    if use_freeze and freeze_mask[y, x] == 1:
+                    if use_freeze and np.any(freeze_mask[y, x_start:x_end+1] == 1):
                         return (
                             np.float32(0.0),
                             np.float32(0.0),
@@ -117,31 +117,26 @@ def evaluate_candidate_py(
                 x_start = max(min_x, int(math.ceil(x_c + dx_min)))
                 x_end = min(max_x, int(math.floor(x_c + dx_max)))
 
-                for x in range(x_start, x_end + 1):
-                    t_r = target[y, x, 0]
-                    t_g = target[y, x, 1]
-                    t_b = target[y, x, 2]
+                if x_start <= x_end:
+                    t_slice = target[y, x_start:x_end+1]
+                    c_slice = canvas[y, x_start:x_end+1]
 
-                    c_r = canvas[y, x, 0]
-                    c_g = canvas[y, x, 1]
-                    c_b = canvas[y, x, 2]
+                    count += np.float32(x_end - x_start + 1)
+                    sum_t_r += np.sum(t_slice[:, 0])
+                    sum_t_g += np.sum(t_slice[:, 1])
+                    sum_t_b += np.sum(t_slice[:, 2])
 
-                    count += np.float32(1.0)
-                    sum_t_r += t_r
-                    sum_t_g += t_g
-                    sum_t_b += t_b
+                    sum_c_r += np.sum(c_slice[:, 0])
+                    sum_c_g += np.sum(c_slice[:, 1])
+                    sum_c_b += np.sum(c_slice[:, 2])
 
-                    sum_c_r += c_r
-                    sum_c_g += c_g
-                    sum_c_b += c_b
+                    sum_c2_r += np.sum(c_slice[:, 0] * c_slice[:, 0])
+                    sum_c2_g += np.sum(c_slice[:, 1] * c_slice[:, 1])
+                    sum_c2_b += np.sum(c_slice[:, 2] * c_slice[:, 2])
 
-                    sum_c2_r += c_r * c_r
-                    sum_c2_g += c_g * c_g
-                    sum_c2_b += c_b * c_b
-
-                    sum_ct_r += c_r * t_r
-                    sum_ct_g += c_g * t_g
-                    sum_ct_b += c_b * t_b
+                    sum_ct_r += np.sum(c_slice[:, 0] * t_slice[:, 0])
+                    sum_ct_g += np.sum(c_slice[:, 1] * t_slice[:, 1])
+                    sum_ct_b += np.sum(c_slice[:, 2] * t_slice[:, 2])
     else:
         # Slow Path (With weights)
         for y in range(min_y, max_y + 1):
@@ -257,6 +252,13 @@ def draw_ellipse_py(canvas, x_c, y_c, r_x, r_y, theta, r, g, b, alpha):
 
     inv_a = np.float32(1.0 / a) if a > 0 else np.float32(0.0)
 
+    has_alpha = canvas.shape[2] == 4
+    alpha_val = np.float32(alpha)
+
+    r_add = r_val * a_f
+    g_add = g_val * a_f
+    b_add = b_val * a_f
+
     for y in range(min_y, max_y + 1):
         dy = np.float32(y - y_c)
         b_quad = dy * b_coeff
@@ -268,12 +270,12 @@ def draw_ellipse_py(canvas, x_c, y_c, r_x, r_y, theta, r, g, b, alpha):
             x_start = max(min_x, int(math.ceil(x_c + dx_min)))
             x_end = min(max_x, int(math.floor(x_c + dx_max)))
 
-            for x in range(x_start, x_end + 1):
-                canvas[y, x, 0] = canvas[y, x, 0] * one_minus_a + r_val * a_f
-                canvas[y, x, 1] = canvas[y, x, 1] * one_minus_a + g_val * a_f
-                canvas[y, x, 2] = canvas[y, x, 2] * one_minus_a + b_val * a_f
-                if canvas.shape[2] == 4:
-                    canvas[y, x, 3] = canvas[y, x, 3] * one_minus_a + np.float32(alpha)
+            if x_start <= x_end:
+                canvas[y, x_start:x_end + 1, 0] = canvas[y, x_start:x_end + 1, 0] * one_minus_a + r_add
+                canvas[y, x_start:x_end + 1, 1] = canvas[y, x_start:x_end + 1, 1] * one_minus_a + g_add
+                canvas[y, x_start:x_end + 1, 2] = canvas[y, x_start:x_end + 1, 2] * one_minus_a + b_add
+                if has_alpha:
+                    canvas[y, x_start:x_end + 1, 3] = canvas[y, x_start:x_end + 1, 3] * one_minus_a + alpha_val
 
 
 class PurePythonEvaluator(BaseEvaluator):
@@ -566,11 +568,13 @@ class PurePythonEvaluator(BaseEvaluator):
             h_color = header.get("color", [128, 128, 128, 255])
             avg_a = h_color[3] if len(h_color) >= 4 else 255.0
 
+        has_alpha = canvas.shape[2] == 4
+
         if len(shapes_list) <= 1:
             canvas[:, :, 0] = avg_r
             canvas[:, :, 1] = avg_g
             canvas[:, :, 2] = avg_b
-            if canvas.shape[2] == 4:
+            if has_alpha:
                 canvas[:, :, 3] = avg_a
             return
 
@@ -578,7 +582,7 @@ class PurePythonEvaluator(BaseEvaluator):
         canvas[:, :, 0] = avg_r
         canvas[:, :, 1] = avg_g
         canvas[:, :, 2] = avg_b
-        if canvas.shape[2] == 4:
+        if has_alpha:
             canvas[:, :, 3] = avg_a
 
         for s in shapes_list:
