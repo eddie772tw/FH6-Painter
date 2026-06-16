@@ -321,6 +321,13 @@ def draw_ellipse(canvas, x_c, y_c, r_x, r_y, theta, r, g, b, alpha):
 
     inv_a = np.float32(1.0 / a) if a > 0 else np.float32(0.0)
 
+    has_alpha_channel = canvas.shape[2] == 4
+    alpha_val = np.float32(alpha)
+
+    r_a_f = r_val * a_f
+    g_a_f = g_val * a_f
+    b_a_f = b_val * a_f
+
     for y in range(min_y, max_y + 1):
         dy = np.float32(y - y_c)
         b_quad = dy * b_coeff
@@ -333,11 +340,11 @@ def draw_ellipse(canvas, x_c, y_c, r_x, r_y, theta, r, g, b, alpha):
             x_end = min(max_x, int(math.floor(x_c + dx_max)))
 
             for x in range(x_start, x_end + 1):
-                canvas[y, x, 0] = canvas[y, x, 0] * one_minus_a + r_val * a_f
-                canvas[y, x, 1] = canvas[y, x, 1] * one_minus_a + g_val * a_f
-                canvas[y, x, 2] = canvas[y, x, 2] * one_minus_a + b_val * a_f
-                if canvas.shape[2] == 4:
-                    canvas[y, x, 3] = canvas[y, x, 3] * one_minus_a + np.float32(alpha)
+                canvas[y, x, 0] = canvas[y, x, 0] * one_minus_a + r_a_f
+                canvas[y, x, 1] = canvas[y, x, 1] * one_minus_a + g_a_f
+                canvas[y, x, 2] = canvas[y, x, 2] * one_minus_a + b_a_f
+                if has_alpha_channel:
+                    canvas[y, x, 3] = canvas[y, x, 3] * one_minus_a + alpha_val
 
 
 @numba.jit(nopython=True, fastmath=True, cache=True)
