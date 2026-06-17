@@ -16,19 +16,42 @@ if not exist "%PYINSTALLER_EXE%" (
     if !errorlevel! equ 0 (
         set "PYINSTALLER_EXE=pyinstaller"
     ) else (
-        echo [INFO] PyInstaller not found in virtual environment, checking global Python...
+        echo [INFO] PyInstaller not found, attempting installation...
         if exist "%PY_EXE%" (
-            "%PY_EXE%" -m pip install pyinstaller
+            echo [INFO] Installing PyInstaller from source [self-compiled bootloader] in venv...
+            "%PY_EXE%" -m pip install --no-binary :all: pyinstaller
             if errorlevel 1 (
-                echo [ERROR] Failed to install PyInstaller in virtual environment.
-                if not "%GITHUB_ACTIONS%" == "true" pause
-                exit /b 1
+                echo.
+                echo [WARNING] Source compilation of PyInstaller failed [MSVC compiler might be missing].
+                echo [WARNING] Falling back to precompiled PyInstaller installation...
+                "%PY_EXE%" -m pip install pyinstaller
+                if errorlevel 1 (
+                    echo [ERROR] Failed to install PyInstaller in virtual environment.
+                    if not "%GITHUB_ACTIONS%" == "true" pause
+                    exit /b 1
+                )
+            ) else (
+                echo [SUCCESS] PyInstaller with self-compiled bootloader installed successfully.
             )
         ) else (
             where python >nul 2>nul
             if !errorlevel! equ 0 (
                 set "PY_EXE=python"
-                "!PY_EXE!" -m pip install pyinstaller
+                echo [INFO] Installing PyInstaller from source [self-compiled bootloader] globally...
+                "!PY_EXE!" -m pip install --no-binary :all: pyinstaller
+                if errorlevel 1 (
+                    echo.
+                    echo [WARNING] Source compilation of PyInstaller failed [MSVC compiler might be missing].
+                    echo [WARNING] Falling back to precompiled PyInstaller installation...
+                    "!PY_EXE!" -m pip install pyinstaller
+                    if errorlevel 1 (
+                        echo [ERROR] Failed to install PyInstaller.
+                        if not "%GITHUB_ACTIONS%" == "true" pause
+                        exit /b 1
+                    )
+                ) else (
+                    echo [SUCCESS] PyInstaller with self-compiled bootloader installed successfully.
+                )
                 set "PYINSTALLER_EXE=pyinstaller"
             ) else (
                 echo [ERROR] No valid Python virtual environment or global Python environment found.
@@ -89,6 +112,29 @@ if exist "%~dp0settings" (
         echo [SUCCESS] Copied "settings" preset folder.
     )
 )
+:: 4.5. Optional Code Signing Step
+set "EXE_PATH=%DIST_DIR%\FH6_Painter_Studio.exe"
+if exist "%EXE_PATH%" (
+    if not "%SIGN_CERT_PATH%"=="" (
+        echo [INFO] Code signing certificate path detected. Attempting to sign executable...
+        where signtool >nul 2>nul
+        if !errorlevel! equ 0 (
+            signtool sign /f "%SIGN_CERT_PATH%" /p "%SIGN_CERT_PASSWORD%" /tr http://timestamp.digicert.com /td sha256 /fd sha256 "%EXE_PATH%"
+            if !errorlevel! equ 0 (
+                echo [SUCCESS] Executable signed successfully!
+            ) else (
+                echo [WARNING] Code signing failed. Check your certificate and password.
+            )
+        ) else (
+            echo [WARNING] "signtool" command not found in PATH. Skipping code signing.
+            echo [INFO] To sign the executable, please ensure Windows SDK is installed and signtool is in your PATH.
+        )
+    ) else (
+        echo [INFO] No code signing certificate specified [SIGN_CERT_PATH is empty].
+        echo [INFO] Skipping code signing. To sign, set SIGN_CERT_PATH and SIGN_CERT_PASSWORD.
+    )
+)
+echo.
 
 :: Copy tools/bin directory
 if exist "%~dp0tools\bin" (

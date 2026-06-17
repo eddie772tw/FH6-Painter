@@ -39,6 +39,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon=['D:\\FH6-Painter\\app_icon.ico'],
 )
 coll = COLLECT(
     exe,
