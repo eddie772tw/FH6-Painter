@@ -171,9 +171,6 @@ def test_engine_selection_and_order():
     try:
         app = ForzaStudioGUI(root)
 
-        # 1. 驗證 Pure Python 始終在清單的最下方
-        assert app.available_evaluators[-1]["code"] == "PURE_PYTHON"
-
         # 2. 模擬選取 GO_OPENCL 引擎並驗證優化選項 state 與 Taichi 專屬元件隱藏
         go_idx = None
         numba_idx = None

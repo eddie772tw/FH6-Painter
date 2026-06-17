@@ -1209,43 +1209,10 @@ class TaichiEvaluator(BaseEvaluator):
                         uncovered_map=uncovered_map_np_dummy,
                     )
                 )
-            except Exception:
-                try:
-                    from evaluators.pure_python_evaluator import serial_hill_climb_py
-
-                    x_c, y_c, r_x, r_y, theta, r, g, b, alpha, delta = (
-                        serial_hill_climb_py(
-                            self.target_image,
-                            current_canvas,
-                            x_c,
-                            y_c,
-                            r_x,
-                            r_y,
-                            theta,
-                            int(alpha),
-                            r,
-                            g,
-                            b,
-                            delta,
-                            optimization_steps,
-                            self.alpha_mask
-                            if self.alpha_mask is not None
-                            else np.zeros((1, 1), dtype=np.float32),
-                            True if check_contour_jit == 1 else False,
-                            sa_enabled=True if sa_enabled == 1 else False,
-                            initial_temp=sa_initial_temp,
-                            cooling_rate=sa_cooling_rate,
-                            max_r=max_r,
-                            use_freeze=True if use_freeze == 1 else False,
-                            freeze_mask=freeze_mask_np_dummy,
-                            use_weight=True if use_weight == 1 else False,
-                            weight_map=weight_map_np_dummy,
-                            use_uncovered=True if use_uncovered == 1 else False,
-                            uncovered_map=uncovered_map_np_dummy,
-                        )
-                    )
-                except Exception as e:
-                    print(f"[Taichi Evaluator Fallback Warning] Hill Climb failed: {e}")
+            except Exception as e:
+                print(
+                    f"[Taichi Evaluator JIT Warning] Numba CPU fallback failed during serial hill climb: {e}"
+                )
 
             # Write optimized result back to GPU
             best_candidate_np[0, 0] = x_c
@@ -1280,16 +1247,11 @@ class TaichiEvaluator(BaseEvaluator):
         alpha: float,
     ) -> None:
 
-        try:
-            from evaluators import numba_kernels
+        from evaluators import numba_kernels
 
-            numba_kernels.draw_ellipse(
-                canvas, x_c, y_c, r_x, r_y, theta_rad, r, g, b, alpha
-            )
-        except ImportError:
-            from evaluators.pure_python_evaluator import draw_ellipse_py
-
-            draw_ellipse_py(canvas, x_c, y_c, r_x, r_y, theta_rad, r, g, b, alpha)
+        numba_kernels.draw_ellipse(
+            canvas, x_c, y_c, r_x, r_y, theta_rad, r, g, b, alpha
+        )
 
     def rebuild_canvas(
         self,
@@ -1300,16 +1262,10 @@ class TaichiEvaluator(BaseEvaluator):
         avg_b: float,
     ) -> None:
 
-        try:
-            from evaluators.numba_evaluator import NumbaEvaluator
+        from evaluators.numba_evaluator import NumbaEvaluator
 
-            numba_eval = NumbaEvaluator(self.target_image, self.alpha_mask)
-            numba_eval.rebuild_canvas(canvas, shapes_list, avg_r, avg_g, avg_b)
-        except Exception:
-            from evaluators.pure_python_evaluator import PurePythonEvaluator
-
-            py_eval = PurePythonEvaluator(self.target_image, self.alpha_mask)
-            py_eval.rebuild_canvas(canvas, shapes_list, avg_r, avg_g, avg_b)
+        numba_eval = NumbaEvaluator(self.target_image, self.alpha_mask)
+        numba_eval.rebuild_canvas(canvas, shapes_list, avg_r, avg_g, avg_b)
 
         # Sync GPU canvas buffer
         if self.initialized:
@@ -1319,18 +1275,10 @@ class TaichiEvaluator(BaseEvaluator):
     def run_redundancy_check(
         self, shapes_list: list, width: int, height: int, final_check: bool = False
     ) -> list:
-        try:
-            from evaluators.numba_evaluator import NumbaEvaluator
+        from evaluators.numba_evaluator import NumbaEvaluator
 
-            numba_eval = NumbaEvaluator(self.target_image, self.alpha_mask)
-            return numba_eval.run_redundancy_check(
-                shapes_list, width, height, final_check
-            )
-        except Exception:
-            from evaluators.pure_python_evaluator import PurePythonEvaluator
-
-            py_eval = PurePythonEvaluator(self.target_image, self.alpha_mask)
-            return py_eval.run_redundancy_check(shapes_list, width, height, final_check)
+        numba_eval = NumbaEvaluator(self.target_image, self.alpha_mask)
+        return numba_eval.run_redundancy_check(shapes_list, width, height, final_check)
 
     def init_uncovered_map(
         self, width: int, height: int, has_alpha: bool, bias: float
@@ -1357,18 +1305,10 @@ class TaichiEvaluator(BaseEvaluator):
         r_y: float,
         theta_rad: float,
     ) -> None:
-        try:
-            from evaluators.numba_evaluator import NumbaEvaluator
+        from evaluators.numba_evaluator import NumbaEvaluator
 
-            numba_eval = NumbaEvaluator(self.target_image, self.alpha_mask)
-            numba_eval.update_uncovered_mask(
-                uncovered_map, x_c, y_c, r_x, r_y, theta_rad
-            )
-        except Exception:
-            from evaluators.pure_python_evaluator import PurePythonEvaluator
-
-            py_eval = PurePythonEvaluator(self.target_image, self.alpha_mask)
-            py_eval.update_uncovered_mask(uncovered_map, x_c, y_c, r_x, r_y, theta_rad)
+        numba_eval = NumbaEvaluator(self.target_image, self.alpha_mask)
+        numba_eval.update_uncovered_mask(uncovered_map, x_c, y_c, r_x, r_y, theta_rad)
 
     def cleanup(self) -> None:
         pass

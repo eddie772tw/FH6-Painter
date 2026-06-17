@@ -49,7 +49,7 @@ def test_generator_pure_python(temp_image_path):
             layers_limit=3,
             candidates_limit=10,
             steps_limit=5,
-            engine_name="PURE_PYTHON",
+            engine_name="NUMBA",
         )
 
         # 驗證回傳碼
@@ -143,7 +143,7 @@ def test_early_convergence(temp_image_path):
             candidates_limit=5,
             steps_limit=2,
             opt_settings=opt_settings,
-            engine_name="PURE_PYTHON",
+            engine_name="NUMBA",
         )
 
         assert res == 0
@@ -165,7 +165,7 @@ def test_early_convergence(temp_image_path):
 
 def test_redundant_layer_consolidation():
     """驗證棄用圖層優化 (QoL 1)：被拋棄圖層是否被移至末端且位置設在畫布中心。"""
-    from evaluators.pure_python_evaluator import PurePythonEvaluator
+    from evaluators.numba_evaluator import NumbaEvaluator
 
     # 建立一個測試用的 shapes_list
     # 第一層是背景，第二層在 (8,8)，第三層在 (8,8) 完全遮擋第二層
@@ -185,7 +185,7 @@ def test_redundant_layer_consolidation():
         },
     ]
 
-    evaluator = PurePythonEvaluator(np.zeros((16, 16, 3), dtype=np.float32))
+    evaluator = NumbaEvaluator(np.zeros((16, 16, 3), dtype=np.float32))
     res = evaluator.run_redundancy_check(shapes_list, 16, 16, final_check=True)
 
     # 驗證總長度依然為 3 (header + 1個有效 + 1個微型)
@@ -219,7 +219,7 @@ def test_generator_resume(temp_image_path):
             layers_limit=2,
             candidates_limit=20,
             steps_limit=5,
-            engine_name="PURE_PYTHON",
+            engine_name="NUMBA",
             opt_settings={"image_pyramid": {"enabled": False}},
         )
         assert res1 == 0
@@ -237,7 +237,7 @@ def test_generator_resume(temp_image_path):
             layers_limit=3,
             candidates_limit=20,
             steps_limit=5,
-            engine_name="PURE_PYTHON",
+            engine_name="NUMBA",
             resume_path=out_path1,
             opt_settings={"image_pyramid": {"enabled": False}},
         )
