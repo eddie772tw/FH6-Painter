@@ -171,8 +171,6 @@ def test_engine_selection_and_order():
     try:
         app = ForzaStudioGUI(root)
 
-
-
         # 2. 模擬選取 GO_OPENCL 引擎並驗證優化選項 state 與 Taichi 專屬元件隱藏
         go_idx = None
         numba_idx = None

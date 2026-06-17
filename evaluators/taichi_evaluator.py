@@ -1141,7 +1141,9 @@ class TaichiEvaluator(BaseEvaluator):
                     )
                 )
             except Exception as e:
-                print(f"[Taichi Evaluator JIT Warning] Numba CPU fallback failed during serial hill climb: {e}")
+                print(
+                    f"[Taichi Evaluator JIT Warning] Numba CPU fallback failed during serial hill climb: {e}"
+                )
 
             # Write optimized result back to GPU
             best_candidate_np[0, 0] = x_c
@@ -1207,9 +1209,7 @@ class TaichiEvaluator(BaseEvaluator):
         from evaluators.numba_evaluator import NumbaEvaluator
 
         numba_eval = NumbaEvaluator(self.target_image, self.alpha_mask)
-        return numba_eval.run_redundancy_check(
-            shapes_list, width, height, final_check
-        )
+        return numba_eval.run_redundancy_check(shapes_list, width, height, final_check)
 
     def init_uncovered_map(
         self, width: int, height: int, has_alpha: bool, bias: float
@@ -1239,9 +1239,7 @@ class TaichiEvaluator(BaseEvaluator):
         from evaluators.numba_evaluator import NumbaEvaluator
 
         numba_eval = NumbaEvaluator(self.target_image, self.alpha_mask)
-        numba_eval.update_uncovered_mask(
-            uncovered_map, x_c, y_c, r_x, r_y, theta_rad
-        )
+        numba_eval.update_uncovered_mask(uncovered_map, x_c, y_c, r_x, r_y, theta_rad)
 
     def cleanup(self) -> None:
         pass

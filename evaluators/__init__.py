@@ -95,7 +95,6 @@ class EvaluatorFactory:
             }
         )
 
-
         return evaluators
 
     @staticmethod
