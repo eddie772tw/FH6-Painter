@@ -961,8 +961,8 @@ def main():
         "--engine",
         "-e",
         default="NUMBA",
-        choices=["NUMBA", "TAICHI", "PURE_PYTHON"],
-        help="Computational engine plugin to use (NUMBA, TAICHI, PURE_PYTHON)",
+        choices=["NUMBA", "TAICHI"],
+        help="Computational engine plugin to use (NUMBA, TAICHI)",
     )
     parser.add_argument(
         "--resume",

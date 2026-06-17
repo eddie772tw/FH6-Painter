@@ -71,28 +71,28 @@ class GoOpenCLEvaluator(BaseEvaluator):
         avg_g: float,
         avg_b: float,
     ) -> None:
-        # Fallback to Pure Python rebuild
-        from evaluators.pure_python_evaluator import PurePythonEvaluator
+        # Fallback to Numba rebuild
+        from evaluators.numba_evaluator import NumbaEvaluator
 
-        fallback = PurePythonEvaluator(self.target_image, self.alpha_mask)
+        fallback = NumbaEvaluator(self.target_image, self.alpha_mask)
         fallback.rebuild_canvas(canvas, shapes_list, avg_r, avg_g, avg_b)
 
     def run_redundancy_check(
         self, shapes_list: list, width: int, height: int, final_check: bool = False
     ) -> list:
-        # Fallback to Pure Python redundancy check
-        from evaluators.pure_python_evaluator import PurePythonEvaluator
+        # Fallback to Numba redundancy check
+        from evaluators.numba_evaluator import NumbaEvaluator
 
-        fallback = PurePythonEvaluator(self.target_image, self.alpha_mask)
+        fallback = NumbaEvaluator(self.target_image, self.alpha_mask)
         return fallback.run_redundancy_check(shapes_list, width, height, final_check)
 
     def init_uncovered_map(
         self, width: int, height: int, has_alpha: bool, bias: float
     ) -> np.ndarray:
-        # Fallback to Pure Python uncovered map init
-        from evaluators.pure_python_evaluator import PurePythonEvaluator
+        # Fallback to Numba uncovered map init
+        from evaluators.numba_evaluator import NumbaEvaluator
 
-        fallback = PurePythonEvaluator(self.target_image, self.alpha_mask)
+        fallback = NumbaEvaluator(self.target_image, self.alpha_mask)
         return fallback.init_uncovered_map(width, height, has_alpha, bias)
 
     def update_uncovered_mask(
@@ -104,10 +104,10 @@ class GoOpenCLEvaluator(BaseEvaluator):
         r_y: float,
         theta_rad: float,
     ) -> None:
-        # Fallback to Pure Python uncovered map update
-        from evaluators.pure_python_evaluator import PurePythonEvaluator
+        # Fallback to Numba uncovered map update
+        from evaluators.numba_evaluator import NumbaEvaluator
 
-        fallback = PurePythonEvaluator(self.target_image, self.alpha_mask)
+        fallback = NumbaEvaluator(self.target_image, self.alpha_mask)
         fallback.update_uncovered_mask(uncovered_map, x_c, y_c, r_x, r_y, theta_rad)
 
     def cleanup(self) -> None:

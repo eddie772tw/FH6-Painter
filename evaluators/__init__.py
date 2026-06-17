@@ -17,7 +17,6 @@ except ImportError:
     TaichiEvaluator = None
 
 from evaluators.go_opencl_evaluator import GoOpenCLEvaluator
-from evaluators.pure_python_evaluator import PurePythonEvaluator
 
 
 class EvaluatorFactory:
@@ -96,30 +95,6 @@ class EvaluatorFactory:
             }
         )
 
-        # 4. Pure Python Engine
-        pure_name = "Pure Python (Baseline)"
-        pure_avail = False
-        try:
-            inst = PurePythonEvaluator(np.zeros((2, 2, 3), dtype=np.float32))
-            pure_avail = inst.is_available()
-            pure_name = inst.get_name()
-        except Exception:
-            pure_avail = True
-
-        evaluators.append(
-            {
-                "code": "PURE_PYTHON",
-                "name": pure_name,
-                "available": pure_avail,
-                "device": "CPU",
-                "class": PurePythonEvaluator,
-            }
-        )
-
-        # 確保 Pure Python 始終在清單的最下方
-        evaluators = [e for e in evaluators if e["code"] != "PURE_PYTHON"] + [
-            e for e in evaluators if e["code"] == "PURE_PYTHON"
-        ]
 
         return evaluators
 
@@ -140,7 +115,7 @@ class EvaluatorFactory:
         selected_engine = engine_map.get(selected_code)
 
         if not selected_engine or not selected_engine["available"]:
-            fallback_order = ["NUMBA", "PURE_PYTHON"]
+            fallback_order = ["NUMBA"]
             print(
                 f"\n[Factory Warning] Requested engine '{selected_code}' is NOT available in this environment."
             )
@@ -171,6 +146,6 @@ class EvaluatorFactory:
                 f"[Factory Exception] Failed to instantiate '{selected_engine['name']}': {e}"
             )
             print(
-                "[Factory Absolute Safe Mode] Reverting to Pure Python (Baseline) to prevent application crash."
+                "[Factory Absolute Safe Mode] Reverting to Numba JIT (CPU Multithreading) to prevent application crash."
             )
-            return PurePythonEvaluator(target_image, alpha_mask)
+            return NumbaEvaluator(target_image, alpha_mask)

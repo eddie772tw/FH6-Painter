@@ -724,11 +724,6 @@ class ForzaStudioGUI:
                     "name": "Go-OpenCL (GPU, Fastest)",
                     "available": has_go,
                 },
-                {
-                    "code": "PURE_PYTHON",
-                    "name": "Pure Python (CPU, Slow)",
-                    "available": True,
-                },
             ]
         evaluator_names = []
         for e in self.available_evaluators:
