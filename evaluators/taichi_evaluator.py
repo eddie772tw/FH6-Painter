@@ -441,6 +441,10 @@ def update_uncovered_mask_gpu(
     height: ti.i32,
     width: ti.i32,
 ):
+    # Force access to prevent JIT compiler from optimizing out unused ndarray arguments on some Vulkan drivers
+    if height == -1:
+        uncovered_map[0, 0] = best_candidate[0, 0]
+
     x_c = best_candidate[0, 0]
     y_c = best_candidate[0, 1]
     r_x = best_candidate[0, 2]
@@ -547,6 +551,10 @@ def draw_ellipse_gpu(
     height: ti.i32,
     width: ti.i32,
 ):
+    # Force access to prevent JIT compiler from optimizing out unused ndarray arguments on some Vulkan drivers
+    if height == -1:
+        canvas[0, 0, 0] = best_candidate[0, 0]
+
     x_c = best_candidate[0, 0]
     y_c = best_candidate[0, 1]
     r_x = best_candidate[0, 2]

@@ -1,14 +1,15 @@
-import unittest
-from unittest.mock import MagicMock, patch, ANY
 import ctypes
-import struct
 import os
+import struct
 import sys
+import unittest
+from unittest.mock import ANY, MagicMock, patch
 
 # Add the project root to sys.path to allow importing from tools
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import tools.fh6_import_layer_table as importer
+
 
 class TestMockScanner(unittest.TestCase):
     @patch("tools.fh6_import_layer_table.kernel32")
@@ -46,6 +47,7 @@ class TestMockScanner(unittest.TestCase):
         mbi_data.append(m3)
 
         idx = 0
+
         def mock_vq(handle, address, mbi_ptr, size):
             nonlocal idx
             if idx >= len(mbi_data):
@@ -65,21 +67,25 @@ class TestMockScanner(unittest.TestCase):
     @patch("tools.fh6_import_layer_table.try_read")
     @patch("tools.fh6_import_layer_table.is_user_ptr")
     @patch("tools.fh6_import_layer_table.read_2_floats")
-    def test_score_layer_adaptive_details(self, mock_read_2_floats, mock_is_user_ptr, mock_try_read):
+    def test_score_layer_adaptive_details(
+        self, mock_read_2_floats, mock_is_user_ptr, mock_try_read
+    ):
         mock_is_user_ptr.return_value = True
 
         # Scenario: Position is out of range
         mock_read_2_floats.side_effect = [
-            (99999.0, 0.0), # pos: Fail
-            (1.0, 1.0)      # scale: Pass
+            (99999.0, 0.0),  # pos: Fail
+            (1.0, 1.0),  # scale: Pass
         ]
         mock_try_read.side_effect = [
-            bytes([255, 255, 255, 255]), # color: Pass
-            bytes([importer.SHAPE_ID_ELLIPSE]), # shape: Pass
-            bytes([0]) # mask: Pass
+            bytes([255, 255, 255, 255]),  # color: Pass
+            bytes([importer.SHAPE_ID_ELLIPSE]),  # shape: Pass
+            bytes([0]),  # mask: Pass
         ]
 
-        score, detail = importer.score_layer_adaptive(None, 0x1234, importer.StrictnessLevel.PERFECT, return_detail=True)
+        score, detail = importer.score_layer_adaptive(
+            None, 0x1234, importer.StrictnessLevel.PERFECT, return_detail=True
+        )
         self.assertEqual(score, 4)
         self.assertIn("Pos invalid", detail)
 
@@ -89,10 +95,23 @@ class TestMockScanner(unittest.TestCase):
     @patch("tools.fh6_import_layer_table.is_user_ptr")
     @patch("tools.fh6_import_layer_table.score_layer_adaptive")
     @patch("tools.fh6_import_layer_table.count_valid_layers_adaptive")
-    def test_locate_layer_pointers_with_mapped_region(self, mock_count_valid, mock_score_adaptive, mock_is_user_ptr, mock_read_u64, mock_try_read, mock_enumerate):
+    def test_locate_layer_pointers_with_mapped_region(
+        self,
+        mock_count_valid,
+        mock_score_adaptive,
+        mock_is_user_ptr,
+        mock_read_u64,
+        mock_try_read,
+        mock_enumerate,
+    ):
         # Setup regions: one mapped region containing the pattern
         mock_enumerate.return_value = [
-            {"Base": 0x10000, "Size": 0x1000, "Protect": importer.PAGE_READWRITE, "Type": importer.MEM_MAPPED}
+            {
+                "Base": 0x10000,
+                "Size": 0x1000,
+                "Protect": importer.PAGE_READWRITE,
+                "Type": importer.MEM_MAPPED,
+            }
         ]
 
         layer_count = 100
@@ -100,13 +119,13 @@ class TestMockScanner(unittest.TestCase):
 
         chunk = bytearray(importer.CHUNK_SIZE)
         offset = 100
-        chunk[offset:offset+4] = pattern
+        chunk[offset : offset + 4] = pattern
 
         mock_try_read.side_effect = [
-            chunk, # scan_region_task
-            struct.pack("<Q", 0x3000), # read_u64(table_addr) inside the loop
+            chunk,  # scan_region_task
+            struct.pack("<Q", 0x3000),  # read_u64(table_addr) inside the loop
             # table_data for final pointers read
-            struct.pack("<100Q", *[0x4000+i for i in range(100)])
+            struct.pack("<100Q", *[0x4000 + i for i in range(100)]),
         ]
 
         mock_read_u64.return_value = 0x20000
@@ -116,6 +135,7 @@ class TestMockScanner(unittest.TestCase):
             if return_detail:
                 return (5, "")
             return 5
+
         mock_score_adaptive.side_effect = score_side_effect
 
         mock_count_valid.return_value = 100
@@ -124,10 +144,13 @@ class TestMockScanner(unittest.TestCase):
             mock_hm_inst = mock_hm.return_value
             mock_hm_inst.data = {"successful_regions": []}
 
-            pointers, group, table = importer.locate_layer_pointers(None, layer_count, 1000)
+            pointers, group, table = importer.locate_layer_pointers(
+                None, layer_count, 1000
+            )
 
             self.assertEqual(table, 0x20000)
             self.assertEqual(len(pointers), 100)
+
 
 if __name__ == "__main__":
     unittest.main()
