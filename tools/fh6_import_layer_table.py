@@ -19,6 +19,8 @@ PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 
 MEM_COMMIT = 0x1000
 MEM_PRIVATE = 0x20000
+MEM_MAPPED = 0x40000
+MEM_IMAGE = 0x1000000
 
 PAGE_NOACCESS = 0x01
 PAGE_READONLY = 0x02
@@ -275,7 +277,9 @@ def enumerate_regions(handle):
         if res == 0:
             break
 
-        if mbi.State == MEM_COMMIT and mbi.Type == MEM_PRIVATE:
+        # FH6 might store layer tables in MAPPED or IMAGE regions in some scenarios or versions
+        valid_types = (MEM_PRIVATE, MEM_MAPPED, MEM_IMAGE)
+        if mbi.State == MEM_COMMIT and (mbi.Type in valid_types):
             if is_readable(mbi.Protect) and is_writable(mbi.Protect):
                 regions.append(
                     {
@@ -335,10 +339,14 @@ class HeuristicsManager:
         self.save()
 
 
-def score_layer_adaptive(handle, layer_ptr, level=StrictnessLevel.PERFECT):
+def score_layer_adaptive(
+    handle, layer_ptr, level=StrictnessLevel.PERFECT, return_detail=False
+):
     if not is_user_ptr(layer_ptr):
-        return 0
+        return (0, "Invalid user pointer") if return_detail else 0
+
     score = 0
+    details = []
 
     pos = read_2_floats(handle, layer_ptr + LAYER_POS_OFFSET)
     coord_limit = 8192.0 if level == StrictnessLevel.PERFECT else 32768.0
@@ -348,6 +356,8 @@ def score_layer_adaptive(handle, layer_ptr, level=StrictnessLevel.PERFECT):
         and is_finite_in_range(pos[1], -coord_limit, coord_limit)
     ):
         score += 1
+    elif return_detail:
+        details.append(f"Pos invalid: {pos}")
 
     scale = read_2_floats(handle, layer_ptr + LAYER_SCALE_OFFSET)
     scale_limit = 64.0 if level == StrictnessLevel.PERFECT else 256.0
@@ -357,30 +367,44 @@ def score_layer_adaptive(handle, layer_ptr, level=StrictnessLevel.PERFECT):
         and is_finite_in_range(abs(scale[1]), 0.00001, scale_limit)
     ):
         score += 1
+    elif return_detail:
+        details.append(f"Scale invalid: {scale}")
 
     color = try_read(handle, layer_ptr + LAYER_COLOR_OFFSET, 4)
     if color is not None and len(color) == 4:
         score += 1
+    elif return_detail:
+        details.append("Color read failed")
 
     shape = try_read(handle, layer_ptr + LAYER_SHAPE_ID_OFFSET, 1)
     if shape is not None and len(shape) == 1:
         if level == StrictnessLevel.PERFECT:
             if shape[0] == SHAPE_ID_OTHER or shape[0] == SHAPE_ID_ELLIPSE:
                 score += 1
+            elif return_detail:
+                details.append(f"Shape ID mismatch: {shape[0]}")
         else:
             if shape[0] != 0:
                 score += 1
             else:
                 score += 1
+    elif return_detail:
+        details.append("Shape ID read failed")
 
     mask = try_read(handle, layer_ptr + LAYER_MASK_OFFSET, 1)
     if mask is not None and len(mask) == 1:
         if level == StrictnessLevel.PERFECT:
             if mask[0] == 0 or mask[0] == 1:
                 score += 1
+            elif return_detail:
+                details.append(f"Mask invalid: {mask[0]}")
         else:
             score += 1
+    elif return_detail:
+        details.append("Mask read failed")
 
+    if return_detail:
+        return score, "; ".join(details)
     return score
 
 
@@ -613,19 +637,30 @@ def locate_layer_pointers(handle, layer_count, max_candidates):
                     valid_ptrs = True
                     failure_detail = None
 
+                    type_name = "PRIVATE"
+                    if region["Type"] == MEM_MAPPED:
+                        type_name = "MAPPED"
+                    elif region["Type"] == MEM_IMAGE:
+                        type_name = "IMAGE"
+
                     for i in range(sample_len):
                         ptr = read_u64(handle, table_addr + i * 8)
                         if not is_user_ptr(ptr):
                             valid_ptrs = False
                             failure_detail = (
-                                f"圖層 {i} 指針 0x{ptr:X} 不是有效的用戶空間指針"
+                                f"[{type_name}] 圖層 {i} 指針 0x{ptr:X} 不是有效的用戶空間指針"
                             )
                             break
 
-                        sp = score_layer_adaptive(handle, ptr, StrictnessLevel.PERFECT)
+                        sp, det = score_layer_adaptive(
+                            handle, ptr, StrictnessLevel.PERFECT, return_detail=True
+                        )
                         sr = score_layer_adaptive(handle, ptr, StrictnessLevel.RELAXED)
                         sm = score_layer_adaptive(handle, ptr, StrictnessLevel.MINIMAL)
                         sample_scores.append((sp, sr, sm))
+
+                        if sp < 5 and not failure_detail:
+                            failure_detail = f"[{type_name}] 圖層 {i} 驗證失敗: {det}"
 
                     if not valid_ptrs or len(sample_scores) < sample_len:
                         is_p = is_r = is_m = False

@@ -2047,8 +2047,13 @@ class ForzaStudioGUI:
 
                     messagebox.showerror(
                         "導入失敗 / Import Failed",
-                        "彩繪圖層注入失敗！\n請檢查終端機日誌以確認錯誤原因。\n\n"
-                        "提示：如果錯誤是 LastError=5 (Access Denied)，請關閉程式並以「系統管理員身分執行」重試。",
+                        "彩繪圖層注入失敗！無任何級別的候選者通過驗證。\n\n"
+                        "請點擊右上角「診斷主控台 / Show Logs」查看詳細驗證失敗原因。\n\n"
+                        "常見疑難排解：\n"
+                        "1. 確保您已進入編輯器並建立了正確數量的圓形圖層。\n"
+                        "2. ⚠️ 確保所有圓形圖層都已「解除群組 (Ungrouped)」。\n"
+                        "3. 嘗試退出編輯器再重新進入，並重新建立圖層。\n"
+                        "4. 如果 Log 顯示 LastError=5 (Access Denied)，請以「系統管理員身分」重啟本程式。",
                     )
 
         # Loop again in 100ms
