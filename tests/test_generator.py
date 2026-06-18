@@ -273,7 +273,7 @@ def test_early_convergence_with_progressive_sampling(temp_image_path):
         },
         "image_pyramid": {
             "enabled": True,
-        }
+        },
     }
 
     try:
