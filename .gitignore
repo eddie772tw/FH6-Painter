@@ -67,3 +67,4 @@ optimization_settings.json
 /nuitka_dist
 
 optimization_settings.json
+.coverage
