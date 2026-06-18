@@ -324,6 +324,13 @@ def taichi_parallel_search(
                 + ti.cast(freeze_mask[0, 0], ti.f32)
                 + weight_map[0, 0]
                 + uncovered_map[0, 0]
+                + target_r[0, 0]
+                + target_g[0, 0]
+                + target_b[0, 0]
+                + canvas_r[0, 0]
+                + canvas_g[0, 0]
+                + canvas_b[0, 0]
+                + candidates[0, 0]
             )
         x_c = candidates[i, 0]
         y_c = candidates[i, 1]
@@ -662,6 +669,14 @@ def parallel_hill_climb_gpu(
                 + ti.cast(freeze_mask[0, 0], ti.f32)
                 + weight_map[0, 0]
                 + uncovered_map[0, 0]
+                + target_r[0, 0]
+                + target_g[0, 0]
+                + target_b[0, 0]
+                + canvas_r[0, 0]
+                + canvas_g[0, 0]
+                + canvas_b[0, 0]
+                + climb_candidates[0, 0]
+                + best_candidate[0, 0]
             )
         curr_x_c = best_candidate[0, 0]
         curr_y_c = best_candidate[0, 1]
