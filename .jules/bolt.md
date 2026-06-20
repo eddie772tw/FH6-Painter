@@ -24,3 +24,7 @@
 ## 2026-06-04 - Scanline Discriminant Simplification
 **Learning:** The equation `b_quad * b_quad - a * c_val` inside the ellipse scanline discriminant loop simplifies to `a - dy * dy * inv_rx2 * inv_ry2`. The previous form required calculating `c_y_coeff` and then computing `c_val = dy * dy * c_y_coeff - 1.0` and `discriminant = b_quad * b_quad - a * c_val` in the innermost loop (4 multiplies, 2 subtracts). The new formula requires just `a - dy * dy * inv_rx2_ry2` (2 multiplies, 1 subtract). This mathematical simplification removes instructions from the tightest inner loop, accelerating pixel coverage determination without affecting results.
 **Action:** Look for algebraic simplifications in heavily called mathematical loops (like geometry boundary solvers). Expanding and factoring intermediate terms can often reveal a simpler, more computationally efficient equivalent.
+
+## 2026-06-20 - Shape Checking Unswitching in Rendering Kernels
+**Learning:** Checking the number of channels (e.g. `canvas.shape[2] == 4`) inside the tightest inner loop `for x in range(...)` adds unnecessary branching overhead per pixel for rendering routines like `draw_ellipse`, inhibiting efficient compiler vectorization.
+**Action:** Hoist the constant channel validation check outside the outermost geometry rendering loop, effectively unswitching the core loops to process either RGB or RGBA channels cleanly.
