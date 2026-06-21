@@ -127,19 +127,21 @@ def evaluate_candidate_ti(
         # Precompute division (1.0 / a) to avoid expensive division inside tight loops
         inv_a = 1.0 / a if a > 0.0 else 0.0
 
+        inv_a2 = inv_a * inv_a
+        scaled_inv_rx2_ry2 = inv_rx2_ry2 * inv_a2
+        b_coeff_inv_a = b_coeff * inv_a
+
         # Validation Pass (Scalar constraints check)
         if check_contour == 1 or use_freeze == 1:
             y = min_y
             while y <= max_y and is_valid == 1:
                 dy = ti.cast(y, ti.f32) - y_c
-                b_val = dy * b_coeff
-                discriminant = a - dy * dy * inv_rx2_ry2
-                if discriminant >= 0.0:
-                    sqrt_d = ti.math.sqrt(discriminant)
-                    dx_min = (-b_val - sqrt_d) * inv_a
-                    dx_max = (-b_val + sqrt_d) * inv_a
-                    x_start = ti.max(min_x, ti.cast(ti.math.ceil(x_c + dx_min), ti.i32))
-                    x_end = ti.min(max_x, ti.cast(ti.math.floor(x_c + dx_max), ti.i32))
+                discriminant_scaled = inv_a - dy * dy * scaled_inv_rx2_ry2
+                if discriminant_scaled >= 0.0:
+                    sqrt_d_scaled = ti.math.sqrt(discriminant_scaled)
+                    center_x = x_c - dy * b_coeff_inv_a
+                    x_start = ti.max(min_x, ti.cast(ti.math.ceil(center_x - sqrt_d_scaled), ti.i32))
+                    x_end = ti.min(max_x, ti.cast(ti.math.floor(center_x + sqrt_d_scaled), ti.i32))
 
                     x = x_start
                     while x <= x_end and is_valid == 1:
@@ -156,17 +158,15 @@ def evaluate_candidate_ti(
                 y = min_y
                 while y <= max_y:
                     dy = ti.cast(y, ti.f32) - y_c
-                    b_val = dy * b_coeff
-                    discriminant = a - dy * dy * inv_rx2_ry2
-                    if discriminant >= 0.0:
-                        sqrt_d = ti.math.sqrt(discriminant)
-                        dx_min = (-b_val - sqrt_d) * inv_a
-                        dx_max = (-b_val + sqrt_d) * inv_a
+                    discriminant_scaled = inv_a - dy * dy * scaled_inv_rx2_ry2
+                    if discriminant_scaled >= 0.0:
+                        sqrt_d_scaled = ti.math.sqrt(discriminant_scaled)
+                        center_x = x_c - dy * b_coeff_inv_a
                         x_start = ti.max(
-                            min_x, ti.cast(ti.math.ceil(x_c + dx_min), ti.i32)
+                            min_x, ti.cast(ti.math.ceil(center_x - sqrt_d_scaled), ti.i32)
                         )
                         x_end = ti.min(
-                            max_x, ti.cast(ti.math.floor(x_c + dx_max), ti.i32)
+                            max_x, ti.cast(ti.math.floor(center_x + sqrt_d_scaled), ti.i32)
                         )
 
                         x = x_start
@@ -201,17 +201,15 @@ def evaluate_candidate_ti(
                 y = min_y
                 while y <= max_y:
                     dy = ti.cast(y, ti.f32) - y_c
-                    b_val = dy * b_coeff
-                    discriminant = a - dy * dy * inv_rx2_ry2
-                    if discriminant >= 0.0:
-                        sqrt_d = ti.math.sqrt(discriminant)
-                        dx_min = (-b_val - sqrt_d) * inv_a
-                        dx_max = (-b_val + sqrt_d) * inv_a
+                    discriminant_scaled = inv_a - dy * dy * scaled_inv_rx2_ry2
+                    if discriminant_scaled >= 0.0:
+                        sqrt_d_scaled = ti.math.sqrt(discriminant_scaled)
+                        center_x = x_c - dy * b_coeff_inv_a
                         x_start = ti.max(
-                            min_x, ti.cast(ti.math.ceil(x_c + dx_min), ti.i32)
+                            min_x, ti.cast(ti.math.ceil(center_x - sqrt_d_scaled), ti.i32)
                         )
                         x_end = ti.min(
-                            max_x, ti.cast(ti.math.floor(x_c + dx_max), ti.i32)
+                            max_x, ti.cast(ti.math.floor(center_x + sqrt_d_scaled), ti.i32)
                         )
 
                         x = x_start
@@ -470,16 +468,18 @@ def update_uncovered_mask_gpu(
     # Also hoists inverse division outside the loop for performance
     inv_a = 1.0 / a if a > 0.0 else 0.0
 
+    inv_a2 = inv_a * inv_a
+    scaled_inv_rx2_ry2 = inv_rx2_ry2 * inv_a2
+    b_coeff_inv_a = b_coeff * inv_a
+
     for y in range(min_y, max_y + 1):
         dy = ti.cast(y, ti.f32) - y_c
-        b_val = dy * b_coeff
-        discriminant = a - dy * dy * inv_rx2_ry2
-        if discriminant >= 0.0:
-            sqrt_d = ti.math.sqrt(discriminant)
-            dx_min = (-b_val - sqrt_d) * inv_a
-            dx_max = (-b_val + sqrt_d) * inv_a
-            x_start = ti.max(min_x, ti.cast(ti.math.ceil(x_c + dx_min), ti.i32))
-            x_end = ti.min(max_x, ti.cast(ti.math.floor(x_c + dx_max), ti.i32))
+        discriminant_scaled = inv_a - dy * dy * scaled_inv_rx2_ry2
+        if discriminant_scaled >= 0.0:
+            sqrt_d_scaled = ti.math.sqrt(discriminant_scaled)
+            center_x = x_c - dy * b_coeff_inv_a
+            x_start = ti.max(min_x, ti.cast(ti.math.ceil(center_x - sqrt_d_scaled), ti.i32))
+            x_end = ti.min(max_x, ti.cast(ti.math.floor(center_x + sqrt_d_scaled), ti.i32))
             for x in range(x_start, x_end + 1):
                 uncovered_map[y, x] = 1.0
 
@@ -582,16 +582,18 @@ def draw_ellipse_gpu(
 
     inv_a = 1.0 / a if a > 0.0 else 0.0
 
+    inv_a2 = inv_a * inv_a
+    scaled_inv_rx2_ry2 = inv_rx2_ry2 * inv_a2
+    b_coeff_inv_a = b_coeff * inv_a
+
     for y in range(min_y, max_y + 1):
         dy = ti.cast(y, ti.f32) - y_c
-        b_val = dy * b_coeff
-        discriminant = a - dy * dy * inv_rx2_ry2
-        if discriminant >= 0.0:
-            sqrt_d = ti.math.sqrt(discriminant)
-            dx_min = (-b_val - sqrt_d) * inv_a
-            dx_max = (-b_val + sqrt_d) * inv_a
-            x_start = ti.max(min_x, ti.cast(ti.math.ceil(x_c + dx_min), ti.i32))
-            x_end = ti.min(max_x, ti.cast(ti.math.floor(x_c + dx_max), ti.i32))
+        discriminant_scaled = inv_a - dy * dy * scaled_inv_rx2_ry2
+        if discriminant_scaled >= 0.0:
+            sqrt_d_scaled = ti.math.sqrt(discriminant_scaled)
+            center_x = x_c - dy * b_coeff_inv_a
+            x_start = ti.max(min_x, ti.cast(ti.math.ceil(center_x - sqrt_d_scaled), ti.i32))
+            x_end = ti.min(max_x, ti.cast(ti.math.floor(center_x + sqrt_d_scaled), ti.i32))
 
             for x in range(x_start, x_end + 1):
                 canvas[y, x, 0] = canvas[y, x, 0] * one_minus_a + r * a_f

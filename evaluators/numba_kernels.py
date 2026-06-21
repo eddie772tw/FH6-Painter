@@ -70,18 +70,21 @@ def evaluate_candidate(
 
     inv_a = np.float32(1.0 / a) if a > 0 else np.float32(0.0)
 
+    # Precompute scaled variables for discriminant to save operations in the inner loop
+    inv_a2 = inv_a * inv_a
+    scaled_inv_rx2_ry2 = inv_rx2_ry2 * inv_a2
+    b_coeff_inv_a = b_coeff * inv_a
+
     # Validation Pass: Check freeze mask first (contour check is integrated into main loop for overhang tolerance)
     if use_freeze:
         for y in range(min_y, max_y + 1, sample_step):
             dy = np.float32(y - y_c)
-            b_quad = dy * b_coeff
-            discriminant = a - dy * dy * inv_rx2_ry2
-            if discriminant >= 0.0:
-                sqrt_d = math.sqrt(discriminant)
-                dx_min = (-b_quad - sqrt_d) * inv_a
-                dx_max = (-b_quad + sqrt_d) * inv_a
-                x_start = max(min_x, int(math.ceil(x_c + dx_min)))
-                x_end = min(max_x, int(math.floor(x_c + dx_max)))
+            discriminant_scaled = inv_a - dy * dy * scaled_inv_rx2_ry2
+            if discriminant_scaled >= 0.0:
+                sqrt_d_scaled = math.sqrt(discriminant_scaled)
+                center_x = x_c - dy * b_coeff_inv_a
+                x_start = max(min_x, int(math.ceil(center_x - sqrt_d_scaled)))
+                x_end = min(max_x, int(math.floor(center_x + sqrt_d_scaled)))
 
                 for x in range(x_start, x_end + 1, sample_step):
                     if freeze_mask[y, x] == 1:
@@ -116,14 +119,12 @@ def evaluate_candidate(
         # Fast Path (No weights)
         for y in range(min_y, max_y + 1, sample_step):
             dy = np.float32(y - y_c)
-            b_quad = dy * b_coeff
-            discriminant = a - dy * dy * inv_rx2_ry2
-            if discriminant >= 0.0:
-                sqrt_d = math.sqrt(discriminant)
-                dx_min = (-b_quad - sqrt_d) * inv_a
-                dx_max = (-b_quad + sqrt_d) * inv_a
-                x_start = max(min_x, int(math.ceil(x_c + dx_min)))
-                x_end = min(max_x, int(math.floor(x_c + dx_max)))
+            discriminant_scaled = inv_a - dy * dy * scaled_inv_rx2_ry2
+            if discriminant_scaled >= 0.0:
+                sqrt_d_scaled = math.sqrt(discriminant_scaled)
+                center_x = x_c - dy * b_coeff_inv_a
+                x_start = max(min_x, int(math.ceil(center_x - sqrt_d_scaled)))
+                x_end = min(max_x, int(math.floor(center_x + sqrt_d_scaled)))
 
                 for x in range(x_start, x_end + 1, sample_step):
                     # Check transparent background boundaries
@@ -159,14 +160,12 @@ def evaluate_candidate(
         # Slow Path (With weights)
         for y in range(min_y, max_y + 1, sample_step):
             dy = np.float32(y - y_c)
-            b_quad = dy * b_coeff
-            discriminant = a - dy * dy * inv_rx2_ry2
-            if discriminant >= 0.0:
-                sqrt_d = math.sqrt(discriminant)
-                dx_min = (-b_quad - sqrt_d) * inv_a
-                dx_max = (-b_quad + sqrt_d) * inv_a
-                x_start = max(min_x, int(math.ceil(x_c + dx_min)))
-                x_end = min(max_x, int(math.floor(x_c + dx_max)))
+            discriminant_scaled = inv_a - dy * dy * scaled_inv_rx2_ry2
+            if discriminant_scaled >= 0.0:
+                sqrt_d_scaled = math.sqrt(discriminant_scaled)
+                center_x = x_c - dy * b_coeff_inv_a
+                x_start = max(min_x, int(math.ceil(center_x - sqrt_d_scaled)))
+                x_end = min(max_x, int(math.floor(center_x + sqrt_d_scaled)))
 
                 for x in range(x_start, x_end + 1, sample_step):
                     # Check transparent background boundaries
@@ -321,16 +320,18 @@ def draw_ellipse(canvas, x_c, y_c, r_x, r_y, theta, r, g, b, alpha):
 
     inv_a = np.float32(1.0 / a) if a > 0 else np.float32(0.0)
 
+    inv_a2 = inv_a * inv_a
+    scaled_inv_rx2_ry2 = inv_rx2_ry2 * inv_a2
+    b_coeff_inv_a = b_coeff * inv_a
+
     for y in range(min_y, max_y + 1):
         dy = np.float32(y - y_c)
-        b_quad = dy * b_coeff
-        discriminant = a - dy * dy * inv_rx2_ry2
-        if discriminant >= 0.0:
-            sqrt_d = math.sqrt(discriminant)
-            dx_min = (-b_quad - sqrt_d) * inv_a
-            dx_max = (-b_quad + sqrt_d) * inv_a
-            x_start = max(min_x, int(math.ceil(x_c + dx_min)))
-            x_end = min(max_x, int(math.floor(x_c + dx_max)))
+        discriminant_scaled = inv_a - dy * dy * scaled_inv_rx2_ry2
+        if discriminant_scaled >= 0.0:
+            sqrt_d_scaled = math.sqrt(discriminant_scaled)
+            center_x = x_c - dy * b_coeff_inv_a
+            x_start = max(min_x, int(math.ceil(center_x - sqrt_d_scaled)))
+            x_end = min(max_x, int(math.floor(center_x + sqrt_d_scaled)))
 
             for x in range(x_start, x_end + 1):
                 canvas[y, x, 0] = canvas[y, x, 0] * one_minus_a + r_val * a_f
@@ -381,16 +382,18 @@ def update_uncovered_mask(uncovered_map, x_c, y_c, r_x, r_y, theta):
 
     inv_a = np.float32(1.0 / a) if a > 0 else np.float32(0.0)
 
+    inv_a2 = inv_a * inv_a
+    scaled_inv_rx2_ry2 = inv_rx2_ry2 * inv_a2
+    b_coeff_inv_a = b_coeff * inv_a
+
     for y in range(min_y, max_y + 1):
         dy = np.float32(y - y_c)
-        b_quad = dy * b_coeff
-        discriminant = a - dy * dy * inv_rx2_ry2
-        if discriminant >= 0.0:
-            sqrt_d = math.sqrt(discriminant)
-            dx_min = (-b_quad - sqrt_d) * inv_a
-            dx_max = (-b_quad + sqrt_d) * inv_a
-            x_start = max(min_x, int(math.ceil(x_c + dx_min)))
-            x_end = min(max_x, int(math.floor(x_c + dx_max)))
+        discriminant_scaled = inv_a - dy * dy * scaled_inv_rx2_ry2
+        if discriminant_scaled >= 0.0:
+            sqrt_d_scaled = math.sqrt(discriminant_scaled)
+            center_x = x_c - dy * b_coeff_inv_a
+            x_start = max(min_x, int(math.ceil(center_x - sqrt_d_scaled)))
+            x_end = min(max_x, int(math.floor(center_x + sqrt_d_scaled)))
 
             for x in range(x_start, x_end + 1):
                 uncovered_map[y, x] = np.float32(1.0)
