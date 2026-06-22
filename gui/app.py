@@ -166,7 +166,7 @@ class ForzaStudioGUI(
 
         self.root.after(100, self.poll_background_updates)
 
-        if windnd:
+        if windnd and sys.platform == "win32":
             if hasattr(windnd, "hook_dropfiles"):
                 windnd.hook_dropfiles(self.root, self.on_file_drop)
             elif hasattr(windnd, "hook_drop"):
