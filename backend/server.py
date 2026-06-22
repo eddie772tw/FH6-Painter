@@ -25,11 +25,40 @@ except ImportError:
     scan_gpus = None
 
 
+def get_project_base(filepath):
+    if not filepath:
+        return ""
+    base = os.path.splitext(os.path.basename(filepath))[0]
+    if base.endswith("_masked"):
+        base = base[:-7]
+    if base == "_temp_resume":
+        dir_name = os.path.dirname(os.path.abspath(filepath))
+        parent_dir_name = os.path.basename(dir_name)
+        return parent_dir_name
+
+    # If the file is inside output/something/, the directory name is project base
+    dir_name = os.path.dirname(os.path.abspath(filepath))
+    parent_dir_name = os.path.basename(dir_name)
+    grandparent_dir_name = os.path.basename(os.path.dirname(dir_name))
+    if grandparent_dir_name.lower() == "output":
+        return parent_dir_name
+
+    import re
+
+    # Match project base name before dot or underscore followed by numbers
+    match = re.match(r"^(.+?)(?:[._]\d+)?$", base)
+    if match:
+        return match.group(1)
+    return base
+
+
 def get_image_info(image_path):
     try:
-        from PIL import Image
-        import io
         import base64
+        import io
+
+        from PIL import Image
+
         with Image.open(image_path) as img:
             width, height = img.size
             preview_img = img.copy()
@@ -43,11 +72,7 @@ def get_image_info(image_path):
                 preview_img = preview_img.convert("RGB")
             preview_img.save(buffer, format="JPEG", quality=80)
             b64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
-            return {
-                "width": width,
-                "height": height,
-                "preview_base64": b64
-            }
+            return {"width": width, "height": height, "preview_base64": b64}
     except Exception as e:
         print(f"Error getting image info: {e}")
         return None
@@ -161,35 +186,52 @@ class PainterServer:
             img_path = data.get("img_path", "")
             checkpoints = {}
             if img_path:
-                img_base = os.path.splitext(os.path.basename(img_path))[0]
-                if img_base.endswith("_masked"):
-                    img_base = img_base[:-7]
-                if img_base != "_temp_resume":
+                img_base = get_project_base(img_path)
+                if img_base:
                     output_dir = os.path.join(ROOT_DIR, "output", img_base)
                     if os.path.exists(output_dir):
                         import glob
 
                         for f in glob.glob(
                             os.path.join(output_dir, f"{img_base}_*.json")
-                        ):
+                        ) + glob.glob(os.path.join(output_dir, f"{img_base}.*.json")):
                             basename = os.path.basename(f)
-                            num_str = basename.replace(img_base + "_", "").replace(
-                                ".json", ""
+                            num_str = (
+                                basename.replace(img_base + "_", "")
+                                .replace(img_base + ".", "")
+                                .replace(".json", "")
                             )
                             try:
                                 num = int(num_str)
                                 checkpoints[num] = os.path.abspath(f)
                             except Exception:
                                 pass
+                        # Also check for the final completed JSON file (without _<layer> suffix)
+                        final_json = os.path.join(output_dir, f"{img_base}.json")
+                        if os.path.exists(final_json):
+                            try:
+                                with open(final_json, "r", encoding="utf-8") as f:
+                                    json_data = json.load(f)
+                                num_layers = max(
+                                    0, len(json_data.get("shapes", [])) - 1
+                                )
+                                if num_layers > 0:
+                                    checkpoints[num_layers] = os.path.abspath(
+                                        final_json
+                                    )
+                            except Exception:
+                                pass
                 if img_path.lower().endswith(".json") and os.path.exists(img_path):
-                    try:
-                        with open(img_path, "r", encoding="utf-8") as f:
-                            json_data = json.load(f)
-                        num_layers = max(0, len(json_data.get("shapes", [])) - 1)
-                        if num_layers > 0:
-                            checkpoints[num_layers] = os.path.abspath(img_path)
-                    except Exception:
-                        pass
+                    # Do not add temporary resume file to checkpoints list
+                    if not os.path.basename(img_path).startswith("_temp_resume"):
+                        try:
+                            with open(img_path, "r", encoding="utf-8") as f:
+                                json_data = json.load(f)
+                            num_layers = max(0, len(json_data.get("shapes", [])) - 1)
+                            if num_layers > 0:
+                                checkpoints[num_layers] = os.path.abspath(img_path)
+                        except Exception:
+                            pass
             sorted_cps = [
                 {"layer": k, "path": v} for k, v in sorted(checkpoints.items())
             ]
@@ -204,7 +246,12 @@ class PainterServer:
                     json_data = json.load(f)
                 shapes = json_data.get("shapes", [])
                 sliced_shapes = shapes[: slice_layer + 1]
-                temp_path = os.path.join(os.path.dirname(filepath), "_temp_resume.json")
+
+                project_base = get_project_base(filepath)
+                temp_dir = os.path.join(ROOT_DIR, "output", project_base)
+                os.makedirs(temp_dir, exist_ok=True)
+                temp_path = os.path.join(temp_dir, "_temp_resume.json")
+
                 with open(temp_path, "w", encoding="utf-8") as f:
                     json.dump({"shapes": sliced_shapes}, f)
 
@@ -410,7 +457,7 @@ class PainterServer:
         img_path = config.get("json_path", "")
 
         # Reconstruct the expected JSON path from the original image filename
-        img_base = os.path.splitext(os.path.basename(img_path))[0]
+        img_base = get_project_base(img_path)
         output_dir = os.path.join(ROOT_DIR, "output", img_base)
         json_path = os.path.join(output_dir, f"{img_base}.json")
 
@@ -477,23 +524,25 @@ class PainterServer:
             if original_img_path and os.path.exists(original_img_path):
                 img_path = original_img_path
             else:
-                json_base = os.path.splitext(os.path.basename(img_path))[0]
-                if json_base.endswith("_masked"):
-                    json_base = json_base[:-7]
-                if json_base == "_temp_resume":
-                    json_base = os.path.basename(os.path.dirname(img_path))
+                json_base = get_project_base(img_path)
 
                 found_img = None
                 if json_base:
                     import glob
 
-                    json_dir = os.path.dirname(img_path)
-                    for img_ext in [".png", ".jpg", ".jpeg", ".bmp", ".webp"]:
-                        candidates = glob.glob(
-                            os.path.join(json_dir, f"{json_base}*{img_ext}")
-                        )
-                        if candidates:
-                            found_img = candidates[0]
+                    # Check output folder first, then the directory of img_path
+                    for json_dir in [
+                        os.path.join(ROOT_DIR, "output", json_base),
+                        os.path.dirname(img_path),
+                    ]:
+                        for img_ext in [".png", ".jpg", ".jpeg", ".bmp", ".webp"]:
+                            candidates = glob.glob(
+                                os.path.join(json_dir, f"{json_base}*{img_ext}")
+                            )
+                            if candidates:
+                                found_img = candidates[0]
+                                break
+                        if found_img:
                             break
                 if found_img:
                     img_path = found_img
@@ -505,7 +554,7 @@ class PainterServer:
             and os.path.exists(img_path)
         ):
             try:
-                img_base = os.path.splitext(os.path.basename(img_path))[0]
+                img_base = get_project_base(img_path)
                 output_dir = os.path.join(ROOT_DIR, "output", img_base)
                 os.makedirs(output_dir, exist_ok=True)
                 dest_img_path = os.path.join(output_dir, os.path.basename(img_path))
@@ -566,7 +615,7 @@ class PainterServer:
                     arr[:, :, 3] = np.minimum(arr[:, :, 3], alpha_mask)
 
                     masked_img = Image.fromarray(arr)
-                    img_base = os.path.splitext(os.path.basename(img_path))[0]
+                    img_base = get_project_base(img_path)
                     output_dir = os.path.join(ROOT_DIR, "output", img_base)
                     os.makedirs(output_dir, exist_ok=True)
                     masked_path = os.path.join(output_dir, f"{img_base}_masked.png")
@@ -578,9 +627,7 @@ class PainterServer:
 
         output_json = config.get("output_json", "")
         if not output_json and img_path:
-            img_base = os.path.splitext(os.path.basename(img_path))[0]
-            if img_base.endswith("_masked"):
-                img_base = img_base[:-7]
+            img_base = get_project_base(img_path)
             output_dir = os.path.join(ROOT_DIR, "output", img_base)
             output_json = os.path.join(output_dir, f"{img_base}.json")
 
@@ -612,6 +659,8 @@ class PainterServer:
             if shapes_list is not None:
                 _shapes_cache = shapes_list
 
+            h, w = canvas_arr.shape[:2]
+
             msg = json.dumps(
                 {
                     "action": "metrics",
@@ -621,6 +670,8 @@ class PainterServer:
                     "slate": 0.0,
                     "eta": eta,
                     "shapes": _shapes_cache,
+                    "width": w,
+                    "height": h,
                 }
             )
             self._sync_broadcast(loop, msg)

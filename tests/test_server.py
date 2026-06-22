@@ -176,3 +176,64 @@ async def test_get_checkpoints(server, fake_ws):
         assert resp["action"] == "checkpoints_list"
         assert len(resp["checkpoints"]) == 1
         assert resp["checkpoints"][0]["layer"] == 500
+
+
+def test_get_project_base():
+    from backend.server import get_project_base
+
+    # 1. Standard path in output folder
+    assert get_project_base("D:\\FH6-Painter\\output\\image\\image.100.json") == "image"
+    assert (
+        get_project_base("D:\\FH6-Painter\\output\\image\\image_masked.100.json")
+        == "image"
+    )
+    assert (
+        get_project_base("D:\\FH6-Painter\\output\\image\\_temp_resume.json") == "image"
+    )
+
+    # 2. Custom input directory path
+    assert get_project_base("D:\\FH6-Painter\\test_img\\image.json") == "image"
+    assert get_project_base("D:\\FH6-Painter\\test_img\\image.200.json") == "image"
+    assert get_project_base("D:\\FH6-Painter\\test_img\\image_masked.json") == "image"
+
+    # 3. Temp resume outside output
+    assert (
+        get_project_base("D:\\FH6-Painter\\test_img\\_temp_resume.json") == "test_img"
+    )
+
+
+@pytest.mark.asyncio
+async def test_get_checkpoints_excludes_temp_resume(server, fake_ws):
+    with (
+        patch("os.path.exists", return_value=True),
+        patch("builtins.open", return_value=MagicMock()) as mock_open,
+        patch("glob.glob", return_value=[]),
+    ):
+        # Mock json load
+        mock_file = MagicMock()
+        mock_file.__enter__.return_value = MagicMock()
+        mock_open.return_value = mock_file
+
+        with patch(
+            "json.load", return_value={"shapes": [{}, {}]}
+        ):  # 2 shapes -> 1 layer
+            # Request checkpoints with _temp_resume.json path
+            # It should not add _temp_resume.json to checkpoints
+            await server.handle_message(
+                fake_ws,
+                json.dumps(
+                    {
+                        "action": "get_checkpoints",
+                        "img_path": "D:\\FH6-Painter\\output\\test\\_temp_resume.json",
+                    }
+                ),
+            )
+
+            assert len(fake_ws.sent_messages) == 1
+            resp = json.loads(fake_ws.sent_messages[0])
+            assert resp["action"] == "checkpoints_list"
+            # It should NOT contain _temp_resume.json path
+            assert (
+                any("_temp_resume.json" in cp["path"] for cp in resp["checkpoints"])
+                is False
+            )

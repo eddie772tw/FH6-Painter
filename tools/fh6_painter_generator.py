@@ -850,7 +850,7 @@ def run_generator(
                 base_dir = os.path.dirname(output_path) or "."
                 file_base, file_ext = os.path.splitext(os.path.basename(output_path))
                 inter_path = os.path.join(
-                    base_dir, f"{file_base}_{current_layer}{file_ext}"
+                    base_dir, f"{file_base}.{current_layer}{file_ext}"
                 )
                 try:
                     with open(inter_path, "w", encoding="utf-8") as f:

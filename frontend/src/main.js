@@ -52,6 +52,7 @@ const optWeight = /** @type {HTMLInputElement} */ (document.getElementById("opt-
 const optAnnealing = /** @type {HTMLInputElement} */ (document.getElementById("opt-annealing"));
 const optDecay = /** @type {HTMLInputElement} */ (document.getElementById("opt-decay"));
 const chkEarlyConv = /** @type {HTMLInputElement} */ (document.getElementById("chk-early-conv"));
+const optimizationsCard = document.getElementById("optimizations-card");
 
 // ROI UI
 const roiEnabledCheckbox = /** @type {HTMLInputElement} */ (document.getElementById("roi-enabled"));
@@ -67,6 +68,8 @@ const checkpointsContainer = document.getElementById("checkpoints-container");
 const timelineVal = document.getElementById("timeline-val");
 
 let selectedFilePath = "";
+let isAutoResumePending = false;
+let isStopRewindPending = false;
 let originalImageWidth = 600;
 let originalImageHeight = 600;
 
@@ -182,6 +185,77 @@ function handleBackendMessage(msg) {
     case "checkpoints_list":
       currentCheckpoints = msg.checkpoints || [];
       renderCheckpointsTrack();
+      
+      // Auto-resume logic: if checkpoints exist and we are idle, prep the latest checkpoint
+      if (isAutoResumePending && currentCheckpoints.length > 0 && !isGenerating) {
+        isAutoResumePending = false;
+        let maxLayer = 0;
+        let maxPath = "";
+        currentCheckpoints.forEach(cp => {
+          if (cp.layer > maxLayer) {
+            maxLayer = cp.layer;
+            maxPath = cp.path;
+          }
+        });
+        
+        if (maxLayer > 0) {
+          rewindLayerInput.value = maxLayer.toString();
+          
+          // If the selected path is not already a checkpoint/resume JSON,
+          // automatically trigger rewind to it so the next generation resumes from this state.
+          if (!selectedFilePath.toLowerCase().endsWith("_temp_resume.json") && 
+              !selectedFilePath.toLowerCase().endsWith(".json")) {
+            console.log(`Auto-resuming from the latest checkpoint at layer ${maxLayer}`);
+            rewindHint.textContent = `Loading resume state at layer ${maxLayer}...`;
+            rewindHint.style.color = "var(--secondary-color)";
+            ws.send(JSON.stringify({
+              action: "rewind_checkpoint",
+              path: maxPath,
+              layer: maxLayer
+            }));
+          }
+        }
+      } else {
+        isAutoResumePending = false;
+      }
+
+      // Auto-sync rewind after manual stop to ensure frontend and backend session state variables are fully synchronized
+      if (isStopRewindPending) {
+        isStopRewindPending = false;
+        const targetLayer = parseInt(rewindLayerInput.value);
+        if (!isNaN(targetLayer) && targetLayer >= 1) {
+          let bestCp = null;
+          for (let i = 0; i < currentCheckpoints.length; i++) {
+            const cp = currentCheckpoints[i];
+            if (cp.layer >= targetLayer) {
+              bestCp = cp;
+              break;
+            }
+          }
+          if (!bestCp && currentCheckpoints.length > 0) {
+            bestCp = currentCheckpoints[currentCheckpoints.length - 1];
+          }
+          
+          if (bestCp) {
+            console.log(`Auto-rewinding after stop to layer ${targetLayer} using checkpoint ${bestCp.path}`);
+            rewindHint.textContent = `Aligning resume state at layer ${targetLayer}...`;
+            rewindHint.style.color = "var(--secondary-color)";
+            ws.send(JSON.stringify({
+              action: "rewind_checkpoint",
+              path: bestCp.path,
+              layer: targetLayer
+            }));
+          } else {
+            canvas.width = originalImageWidth;
+            canvas.height = originalImageHeight;
+            renderShapes();
+          }
+        } else {
+          canvas.width = originalImageWidth;
+          canvas.height = originalImageHeight;
+          renderShapes();
+        }
+      }
       break;
 
     case "rewind_success":
@@ -189,6 +263,7 @@ function handleBackendMessage(msg) {
       valLayers.textContent = `${msg.layer} / ${layersInput.value}`;
       timelineSlider.value = msg.layer;
       timelineVal.textContent = `${Math.round((msg.layer / parseInt(layersInput.value)) * 100)}%`;
+      rewindLayerInput.value = msg.layer.toString();
       
       if (msg.width && msg.height) {
         canvas.width = msg.width;
@@ -269,6 +344,7 @@ function handleBackendMessage(msg) {
       currentShapes = [];
       renderShapes();
       updateButtonStates();
+      isAutoResumePending = true;
       ws.send(JSON.stringify({ action: "get_checkpoints", img_path: msg.path }));
       break;
 
@@ -298,12 +374,25 @@ function handleBackendMessage(msg) {
         btnGenerate.style.background = "#D32F2F";
         btnGenerate.style.boxShadow = "0 0 15px rgba(211, 47, 47, 0.4)";
         timelineSlider.disabled = true;
+        
+        canvas.style.backgroundImage = "none";
+        currentShapes = [];
+        if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
       } else {
         isGenerating = false;
         btnGenerate.textContent = "START GENERATION";
         btnGenerate.style.background = "var(--primary-color)";
         btnGenerate.style.boxShadow = "0 0 15px var(--glow-primary)";
         timelineSlider.disabled = false;
+        
+        // Default rewindLayerInput value to actual generated layers count if stopped, or max layers on success
+        if (msg.status === "stopped") {
+          rewindLayerInput.value = timelineSlider.value;
+          isStopRewindPending = true;
+        } else {
+          rewindLayerInput.value = layersInput.value;
+          isStopRewindPending = true;
+        }
         
         // Refresh checkpoints when generation completes
         ws.send(JSON.stringify({ action: "get_checkpoints", img_path: selectedFilePath }));
@@ -320,6 +409,11 @@ function handleBackendMessage(msg) {
       timelineSlider.max = msg.total.toString();
       timelineSlider.value = msg.curr.toString();
       timelineVal.textContent = `${Math.round((msg.curr / msg.total) * 100)}%`;
+      
+      if (msg.width && msg.height) {
+        canvas.width = msg.width;
+        canvas.height = msg.height;
+      }
       
       if (msg.shapes) {
         if (msg.shapes.length > 0) {
@@ -387,9 +481,13 @@ function renderShapes() {
   // Clear canvas
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   
-  // Base background (gray placeholder)
-  ctx.fillStyle = "#808080";
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  // Base background (gray placeholder if no background image)
+  if (!canvas.style.backgroundImage || canvas.style.backgroundImage === "none") {
+    ctx.fillStyle = "#808080";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  } else {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+  }
 
   // Render each shape
   currentShapes.forEach(shape => {
@@ -493,7 +591,7 @@ btnGenerate.addEventListener("click", () => {
         x1: roiSelection ? Math.min(roiSelection.x1, roiSelection.x2) : 0,
         y1: roiSelection ? Math.min(roiSelection.y1, roiSelection.y2) : 0,
         x2: roiSelection ? Math.max(roiSelection.x1, roiSelection.x2) : 0,
-        y2: roiSelection ? Math.max(roiSelection.x1, roiSelection.x2) : 0
+        y2: roiSelection ? Math.max(roiSelection.y1, roiSelection.y2) : 0
       }
     };
     
@@ -542,6 +640,7 @@ engineSelect.addEventListener("change", () => {
   }
   
   if (engineSelect.value === "GO_OPENCL") {
+    optimizationsCard.style.display = "none";
     roiEnabledCheckbox.checked = false;
     roiEnabledCheckbox.disabled = true;
     roiEnabled = false;
@@ -549,6 +648,7 @@ engineSelect.addEventListener("change", () => {
     roiSelection = null;
     renderShapes();
   } else {
+    optimizationsCard.style.display = "";
     roiEnabledCheckbox.disabled = false;
   }
 });
@@ -583,6 +683,8 @@ document.querySelectorAll('input[name="roi-shape"]').forEach(radio => {
 timelineSlider.addEventListener("change", () => {
   const targetLayer = parseInt(timelineSlider.value);
   if (!currentCheckpoints || currentCheckpoints.length === 0) return;
+  
+  rewindLayerInput.value = targetLayer.toString();
   
   // Find the checkpoint that represents the closest upper bound layer
   let bestCp = null;
@@ -801,11 +903,36 @@ function handleFileSelect(file) {
       canvas.height = img.height;
       originalImageWidth = img.width;
       originalImageHeight = img.height;
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.drawImage(img, 0, 0);
+      
+      canvas.style.backgroundImage = `url(${img.src})`;
+      canvas.style.backgroundSize = "contain";
+      canvas.style.backgroundPosition = "center";
+      canvas.style.backgroundRepeat = "no-repeat";
+      
+      currentShapes = [];
+      renderShapes();
     };
     img.src = URL.createObjectURL(file);
   }
+  updateButtonStates();
+}
+
+// Tauri Native File Drop Listener
+if (window.__TAURI__) {
+  const { listen } = window.__TAURI__.event;
+  listen('tauri://file-drop', (event) => {
+    const paths = event.payload;
+    if (paths && paths.length > 0) {
+      const path = paths[0];
+      selectedFilePath = path;
+      filePathDisplay.textContent = `Selected: ${path}`;
+      if (path.toLowerCase().endsWith(".json")) {
+        ws.send(JSON.stringify({ action: "load_json_file", path: path }));
+      } else {
+        ws.send(JSON.stringify({ action: "load_image_file", path: path }));
+      }
+    }
+  });
 }
 
 // Start

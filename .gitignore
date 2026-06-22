@@ -68,3 +68,5 @@ optimization_settings.json
 
 optimization_settings.json
 .coverage
+test_out_utf8.txt
+*.log

@@ -126,15 +126,15 @@
               <label for="opt-pyramid">Progressive Sampling</label>
             </div>
             <div class="opt-toggle" title="【動態凍結遮罩】&#10;自動鎖定已經完美匹配的像素區域，避開重複評估以大幅減少運算負擔。">
-              <input type="checkbox" id="opt-freeze" checked>
+              <input type="checkbox" id="opt-freeze">
               <label for="opt-freeze">Dynamic Freeze</label>
             </div>
             <div class="opt-toggle" title="【錯誤驅動重點採樣】&#10;依據殘餘誤差圖進行重點採樣，將隨機橢圓生成優先配置於高誤差區域。">
-              <input type="checkbox" id="opt-importance" checked>
+              <input type="checkbox" id="opt-importance">
               <label for="opt-importance">Importance Sampling</label>
             </div>
             <div class="opt-toggle" title="【區域誤差加權】&#10;根據像素的空間特徵（如前景或邊緣）對誤差進行加權，提升邊緣清晰度。">
-              <input type="checkbox" id="opt-weight" checked>
+              <input type="checkbox" id="opt-weight">
               <label for="opt-weight">Error Weighting</label>
             </div>
             <div class="opt-toggle" title="【解析解最佳色彩】&#10;在評估幾何時利用解析解直接算出最優顏色，使爬山收斂速度倍增，無需隨機模擬退火。">
@@ -177,14 +177,22 @@
               <span id="roi-bounds-display" class="display-value">None</span>
               <span class="display-hint">Drag/resize on canvas. Right click to clear.</span>
             </div>
-            <div class="rewind-box" style="margin-top: 12px; border-top: 1px solid var(--glass-border); padding-top: 12px;">
-              <label>Rewind Layer</label>
-              <div class="rewind-row">
-                <input type="number" id="rewind-layer-input" class="cyber-input" style="width: 100px;" placeholder="Layer">
-                <button id="btn-rewind" class="btn secondary select-btn">Rewind</button>
-              </div>
-              <span id="rewind-hint" class="desc-text"></span>
+          </div>
+        </section>
+
+        <!-- History Rewind -->
+        <section class="glass-card" id="rewind-card">
+          <div class="card-header">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="icon"><path d="M12 8v4l3 3m6-3a9 9 0 1 1-9-9 9 9 0 0 1 9 9z"/></svg>
+            <h2>History Rewind</h2>
+          </div>
+          <div class="rewind-box">
+            <label>Rewind / Resume Layer</label>
+            <div class="rewind-row">
+              <input type="number" id="rewind-layer-input" class="cyber-input" style="width: 100px;" placeholder="Layer">
+              <button id="btn-rewind" class="btn secondary select-btn">Rewind</button>
             </div>
+            <span id="rewind-hint" class="desc-text"></span>
           </div>
         </section>
 
