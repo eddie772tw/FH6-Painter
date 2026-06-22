@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FH6 Painter Studio</title>
+    
+    <!-- Google Fonts: Outfit for display, Inter for UI -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Outfit:wght@400;600;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    
+    <link rel="stylesheet" href="/src/styles.css" />
+    <script type="module" src="/src/main.js" defer></script>
+  </head>
+
+  <body>
+    <!-- Tauri Native Custom Titlebar Area (Drag Region) -->
+    <header data-tauri-drag-region class="titlebar">
+      <div class="logo-area" data-tauri-drag-region>
+        <h1>FH6 Painter</h1>
+        <span class="badge">STUDIO</span>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <!-- Left Panel: Controls -->
+      <aside class="panel left-panel">
+        
+        <!-- Input Source Card -->
+        <section class="glass-card">
+          <div class="card-header">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="icon"><path d="M4 14v1a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-1M16 6l-4-4-4 4M12 2v13"/></svg>
+            <h2>Input Source</h2>
+          </div>
+          <div class="upload-zone" id="upload-zone">
+            <p>Drag & Drop Image or JSON here</p>
+            <span>or click to browse</span>
+            <input type="file" id="file-input" hidden accept=".png,.jpg,.jpeg,.webp,.json">
+          </div>
+          <p id="file-path-display" class="file-path"></p>
+        </section>
+
+        <!-- Generation Settings -->
+        <section class="glass-card">
+          <div class="card-header">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="icon"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            <h2>Engine Settings</h2>
+          </div>
+          
+          <div class="input-group">
+            <label>Engine Core</label>
+            <select id="engine-select" class="cyber-select">
+              <option value="NUMBA">Numba JIT (CPU)</option>
+              <option value="TAICHI">Taichi JIT (GPU)</option>
+            </select>
+          </div>
+
+          <div class="input-group">
+            <label>Max Layers</label>
+            <input type="number" id="layers-input" class="cyber-input" value="1000" min="500" max="3000">
+          </div>
+        </section>
+
+      </aside>
+
+      <!-- Right Panel: Preview & Actions -->
+      <section class="panel right-panel">
+        
+        <!-- Live Preview Workbench -->
+        <div class="workbench glass-card">
+          <div class="canvas-container">
+            <!-- For raw binary / pixel mapping -->
+            <canvas id="preview-canvas" width="600" height="600"></canvas>
+            
+            <div id="connection-overlay" class="overlay-state">
+              <h3>CONNECTING TO ENGINE...</h3>
+            </div>
+          </div>
+          
+          <div class="metrics-hud">
+            <div class="metric-box">
+              <span class="label">LAYERS</span>
+              <span class="value" id="val-layers">0 / 0</span>
+            </div>
+            <div class="metric-box">
+              <span class="label">SPEED</span>
+              <span class="value" id="val-speed">0 L/s</span>
+            </div>
+            <div class="metric-box">
+              <span class="label">ETA</span>
+              <span class="value" id="val-eta">0s</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Action Bar -->
+        <div class="action-bar">
+          <button id="btn-generate" class="btn primary disabled">START GENERATION</button>
+          <button id="btn-inject" class="btn secondary disabled">INJECT TO GAME</button>
+        </div>
+
+      </section>
+    </main>
+  </body>
+</html>
