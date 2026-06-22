@@ -142,18 +142,14 @@ class PainterServer:
             if shapes_list is not None:
                 _shapes_cache = shapes_list
 
-            metrics_data = {
-                "progress": (curr / total) * 100 if total > 0 else 0,
-                "current": curr,
-                "total": total,
-                "speed": f"{speed:.1f} i/s",
-                "eta": f"{eta:.1f} s",
-                "shapes": _shapes_cache
-            }
             msg = json.dumps(
                 {
                     "action": "metrics",
-                    "data": metrics_data
+                    "curr": curr,
+                    "total": total,
+                    "speed": speed,
+                    "eta": eta,
+                    "shapes": _shapes_cache
                 }
             )
             self._sync_broadcast(loop, msg)
