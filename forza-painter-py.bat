@@ -83,7 +83,7 @@ if errorlevel 1 (
 set "PY_EXE=%VENV_DIR%\Scripts\python.exe"
 
 :: Check for basic dependencies
-"!PY_EXE!" -c "import PIL, numpy, numba, taichi" >nul 2>nul
+"!PY_EXE!" -c "import PIL, numpy, numba, taichi, websockets" >nul 2>nul
 if %errorlevel% equ 0 goto :dependencies_ok
 
 echo [INFO] Installing dependencies into the virtual environment...

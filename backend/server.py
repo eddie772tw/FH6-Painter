@@ -7,13 +7,15 @@ import time
 
 import websockets
 
-# Add tools path for dependencies
-sys.path.append(
-    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tools")
-)
+# Add project root and tools path for dependencies
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(ROOT_DIR)
+sys.path.append(os.path.join(ROOT_DIR, "tools"))
+
 try:
     from evaluators import EvaluatorFactory
-except ImportError:
+except ImportError as e:
+    print(f"Failed to import EvaluatorFactory: {e}")
     pass
 
 
@@ -40,10 +42,14 @@ class PainterServer:
         elif action == "get_engines":
             engines = []
             if "EvaluatorFactory" in globals():
-                engines = EvaluatorFactory.get_available_evaluators()
-            await websocket.send(
-                json.dumps({"action": "engines_list", "data": engines})
-            )
+                raw_engines = EvaluatorFactory.get_available_evaluators()
+                for e in raw_engines:
+                    clean_e = {k: v for k, v in e.items() if k != "class"}
+                    engines.append(clean_e)
+            try:
+                await websocket.send(json.dumps({"action": "engines_list", "data": engines}))
+            except Exception as e:
+                print(f"Error sending engines_list: {e}")
         elif action == "start_generation":
             config = data.get("config", {})
             if not self.is_generating:
