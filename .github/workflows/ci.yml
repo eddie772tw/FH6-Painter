@@ -46,12 +46,6 @@ jobs:
         python-version: ${{ matrix.python-version }}
         cache: 'pip'
 
-    - name: Install System GUI Dependencies (Linux only)
-      if: matrix.os == 'ubuntu-latest'
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y xvfb python3-tk
-
     - name: Upgrade pip and install core requirements
       run: |
         python -m pip install --upgrade pip
@@ -61,15 +55,9 @@ jobs:
       run: |
         pip install pytest
 
-    - name: Execute automated test suite (Windows)
-      if: matrix.os == 'windows-latest'
+    - name: Execute automated test suite
       run: |
         python -m pytest -v
-
-    - name: Execute automated test suite with xvfb (Linux)
-      if: matrix.os == 'ubuntu-latest'
-      run: |
-        xvfb-run python -m pytest -v
 
   # 任務 3：建置與封裝發行版 (依賴 test 與 lint 通過)
   build-release:
