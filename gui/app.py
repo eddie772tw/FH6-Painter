@@ -7,7 +7,7 @@ from tkinter import filedialog, messagebox, ttk
 
 try:
     import windnd
-except ImportError:
+except Exception:
     windnd = None
 
 sys.path.append(

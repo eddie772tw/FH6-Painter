@@ -161,15 +161,18 @@ async def test_get_profile_settings(server, fake_ws):
 
 @pytest.mark.asyncio
 async def test_get_checkpoints(server, fake_ws):
+    import os
+    expected_path = os.path.join("output", "test", "test_500.json")
+    input_path = os.path.join("test", "test.png")
     with (
         patch("os.path.exists", return_value=True),
         patch(
-            "glob.glob", return_value=["D:\\FH6-Painter\\output\\test\\test_500.json"]
+            "glob.glob", return_value=[expected_path]
         ),
     ):
         await server.handle_message(
             fake_ws,
-            json.dumps({"action": "get_checkpoints", "img_path": "D:\\test\\test.png"}),
+            json.dumps({"action": "get_checkpoints", "img_path": input_path}),
         )
         assert len(fake_ws.sent_messages) == 1
         resp = json.loads(fake_ws.sent_messages[0])
@@ -180,30 +183,32 @@ async def test_get_checkpoints(server, fake_ws):
 
 def test_get_project_base():
     from backend.server import get_project_base
+    import os
 
     # 1. Standard path in output folder
-    assert get_project_base("D:\\FH6-Painter\\output\\image\\image.100.json") == "image"
-    assert (
-        get_project_base("D:\\FH6-Painter\\output\\image\\image_masked.100.json")
-        == "image"
-    )
-    assert (
-        get_project_base("D:\\FH6-Painter\\output\\image\\_temp_resume.json") == "image"
-    )
+    p1 = os.path.join("output", "image", "image.100.json")
+    assert get_project_base(p1) == "image"
+    p2 = os.path.join("output", "image", "image_masked.100.json")
+    assert get_project_base(p2) == "image"
+    p3 = os.path.join("output", "image", "_temp_resume.json")
+    assert get_project_base(p3) == "image"
 
     # 2. Custom input directory path
-    assert get_project_base("D:\\FH6-Painter\\test_img\\image.json") == "image"
-    assert get_project_base("D:\\FH6-Painter\\test_img\\image.200.json") == "image"
-    assert get_project_base("D:\\FH6-Painter\\test_img\\image_masked.json") == "image"
+    p4 = os.path.join("test_img", "image.json")
+    assert get_project_base(p4) == "image"
+    p5 = os.path.join("test_img", "image.200.json")
+    assert get_project_base(p5) == "image"
+    p6 = os.path.join("test_img", "image_masked.json")
+    assert get_project_base(p6) == "image"
 
     # 3. Temp resume outside output
-    assert (
-        get_project_base("D:\\FH6-Painter\\test_img\\_temp_resume.json") == "test_img"
-    )
+    p7 = os.path.join("test_img", "_temp_resume.json")
+    assert get_project_base(p7) == "test_img"
 
 
 @pytest.mark.asyncio
 async def test_get_checkpoints_excludes_temp_resume(server, fake_ws):
+    import os
     with (
         patch("os.path.exists", return_value=True),
         patch("builtins.open", return_value=MagicMock()) as mock_open,
@@ -219,12 +224,13 @@ async def test_get_checkpoints_excludes_temp_resume(server, fake_ws):
         ):  # 2 shapes -> 1 layer
             # Request checkpoints with _temp_resume.json path
             # It should not add _temp_resume.json to checkpoints
+            input_path = os.path.join("output", "test", "_temp_resume.json")
             await server.handle_message(
                 fake_ws,
                 json.dumps(
                     {
                         "action": "get_checkpoints",
-                        "img_path": "D:\\FH6-Painter\\output\\test\\_temp_resume.json",
+                        "img_path": input_path,
                     }
                 ),
             )
