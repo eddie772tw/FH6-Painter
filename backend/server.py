@@ -25,6 +25,34 @@ except ImportError:
     scan_gpus = None
 
 
+def get_image_info(image_path):
+    try:
+        from PIL import Image
+        import io
+        import base64
+        with Image.open(image_path) as img:
+            width, height = img.size
+            preview_img = img.copy()
+            preview_img.thumbnail((800, 800))
+            buffer = io.BytesIO()
+            if preview_img.mode in ("RGBA", "LA"):
+                bg = Image.new("RGB", preview_img.size, (128, 128, 128))
+                bg.paste(preview_img, mask=preview_img.split()[-1])
+                preview_img = bg
+            else:
+                preview_img = preview_img.convert("RGB")
+            preview_img.save(buffer, format="JPEG", quality=80)
+            b64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
+            return {
+                "width": width,
+                "height": height,
+                "preview_base64": b64
+            }
+    except Exception as e:
+        print(f"Error getting image info: {e}")
+        return None
+
+
 class PainterServer:
     def __init__(self):
         self.clients = set()
@@ -227,6 +255,8 @@ class PainterServer:
                             "layer": slice_layer,
                             "preview_base64": b64,
                             "shapes": sliced_shapes,
+                            "width": width,
+                            "height": height,
                         }
                     )
                 )
@@ -287,12 +317,36 @@ class PainterServer:
                             "path": os.path.abspath(filepath),
                             "shapes": shapes,
                             "preview_base64": b64,
+                            "width": width,
+                            "height": height,
                         }
                     )
                 )
             except Exception as e:
                 await websocket.send(
                     json.dumps({"action": "load_json_failed", "error": str(e)})
+                )
+        elif action == "load_image_file":
+            filepath = data.get("path", "")
+            try:
+                info = get_image_info(filepath)
+                if info:
+                    await websocket.send(
+                        json.dumps(
+                            {
+                                "action": "load_image_success",
+                                "path": os.path.abspath(filepath),
+                                "width": info["width"],
+                                "height": info["height"],
+                                "preview_base64": info["preview_base64"],
+                            }
+                        )
+                    )
+                else:
+                    raise Exception("Failed to read image info")
+            except Exception as e:
+                await websocket.send(
+                    json.dumps({"action": "load_image_failed", "error": str(e)})
                 )
         elif action == "browse_file":
             try:
@@ -427,7 +481,7 @@ class PainterServer:
                 if json_base.endswith("_masked"):
                     json_base = json_base[:-7]
                 if json_base == "_temp_resume":
-                    json_base = ""
+                    json_base = os.path.basename(os.path.dirname(img_path))
 
                 found_img = None
                 if json_base:
@@ -724,10 +778,10 @@ class PainterServer:
         await loop.run_in_executor(None, self.run_generator_blocking, config, loop)
 
         self.is_generating = False
-        if not self.cancel_flag:
-            await self.broadcast(
-                json.dumps({"action": "generation_status", "status": "completed"})
-            )
+        status_str = "completed" if not self.cancel_flag else "stopped"
+        await self.broadcast(
+            json.dumps({"action": "generation_status", "status": status_str})
+        )
 
 
 async def main():

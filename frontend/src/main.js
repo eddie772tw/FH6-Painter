@@ -70,6 +70,26 @@ let selectedFilePath = "";
 let originalImageWidth = 600;
 let originalImageHeight = 600;
 
+function updateButtonStates() {
+  const wsOpen = ws && ws.readyState === WebSocket.OPEN;
+  
+  if (wsOpen && selectedFilePath) {
+    btnGenerate.classList.remove("disabled");
+  } else {
+    if (isGenerating && wsOpen) {
+      btnGenerate.classList.remove("disabled");
+    } else {
+      btnGenerate.classList.add("disabled");
+    }
+  }
+  
+  if (wsOpen && selectedFilePath && !isGenerating) {
+    btnInject.classList.remove("disabled");
+  } else {
+    btnInject.classList.add("disabled");
+  }
+}
+
 // Initialize WebSocket
 function connectWebSocket() {
   ws = new WebSocket(wsUrl);
@@ -77,7 +97,7 @@ function connectWebSocket() {
   ws.onopen = () => {
     console.log("Connected to Python backend");
     overlay.classList.add("hidden");
-    btnGenerate.classList.remove("disabled");
+    updateButtonStates();
     
     // Fetch initial configuration listings
     ws.send(JSON.stringify({ action: "get_engines" }));
@@ -89,8 +109,7 @@ function connectWebSocket() {
     console.log("Disconnected from Python backend. Reconnecting...");
     overlay.classList.remove("hidden");
     overlay.innerHTML = "<h3>CONNECTION LOST. RECONNECTING...</h3>";
-    btnGenerate.classList.add("disabled");
-    btnInject.classList.add("disabled");
+    updateButtonStates();
     setTimeout(connectWebSocket, 2000);
   };
 
@@ -171,12 +190,25 @@ function handleBackendMessage(msg) {
       timelineSlider.value = msg.layer;
       timelineVal.textContent = `${Math.round((msg.layer / parseInt(layersInput.value)) * 100)}%`;
       
+      if (msg.width && msg.height) {
+        canvas.width = msg.width;
+        canvas.height = msg.height;
+        originalImageWidth = msg.width;
+        originalImageHeight = msg.height;
+      }
+      if (msg.preview_base64) {
+        canvas.style.backgroundImage = `url(data:image/jpeg;base64,${msg.preview_base64})`;
+        canvas.style.backgroundSize = "contain";
+        canvas.style.backgroundPosition = "center";
+        canvas.style.backgroundRepeat = "no-repeat";
+      }
       if (msg.shapes) {
         currentShapes = msg.shapes;
         renderShapes();
       }
       rewindHint.textContent = `Successfully rewound to layer ${msg.layer}`;
       rewindHint.style.color = "var(--primary-color)";
+      updateButtonStates();
       break;
 
     case "rewind_failed":
@@ -188,6 +220,18 @@ function handleBackendMessage(msg) {
     case "load_json_success":
       selectedFilePath = msg.path;
       filePathDisplay.textContent = `Loaded JSON: ${msg.path}`;
+      if (msg.width && msg.height) {
+        canvas.width = msg.width;
+        canvas.height = msg.height;
+        originalImageWidth = msg.width;
+        originalImageHeight = msg.height;
+      }
+      if (msg.preview_base64) {
+        canvas.style.backgroundImage = `url(data:image/jpeg;base64,${msg.preview_base64})`;
+        canvas.style.backgroundSize = "contain";
+        canvas.style.backgroundPosition = "center";
+        canvas.style.backgroundRepeat = "no-repeat";
+      }
       if (msg.shapes) {
         currentShapes = msg.shapes;
         const layerCount = Math.max(0, currentShapes.length - 1);
@@ -198,12 +242,38 @@ function handleBackendMessage(msg) {
         timelineVal.textContent = `${Math.round((layerCount / parseInt(layersInput.value)) * 100)}%`;
         renderShapes();
       }
+      updateButtonStates();
       // Scan checkpoints for new project context
       ws.send(JSON.stringify({ action: "get_checkpoints", img_path: msg.path }));
       break;
 
     case "load_json_failed":
       alert("Failed to load JSON file: " + msg.error);
+      break;
+
+    case "load_image_success":
+      selectedFilePath = msg.path;
+      filePathDisplay.textContent = `Loaded Image: ${msg.path}`;
+      if (msg.width && msg.height) {
+        canvas.width = msg.width;
+        canvas.height = msg.height;
+        originalImageWidth = msg.width;
+        originalImageHeight = msg.height;
+      }
+      if (msg.preview_base64) {
+        canvas.style.backgroundImage = `url(data:image/jpeg;base64,${msg.preview_base64})`;
+        canvas.style.backgroundSize = "contain";
+        canvas.style.backgroundPosition = "center";
+        canvas.style.backgroundRepeat = "no-repeat";
+      }
+      currentShapes = [];
+      renderShapes();
+      updateButtonStates();
+      ws.send(JSON.stringify({ action: "get_checkpoints", img_path: msg.path }));
+      break;
+
+    case "load_image_failed":
+      alert("Failed to load image file: " + msg.error);
       break;
 
     case "file_selected":
@@ -215,10 +285,8 @@ function handleBackendMessage(msg) {
           // Send request to load the JSON geometry file
           ws.send(JSON.stringify({ action: "load_json_file", path: msg.path }));
         } else {
-          // If it's an image, draw placeholder/canvas preview
-          // Since we can't load local file paths directly via file protocol, we send load request if needed or let standard image loading handle it.
-          // In Tauri sidecar, we can scan checkpoints for the image
-          ws.send(JSON.stringify({ action: "get_checkpoints", img_path: msg.path }));
+          // Send request to load the image file details and preview
+          ws.send(JSON.stringify({ action: "load_image_file", path: msg.path }));
         }
       }
       break;
@@ -229,19 +297,18 @@ function handleBackendMessage(msg) {
         btnGenerate.textContent = "STOP GENERATION";
         btnGenerate.style.background = "#D32F2F";
         btnGenerate.style.boxShadow = "0 0 15px rgba(211, 47, 47, 0.4)";
-        btnInject.classList.add("disabled");
         timelineSlider.disabled = true;
       } else {
         isGenerating = false;
         btnGenerate.textContent = "START GENERATION";
         btnGenerate.style.background = "var(--primary-color)";
         btnGenerate.style.boxShadow = "0 0 15px var(--glow-primary)";
-        btnInject.classList.remove("disabled");
         timelineSlider.disabled = false;
         
         // Refresh checkpoints when generation completes
         ws.send(JSON.stringify({ action: "get_checkpoints", img_path: selectedFilePath }));
       }
+      updateButtonStates();
       break;
 
     case "metrics":
