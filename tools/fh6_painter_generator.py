@@ -873,11 +873,11 @@ def run_generator(
                     canvas_rgba[:, :, :3] = canvas
                     canvas_rgba[:, :, 3] = alpha_mask
                     cb_res = progress_callback(
-                        current_layer, layers, speed, eta, canvas_rgba
+                        current_layer, layers, speed, eta, canvas_rgba, shapes_list
                     )
                 else:
                     cb_res = progress_callback(
-                        current_layer, layers, speed, eta, canvas
+                        current_layer, layers, speed, eta, canvas, shapes_list
                     )
 
                 if cb_res is False or cb_res == "ABORT":

@@ -47,7 +47,9 @@ class PainterServer:
                     clean_e = {k: v for k, v in e.items() if k != "class"}
                     engines.append(clean_e)
             try:
-                await websocket.send(json.dumps({"action": "engines_list", "data": engines}))
+                await websocket.send(
+                    json.dumps({"action": "engines_list", "data": engines})
+                )
             except Exception as e:
                 print(f"Error sending engines_list: {e}")
         elif action == "start_generation":
@@ -132,21 +134,26 @@ class PainterServer:
         # Accumulate shapes to stream Vector Renderer (will be used in deep refactoring)
         _shapes_cache = []
 
-        def generator_cb(curr, total, speed, eta, canvas_arr):
+        def generator_cb(curr, total, speed, eta, canvas_arr, shapes_list=None):
             if self.cancel_flag:
-                return "ABORT"
+                return False
 
-            # Since the current engine only returns numpy array, we simulate reading the JSON buffer
-            # In a real deep refactoring, we'd modify run_generator to pass the actual current shape
+            nonlocal _shapes_cache
+            if shapes_list is not None:
+                _shapes_cache = shapes_list
 
-            # For now, we will notify metrics to frontend
+            metrics_data = {
+                "progress": (curr / total) * 100 if total > 0 else 0,
+                "current": curr,
+                "total": total,
+                "speed": f"{speed:.1f} i/s",
+                "eta": f"{eta:.1f} s",
+                "shapes": _shapes_cache
+            }
             msg = json.dumps(
                 {
                     "action": "metrics",
-                    "curr": curr,
-                    "total": total,
-                    "speed": speed,
-                    "eta": eta,
+                    "data": metrics_data
                 }
             )
             self._sync_broadcast(loop, msg)
