@@ -71,7 +71,13 @@ class PainterServer:
             await asyncio.gather(*(client.send(binary_data) for client in self.clients))
 
     async def inject_geometry(self, config):
-        json_path = config.get("json_path")
+        img_path = config.get("json_path", "")
+        
+        # Reconstruct the expected JSON path from the original image filename
+        img_base = os.path.splitext(os.path.basename(img_path))[0]
+        output_dir = os.path.join(ROOT_DIR, "output", img_base)
+        json_path = os.path.join(output_dir, f"{img_base}.json")
+        
         layers = config.get("layers", 3000)
 
         await self.broadcast(
