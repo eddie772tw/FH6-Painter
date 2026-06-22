@@ -92,6 +92,7 @@ if %errorlevel% equ 0 goto :dependencies_ok
 echo [INFO] 偵測到缺少依賴套件或首次啟動。正在安裝依賴套件...
 "!PY_EXE!" -m pip install --upgrade pip
 "!PY_EXE!" -m pip install -r "%~dp0requirements.txt"
+"!PY_EXE!" -m pip install -r "%~dp0backend\requirements.txt"
 if errorlevel 1 (
     echo [ERROR] 安裝依賴套件失敗。
     pause
@@ -107,15 +108,13 @@ if exist "%VENV_DIR%\Scripts\ruff.exe" (
     "%VENV_DIR%\Scripts\ruff.exe" format .
 )
 
-:: 啟動應用程式
-if "%~1" == "" (
-    "!PY_EXE!" fh6_painter_studio_gui.py
-) else (
-    if "%~2" == "" (
-        "!PY_EXE!" fh6_painter_studio_gui.py "%~1"
-    ) else (
-        "!PY_EXE!" fh6_painter_launcher.py %*
-    )
-)
+:: 啟動應用程式 (Tauri Sidecar 架構)
+echo [INFO] 啟動 Python WebSocket 後端伺服器...
+start "FH6 Painter Backend" "!PY_EXE!" backend\server.py
 
+echo [INFO] 檢查並安裝前端依賴...
+cd /D "%~dp0frontend"
+call npm install
 
+echo [INFO] 啟動 Tauri 桌面端應用程式...
+call npm run tauri dev
