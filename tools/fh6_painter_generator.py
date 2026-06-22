@@ -481,7 +481,9 @@ def run_generator(
 
     attempts = 0
     max_attempts = layers * 3
-    total_generated_so_far = 0
+
+    starting_layer_count = len(shapes_list) - 1
+    total_generated_so_far = starting_layer_count
 
     recent_deltas = []
     stage_1_4_limit = pyramid_layers_threshold
@@ -492,11 +494,9 @@ def run_generator(
 
     # 提早收斂優化追蹤變數
     original_layers = layers
-    prev_valid_layers = 0
+    prev_valid_layers = starting_layer_count
     early_triggered = False
     progressive_sample_step_limit = 4
-
-    starting_layer_count = len(shapes_list) - 1
 
     try:
         while (len(shapes_list) - 1 < layers) and (attempts < max_attempts):
