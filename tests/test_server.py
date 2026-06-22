@@ -162,13 +162,12 @@ async def test_get_profile_settings(server, fake_ws):
 @pytest.mark.asyncio
 async def test_get_checkpoints(server, fake_ws):
     import os
+
     expected_path = os.path.join("output", "test", "test_500.json")
     input_path = os.path.join("test", "test.png")
     with (
         patch("os.path.exists", return_value=True),
-        patch(
-            "glob.glob", return_value=[expected_path]
-        ),
+        patch("glob.glob", return_value=[expected_path]),
     ):
         await server.handle_message(
             fake_ws,
@@ -182,8 +181,9 @@ async def test_get_checkpoints(server, fake_ws):
 
 
 def test_get_project_base():
-    from backend.server import get_project_base
     import os
+
+    from backend.server import get_project_base
 
     # 1. Standard path in output folder
     p1 = os.path.join("output", "image", "image.100.json")
@@ -209,6 +209,7 @@ def test_get_project_base():
 @pytest.mark.asyncio
 async def test_get_checkpoints_excludes_temp_resume(server, fake_ws):
     import os
+
     with (
         patch("os.path.exists", return_value=True),
         patch("builtins.open", return_value=MagicMock()) as mock_open,
