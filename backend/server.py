@@ -570,62 +570,86 @@ class PainterServer:
 
         # Apply Region Mask (Alpha Masking) if ROI is defined and enabled
         roi_config = config.get("roi", {})
+        roi_min_layers = roi_config.get("min_layers", 500)
+
+        current_layer = 0
+        if config.get("resume_path") and os.path.exists(config["resume_path"]):
+            try:
+                with open(config["resume_path"], "r", encoding="utf-8") as f:
+                    j = json.load(f)
+                    current_layer = max(0, len(j.get("shapes", [])) - 1)
+            except Exception:
+                pass
+
+        original_target_layers = config.get("layers", 1000)
+        pending_roi_phase2 = False
+
         if (
             roi_config.get("enabled", False)
             and img_path
             and not img_path.lower().endswith(".json")
             and os.path.exists(img_path)
         ):
-            try:
-                import numpy as np
-                from PIL import Image
+            if current_layer < roi_min_layers:
+                print(
+                    f"[System] 目前總圖層數 ({current_layer}) 小於區域繪製要求的最少輪廓層數 ({roi_min_layers})。本次生成將強制採用全圖生成以建立初步輪廓。"
+                )
+                if original_target_layers > roi_min_layers:
+                    pending_roi_phase2 = True
+                    config["layers"] = roi_min_layers
+            else:
+                try:
+                    import numpy as np
+                    from PIL import Image
 
-                with Image.open(img_path) as src_img:
-                    src_img = src_img.convert("RGBA")
-                    arr = np.array(src_img)
+                    with Image.open(img_path) as src_img:
+                        src_img = src_img.convert("RGBA")
+                        arr = np.array(src_img)
 
-                    rx1 = roi_config.get("x1", 0)
-                    ry1 = roi_config.get("y1", 0)
-                    rx2 = roi_config.get("x2", arr.shape[1] - 1)
-                    ry2 = roi_config.get("y2", arr.shape[0] - 1)
+                        rx1 = roi_config.get("x1", 0)
+                        ry1 = roi_config.get("y1", 0)
+                        rx2 = roi_config.get("x2", arr.shape[1] - 1)
+                        ry2 = roi_config.get("y2", arr.shape[0] - 1)
 
-                    rx1 = max(0, min(rx1, arr.shape[1] - 1))
-                    rx2 = max(0, min(rx2, arr.shape[1] - 1))
-                    ry1 = max(0, min(ry1, arr.shape[0] - 1))
-                    ry2 = max(0, min(ry2, arr.shape[0] - 1))
+                        rx1 = max(0, min(rx1, arr.shape[1] - 1))
+                        rx2 = max(0, min(rx2, arr.shape[1] - 1))
+                        ry1 = max(0, min(ry1, arr.shape[0] - 1))
+                        ry2 = max(0, min(ry2, arr.shape[0] - 1))
 
-                    x_min, x_max = min(rx1, rx2), max(rx1, rx2)
-                    y_min, y_max = min(ry1, ry2), max(ry1, ry2)
+                        x_min, x_max = min(rx1, rx2), max(rx1, rx2)
+                        y_min, y_max = min(ry1, ry2), max(ry1, ry2)
 
-                    alpha_mask = np.zeros((arr.shape[0], arr.shape[1]), dtype=np.uint8)
-                    shape_mode = roi_config.get("shape", "rectangle")
+                        alpha_mask = np.zeros(
+                            (arr.shape[0], arr.shape[1]), dtype=np.uint8
+                        )
+                        shape_mode = roi_config.get("shape", "rectangle")
 
-                    if shape_mode == "ellipse":
-                        center_x = (x_min + x_max) / 2.0
-                        center_y = (y_min + y_max) / 2.0
-                        radius_x = (x_max - x_min) / 2.0
-                        radius_y = (y_max - y_min) / 2.0
-                        if radius_x > 0 and radius_y > 0:
-                            yy, xx = np.ogrid[: arr.shape[0], : arr.shape[1]]
-                            ellipse_dist = ((xx - center_x) / radius_x) ** 2 + (
-                                (yy - center_y) / radius_y
-                            ) ** 2
-                            alpha_mask[ellipse_dist <= 1.0] = 255
-                    else:
-                        alpha_mask[y_min : y_max + 1, x_min : x_max + 1] = 255
+                        if shape_mode == "ellipse":
+                            center_x = (x_min + x_max) / 2.0
+                            center_y = (y_min + y_max) / 2.0
+                            radius_x = (x_max - x_min) / 2.0
+                            radius_y = (y_max - y_min) / 2.0
+                            if radius_x > 0 and radius_y > 0:
+                                yy, xx = np.ogrid[: arr.shape[0], : arr.shape[1]]
+                                ellipse_dist = ((xx - center_x) / radius_x) ** 2 + (
+                                    (yy - center_y) / radius_y
+                                ) ** 2
+                                alpha_mask[ellipse_dist <= 1.0] = 255
+                        else:
+                            alpha_mask[y_min : y_max + 1, x_min : x_max + 1] = 255
 
-                    arr[:, :, 3] = np.minimum(arr[:, :, 3], alpha_mask)
+                        arr[:, :, 3] = np.minimum(arr[:, :, 3], alpha_mask)
 
-                    masked_img = Image.fromarray(arr)
-                    img_base = get_project_base(img_path)
-                    output_dir = os.path.join(ROOT_DIR, "output", img_base)
-                    os.makedirs(output_dir, exist_ok=True)
-                    masked_path = os.path.join(output_dir, f"{img_base}_masked.png")
-                    masked_img.save(masked_path)
-                    img_path = masked_path
-                    print(f"[Region Mask] Mask applied. Path: {img_path}")
-            except Exception as e:
-                print(f"Error applying ROI mask: {e}")
+                        masked_img = Image.fromarray(arr)
+                        img_base = get_project_base(img_path)
+                        output_dir = os.path.join(ROOT_DIR, "output", img_base)
+                        os.makedirs(output_dir, exist_ok=True)
+                        masked_path = os.path.join(output_dir, f"{img_base}_masked.png")
+                        masked_img.save(masked_path)
+                        img_path = masked_path
+                        print(f"[Region Mask] Mask applied. Path: {img_path}")
+                except Exception as e:
+                    print(f"Error applying ROI mask: {e}")
 
         output_json = config.get("output_json", "")
         if not output_json and img_path:
@@ -810,6 +834,15 @@ class PainterServer:
                     loop,
                     json.dumps({"action": "generation_status", "status": "failed"}),
                 )
+            elif pending_roi_phase2:
+                print(
+                    f"[System] 建立初步輪廓 ({roi_min_layers} 層) 完成，將自動重啟並套用區域繪製進行後續生成。"
+                )
+                config["layers"] = original_target_layers
+                config["resume_path"] = output_json
+                config["img_path"] = original_target_image_path
+                return self.run_generator_blocking(config, loop)
+
         except Exception as e:
             if str(e) == "EARLY_CONVERGENCE_WITH_ROI":
                 self._sync_broadcast(loop, json.dumps({"action": "clear_roi"}))

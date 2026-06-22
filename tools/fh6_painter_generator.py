@@ -496,6 +496,7 @@ def run_generator(
     original_layers = layers
     prev_valid_layers = starting_layer_count
     early_triggered = False
+    roi_restart_triggered = False
     progressive_sample_step_limit = 4
 
     try:
@@ -821,8 +822,11 @@ def run_generator(
                                 )
                             else:
                                 if opt_settings.get("roi_enabled", False):
-                                    print("\n[Early Convergence] 由於啟用了區域繪製，觸發提早收斂時將自動清除選取範圍並繼續生成...")
-                                    raise Exception("EARLY_CONVERGENCE_WITH_ROI")
+                                    print(
+                                        "\n[Early Convergence] 由於啟用了區域繪製，觸發提早收斂時將自動清除選取範圍並繼續生成..."
+                                    )
+                                    roi_restart_triggered = True
+                                    break
 
                                 # 收斂層數則以 early_step 為步進向上取整，且不得超過原定最大層數 original_layers
                                 best_t = min(
@@ -947,6 +951,10 @@ def run_generator(
             json.dump({"shapes": shapes_list}, f, indent=2)
 
         print(f"JSON geometry successfully written to: {output_path}")
+
+        if roi_restart_triggered:
+            raise Exception("EARLY_CONVERGENCE_WITH_ROI")
+
         return 0
 
     finally:

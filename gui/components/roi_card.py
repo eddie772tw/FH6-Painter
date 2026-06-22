@@ -102,14 +102,47 @@ class RegionPaintingCard(ttk.Frame):
         )
         self.rb_ellipse.pack(side="left", padx=(10, 0))
 
-        # Row 2: Selected range display
+        # Row 1.5: Minimal Require Layers
+        tk.Label(
+            roi_body,
+            text="最小輪廓層數：",
+            font=("Microsoft JhengHei", 9),
+            bg=app.bg_card,
+            fg=app.fg_secondary,
+        ).grid(row=2, column=0, sticky="w", pady=3)
+
+        min_layers_frame = tk.Frame(roi_body, bg=app.bg_card)
+        min_layers_frame.grid(row=2, column=1, sticky="w", pady=3, padx=(10, 0))
+
+        self.var_roi_min_layers = tk.StringVar(value="500")
+        self.entry_roi_min_layers = tk.Entry(
+            min_layers_frame,
+            textvariable=self.var_roi_min_layers,
+            width=8,
+            font=("Consolas", 10),
+            bg=app.bg_window,
+            fg=app.fg_primary,
+            insertbackground=app.fg_primary,
+            relief="flat",
+        )
+        self.entry_roi_min_layers.pack(side="left")
+
+        tk.Label(
+            min_layers_frame,
+            text="未達此層數前強制全圖生成",
+            font=("Microsoft JhengHei", 8),
+            bg=app.bg_card,
+            fg="#888888",
+        ).pack(side="left", padx=(5, 0))
+
+        # Row 3: Selected range display
         tk.Label(
             roi_body,
             text="選取範圍：",
             font=("Microsoft JhengHei", 9),
             bg=app.bg_card,
             fg=app.fg_secondary,
-        ).grid(row=2, column=0, sticky="w", pady=3)
+        ).grid(row=3, column=0, sticky="w", pady=3)
 
         self.lbl_roi_range = tk.Label(
             roi_body,
@@ -118,7 +151,7 @@ class RegionPaintingCard(ttk.Frame):
             bg=app.bg_card,
             fg="#888888",
         )
-        self.lbl_roi_range.grid(row=2, column=1, sticky="w", pady=3, padx=(10, 0))
+        self.lbl_roi_range.grid(row=3, column=1, sticky="w", pady=3, padx=(10, 0))
 
         self.lbl_roi_hint = tk.Label(
             roi_body,
@@ -129,17 +162,17 @@ class RegionPaintingCard(ttk.Frame):
         )
         self.lbl_roi_hint.grid(row=4, column=0, columnspan=2, sticky="w", pady=(4, 0))
 
-        # Row 3: Manual rewind layer input
+        # Row 5: Manual rewind layer input
         tk.Label(
             roi_body,
             text="回朔層數：",
             font=("Microsoft JhengHei", 9),
             bg=app.bg_card,
             fg=app.fg_secondary,
-        ).grid(row=3, column=0, sticky="w", pady=3)
+        ).grid(row=5, column=0, sticky="w", pady=3)
 
         rewind_frame = tk.Frame(roi_body, bg=app.bg_card)
-        rewind_frame.grid(row=3, column=1, sticky="w", pady=3, padx=(10, 0))
+        rewind_frame.grid(row=5, column=1, sticky="w", pady=3, padx=(10, 0))
 
         self.val_rewind_layer = tk.StringVar(value="")
         self.entry_rewind_layer = tk.Entry(

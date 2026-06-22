@@ -76,77 +76,113 @@ class WorkersMixin:
                 )
 
         # Apply Region Mask (Alpha Masking) if ROI is defined and we are generating from an image (not resuming json)
-        if self.selection_roi and not img_path.lower().endswith(".json"):
+        roi_min_layers = 500
+        if hasattr(self, "val_roi_min_layers"):
             try:
-                with Image.open(img_path) as src_img:
-                    src_img = src_img.convert("RGBA")
-                    arr = np.array(src_img)
-                    x1, y1, x2, y2 = self.selection_roi
-                    if self.render_meta:
-                        meta = self.render_meta
-                        cx = meta["cx"]
-                        cy = meta["cy"]
-                        new_w = meta["w"]
-                        new_h = meta["h"]
+                roi_min_layers = int(self.val_roi_min_layers.get())
+            except Exception:
+                pass
+        elif hasattr(self, "roi_card") and hasattr(self.roi_card, "var_roi_min_layers"):
+            try:
+                roi_min_layers = int(self.roi_card.var_roi_min_layers.get())
+            except Exception:
+                pass
 
-                        # Top-left corner of the image on the canvas
-                        img_canvas_x = cx - new_w / 2.0
-                        img_canvas_y = cy - new_h / 2.0
+        current_layer = 0
+        if resume_path and os.path.exists(resume_path):
+            try:
+                import json
 
-                        # Real scale between canvas display size and actual source image size
-                        real_scale_x = new_w / float(arr.shape[1])
-                        real_scale_y = new_h / float(arr.shape[0])
+                with open(resume_path, "r", encoding="utf-8") as f:
+                    j = json.load(f)
+                    current_layer = max(0, len(j.get("shapes", [])) - 1)
+            except Exception:
+                pass
 
-                        # Map canvas coordinates back to original image pixels
-                        rx1 = int((x1 - img_canvas_x) / real_scale_x)
-                        ry1 = int((y1 - img_canvas_y) / real_scale_y)
-                        rx2 = int((x2 - img_canvas_x) / real_scale_x)
-                        ry2 = int((y2 - img_canvas_y) / real_scale_y)
-                    else:
-                        rx1, ry1, rx2, ry2 = x1, y1, x2, y2
+        original_target_layers = layers
+        self.pending_roi_phase2 = False
 
-                    rx1 = max(0, min(rx1, arr.shape[1] - 1))
-                    rx2 = max(0, min(rx2, arr.shape[1] - 1))
-                    ry1 = max(0, min(ry1, arr.shape[0] - 1))
-                    ry2 = max(0, min(ry2, arr.shape[0] - 1))
+        if self.selection_roi and not img_path.lower().endswith(".json"):
+            if current_layer < roi_min_layers:
+                self.log_to_console(
+                    f"[System] 目前總圖層數 ({current_layer}) 小於區域繪製要求的最少輪廓層數 ({roi_min_layers})。本次生成將強制採用全圖生成以建立初步輪廓。\n"
+                )
+                if original_target_layers > roi_min_layers:
+                    self.pending_roi_phase2 = True
+                    layers = roi_min_layers
+            else:
+                try:
+                    with Image.open(img_path) as src_img:
+                        src_img = src_img.convert("RGBA")
+                        arr = np.array(src_img)
+                        x1, y1, x2, y2 = self.selection_roi
+                        if self.render_meta:
+                            meta = self.render_meta
+                            cx = meta["cx"]
+                            cy = meta["cy"]
+                            new_w = meta["w"]
+                            new_h = meta["h"]
 
-                    x_min, x_max = min(rx1, rx2), max(rx1, rx2)
-                    y_min, y_max = min(ry1, ry2), max(ry1, ry2)
+                            # Top-left corner of the image on the canvas
+                            img_canvas_x = cx - new_w / 2.0
+                            img_canvas_y = cy - new_h / 2.0
 
-                    # Create a mask and apply to alpha channel
-                    alpha_mask = np.zeros((arr.shape[0], arr.shape[1]), dtype=np.uint8)
-                    shape_mode = self.var_roi_shape.get()
+                            # Real scale between canvas display size and actual source image size
+                            real_scale_x = new_w / float(arr.shape[1])
+                            real_scale_y = new_h / float(arr.shape[0])
 
-                    if shape_mode == "ellipse":
-                        # Elliptical mask using distance equation
-                        center_x = (x_min + x_max) / 2.0
-                        center_y = (y_min + y_max) / 2.0
-                        radius_x = (x_max - x_min) / 2.0
-                        radius_y = (y_max - y_min) / 2.0
-                        if radius_x > 0 and radius_y > 0:
-                            yy, xx = np.ogrid[: arr.shape[0], : arr.shape[1]]
-                            ellipse_dist = ((xx - center_x) / radius_x) ** 2 + (
-                                (yy - center_y) / radius_y
-                            ) ** 2
-                            alpha_mask[ellipse_dist <= 1.0] = 255
-                        mode_label = "橢圓"
-                    else:
-                        # Rectangle mask
-                        alpha_mask[y_min : y_max + 1, x_min : x_max + 1] = 255
-                        mode_label = "矩形"
+                            # Map canvas coordinates back to original image pixels
+                            rx1 = int((x1 - img_canvas_x) / real_scale_x)
+                            ry1 = int((y1 - img_canvas_y) / real_scale_y)
+                            rx2 = int((x2 - img_canvas_x) / real_scale_x)
+                            ry2 = int((y2 - img_canvas_y) / real_scale_y)
+                        else:
+                            rx1, ry1, rx2, ry2 = x1, y1, x2, y2
 
-                    # Combine existing alpha with our mask (bitwise AND basically)
-                    arr[:, :, 3] = np.minimum(arr[:, :, 3], alpha_mask)
+                        rx1 = max(0, min(rx1, arr.shape[1] - 1))
+                        rx2 = max(0, min(rx2, arr.shape[1] - 1))
+                        ry1 = max(0, min(ry1, arr.shape[0] - 1))
+                        ry2 = max(0, min(ry2, arr.shape[0] - 1))
 
-                    masked_img = Image.fromarray(arr)
-                    masked_path = os.path.join(output_dir, f"{img_base}_masked.png")
-                    masked_img.save(masked_path)
-                    img_path = masked_path
-                    self.log_to_console(
-                        f"[Region Mask] {mode_label} Alpha mask applied. ROI: ({x_min},{y_min}) to ({x_max},{y_max})\n"
-                    )
-            except Exception as e:
-                self.log_to_console(f"ERROR applying region mask: {e}\n")
+                        x_min, x_max = min(rx1, rx2), max(rx1, rx2)
+                        y_min, y_max = min(ry1, ry2), max(ry1, ry2)
+
+                        # Create a mask and apply to alpha channel
+                        alpha_mask = np.zeros(
+                            (arr.shape[0], arr.shape[1]), dtype=np.uint8
+                        )
+                        shape_mode = self.var_roi_shape.get()
+
+                        if shape_mode == "ellipse":
+                            # Elliptical mask using distance equation
+                            center_x = (x_min + x_max) / 2.0
+                            center_y = (y_min + y_max) / 2.0
+                            radius_x = (x_max - x_min) / 2.0
+                            radius_y = (y_max - y_min) / 2.0
+                            if radius_x > 0 and radius_y > 0:
+                                yy, xx = np.ogrid[: arr.shape[0], : arr.shape[1]]
+                                ellipse_dist = ((xx - center_x) / radius_x) ** 2 + (
+                                    (yy - center_y) / radius_y
+                                ) ** 2
+                                alpha_mask[ellipse_dist <= 1.0] = 255
+                            mode_label = "橢圓"
+                        else:
+                            # Rectangle mask
+                            alpha_mask[y_min : y_max + 1, x_min : x_max + 1] = 255
+                            mode_label = "矩形"
+
+                        # Combine existing alpha with our mask (bitwise AND basically)
+                        arr[:, :, 3] = np.minimum(arr[:, :, 3], alpha_mask)
+
+                        masked_img = Image.fromarray(arr)
+                        masked_path = os.path.join(output_dir, f"{img_base}_masked.png")
+                        masked_img.save(masked_path)
+                        img_path = masked_path
+                        self.log_to_console(
+                            f"[Region Mask] {mode_label} Alpha mask applied. ROI: ({x_min},{y_min}) to ({x_max},{y_max})\n"
+                        )
+                except Exception as e:
+                    self.log_to_console(f"ERROR applying region mask: {e}\n")
         output_dir = os.path.join(project_root, "output", img_base)
         output_json = os.path.join(output_dir, f"{img_base}.json")
         self.auto_load_json_path = output_json
@@ -287,6 +323,13 @@ class WorkersMixin:
                         "Generator returned a non-zero exit code. Please inspect terminal diagnostics."
                     ),
                 )
+            else:
+                if getattr(self, "pending_roi_phase2", False):
+                    self.pending_roi_phase2 = False
+                    self.log_to_console(
+                        "[System] 建立初步輪廓完成，將自動重啟並套用區域繪製進行後續生成。\n"
+                    )
+                    self.root.after(0, self.restart_roi_phase2)
         except Exception as e:
             if str(e) == "EARLY_CONVERGENCE_WITH_ROI":
                 self.root.after(0, self.restart_generation_without_roi)
@@ -333,7 +376,12 @@ class WorkersMixin:
                     self.need_preview_update = True
 
             def on_success():
-                pass
+                if getattr(self, "pending_roi_phase2", False):
+                    self.pending_roi_phase2 = False
+                    self.log_to_console(
+                        "[System] 建立初步輪廓完成，將自動重啟並套用區域繪製進行後續生成。\n"
+                    )
+                    self.root.after(0, self.restart_roi_phase2)
 
             def on_failed(msg):
                 self.root.after(0, lambda: self.on_generation_failed(msg))
@@ -400,7 +448,9 @@ class WorkersMixin:
         )
 
     def restart_generation_without_roi(self):
-        self.log_to_console("[System] 偵測到提早收斂，自動清除區域繪製設定並繼續生成...\n")
+        self.log_to_console(
+            "[System] 偵測到提早收斂，自動清除區域繪製設定並繼續生成...\n"
+        )
         if hasattr(self, "var_roi_enabled"):
             self.var_roi_enabled.set(False)
         self.selection_roi = None
@@ -408,27 +458,65 @@ class WorkersMixin:
             self._redraw_roi_shape()
         if hasattr(self, "_update_roi_range_label"):
             self._update_roi_range_label()
-            
+
         self.is_generating = False
         self.unlock_ui()
         self.active_thread = None
 
-        if hasattr(self, "last_generated_image_path") and self.last_generated_image_path:
-            img_base = os.path.splitext(os.path.basename(self.last_generated_image_path))[0]
+        if (
+            hasattr(self, "last_generated_image_path")
+            and self.last_generated_image_path
+        ):
+            img_base = os.path.splitext(
+                os.path.basename(self.last_generated_image_path)
+            )[0]
             from gui.utils import get_project_root
-            output_json = os.path.join(get_project_root(), "output", img_base, f"{img_base}.json")
+
+            output_json = os.path.join(
+                get_project_root(), "output", img_base, f"{img_base}.json"
+            )
             if os.path.exists(output_json):
                 if hasattr(self, "combo_source"):
                     self.combo_source.set("Resume from JSON")
                 if hasattr(self, "update_file_list"):
                     self.update_file_list()
-                
-                self.entry_file_path.delete(0, 'end')
+
+                self.entry_file_path.delete(0, "end")
                 self.entry_file_path.insert(0, output_json)
                 self.start_generation()
                 return
-                
+
         self.log_to_console("[System] 無法找到要接續的 JSON 檔案。\n")
+
+    def restart_roi_phase2(self):
+        self.is_generating = False
+        self.unlock_ui()
+        self.active_thread = None
+
+        if (
+            hasattr(self, "last_generated_image_path")
+            and self.last_generated_image_path
+        ):
+            img_base = os.path.splitext(
+                os.path.basename(self.last_generated_image_path)
+            )[0]
+            from gui.utils import get_project_root
+
+            output_json = os.path.join(
+                get_project_root(), "output", img_base, f"{img_base}.json"
+            )
+            if os.path.exists(output_json):
+                if hasattr(self, "combo_source"):
+                    self.combo_source.set("Resume from JSON")
+                if hasattr(self, "update_file_list"):
+                    self.update_file_list()
+
+                self.entry_file_path.delete(0, "end")
+                self.entry_file_path.insert(0, output_json)
+                self.start_generation()
+                return
+
+        self.log_to_console("[System] 無法啟動第二階段：找不到要接續的 JSON 檔案。\n")
 
     def stop_generation(self):
         """Sets the cancellation flag to abort active shape generation."""

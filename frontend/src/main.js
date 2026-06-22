@@ -597,6 +597,7 @@ btnGenerate.addEventListener("click", () => {
       roi: {
         enabled: roiEnabled && roiSelection !== null,
         shape: /** @type {HTMLInputElement} */ (document.querySelector('input[name="roi-shape"]:checked')).value,
+        min_layers: parseInt(/** @type {HTMLInputElement} */ (document.getElementById("roi-min-layers")).value) || 500,
         x1: roiSelection ? Math.min(roiSelection.x1, roiSelection.x2) : 0,
         y1: roiSelection ? Math.min(roiSelection.y1, roiSelection.y2) : 0,
         x2: roiSelection ? Math.max(roiSelection.x1, roiSelection.x2) : 0,
