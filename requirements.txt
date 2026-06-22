@@ -14,3 +14,4 @@ taichi>=1.7.4
 # 開發工具
 ruff
 pytest
+windnd

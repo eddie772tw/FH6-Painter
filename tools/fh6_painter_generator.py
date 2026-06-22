@@ -568,7 +568,7 @@ def run_generator(
 
             shapes_list.append(
                 {
-                    "type": 32,
+                    "type": 16,
                     "data": [x_c, y_c, r_x, r_y, float(math.degrees(theta))],
                     "color": [int(r), int(g), int(b), int(alpha)],
                     "score": float(delta),

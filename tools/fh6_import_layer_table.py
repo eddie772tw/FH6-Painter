@@ -903,7 +903,16 @@ def write_shape(handle, layer_ptr, shape, canvas_w, canvas_h, options):
         struct.pack("<f", (360.0 - angle) % 360.0),
     )
     write_bytes(handle, layer_ptr + LAYER_COLOR_OFFSET, pack_color(shape))
-    write_bytes(handle, layer_ptr + LAYER_SHAPE_ID_OFFSET, bytes([SHAPE_ID_ELLIPSE]))
+
+    # 判斷形狀種類 (1 = 矩形/Square, 16 = 橢圓/Ellipse)
+    # Square shape_word = 101 (0x65), Ellipse shape_word = 102 (0x66)
+    shape_type = shape.get("type", 16)
+    shape_id_word = 101 if shape_type == 1 else 102
+
+    # 根據 forza-painter-fh6 的研究，0x7A 是一個 16-bit 形狀 Word，因此使用 "<H" 寫入 2 bytes
+    write_bytes(
+        handle, layer_ptr + LAYER_SHAPE_ID_OFFSET, struct.pack("<H", shape_id_word)
+    )
     write_bytes(handle, layer_ptr + LAYER_MASK_OFFSET, bytes([0]))
 
 
@@ -1035,6 +1044,127 @@ def run_importer(
     except Exception as ex:
         print(f"ERROR: {ex}", file=sys.stderr)
         return 1
+
+
+def read_shape(handle, layer_ptr, canvas_w, canvas_h, options):
+    pos = read_2_floats(handle, layer_ptr + LAYER_POS_OFFSET)
+    scale = read_2_floats(handle, layer_ptr + LAYER_SCALE_OFFSET)
+    rot_data = try_read(handle, layer_ptr + LAYER_ROTATION_OFFSET, 4)
+    color = try_read(handle, layer_ptr + LAYER_COLOR_OFFSET, 4)
+    shape_id_data = try_read(handle, layer_ptr + LAYER_SHAPE_ID_OFFSET, 2)
+
+    if not pos or not scale or not rot_data or not color or not shape_id_data:
+        return None
+
+    x_raw, y_raw = pos
+    sx_raw, sy_raw = scale
+    angle_raw = struct.unpack("<f", rot_data)[0]
+    shape_id_word = struct.unpack("<H", shape_id_data)[0]
+
+    x = x_raw / options.coord_scale + canvas_w / 2.0
+    y = -y_raw / options.coord_scale + canvas_h / 2.0
+    sx = sx_raw * options.scale_div
+    sy = sy_raw * options.scale_div
+    angle = (360.0 - angle_raw) % 360.0
+
+    r, g, b, a = color
+
+    # Map back shape_id_word to JSON type
+    shape_type = 1 if shape_id_word == 101 else 16
+
+    return {"type": shape_type, "data": [x, y, sx, sy, angle], "color": [r, g, b, a]}
+
+
+def run_exporter(
+    output_path,
+    layers=3000,
+    no_cache=False,
+    scale_div=63.0,
+    coord_scale=1.0,
+    max_candidates=200000,
+):
+    print("Starting memory export...")
+
+    class Options:
+        def __init__(self):
+            self.scale_div = scale_div
+            self.coord_scale = coord_scale
+            self.max_candidates = max_candidates
+
+    options = Options()
+
+    pid = find_forza_process()
+    access_mask = (
+        PROCESS_QUERY_INFORMATION | PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_VM_READ
+    )
+    handle = kernel32.OpenProcess(access_mask, False, pid)
+    if not handle:
+        raise OSError("OpenProcess failed.")
+
+    try:
+        cache_path = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "fh6-layer-table.cache"
+        )
+        layer_pointers = (
+            None
+            if no_cache
+            else try_load_cached_layer_pointers(handle, cache_path, pid, layers)
+        )
+
+        if layer_pointers is None:
+            layer_pointers, best_group, best_table = locate_layer_pointers(
+                handle, layers, max_candidates
+            )
+            save_cached_layer_pointers(
+                cache_path, pid, layers, best_group, best_table, layer_pointers
+            )
+
+        canvas_w = 0.0
+        canvas_h = 0.0
+        shapes = []
+        for i, ptr in enumerate(layer_pointers):
+            if score_layer(handle, ptr) < 5:
+                continue
+            shape = read_shape(handle, ptr, canvas_w, canvas_h, options)
+            if shape:
+                # 只保留非全透明或是具備一定大小的圖層
+                if shape["color"][3] > 0 and (
+                    shape["data"][2] > 0.001 or shape["data"][3] > 0.001
+                ):
+                    shapes.append(shape)
+
+        # 簡單推斷畫布大小
+        max_x = max_y = 1.0
+        for s in shapes:
+            cx, cy, w, h, _ = s["data"]
+            max_x = max(max_x, abs(cx) + w)
+            max_y = max(max_y, abs(cy) + h)
+        canvas_w = float(int(max_x * 2.0))
+        canvas_h = float(int(max_y * 2.0))
+
+        # 修正座標偏移
+        for s in shapes:
+            s["data"][0] += canvas_w / 2.0
+            s["data"][1] += canvas_h / 2.0
+
+        header = {
+            "type": 1,
+            "data": [0.0, 0.0, canvas_w, canvas_h],
+            "color": [0, 0, 0, 0],
+            "score": 0.0,
+        }
+
+        export_data = {"shapes": [header] + shapes}
+        with open(output_path, "w", encoding="utf-8") as f:
+            json.dump(export_data, f, indent=4)
+
+        print(f"Exported {len(shapes)} drawable shapes to {output_path}")
+        return 0
+    except Exception as ex:
+        print(f"ERROR: {ex}", file=sys.stderr)
+        return 1
+    finally:
+        kernel32.CloseHandle(handle)
 
 
 # --- Main Entry ---
