@@ -158,5 +158,6 @@ Support Go-OpenCL, Taichi, and Numba acceleration across CPU and GPU, provide GU
 
 *   **MIT License**：Copyright (c) 2026 罐頭 (eddie772tw) & 貢獻者。
 *   **Original C++ forza-painter** by [AE (A-Dawg#0001)](https://github.com/forza-painter/forza-painter) — 提供原版 C++ 邏輯與記憶體圖表結構參考。
-*   **geometrize-lib** by [Sam Twidale](https://samcodes.co.uk/) — 幾何擬合算法理論啟發。
-*   **Primitive library** by [Michael Fogleman](https://github.com/fogleman/primitive) — 啟發最初的幾何擬合核心。
+*   **geometrize-lib** by [Sam Twidale](https://samcodes.co.uk/) — Numba與Taichi JIT引擎使用的幾何擬合演算法。
+*   **Primitive library** by [Michael Fogleman](https://github.com/fogleman/primitive) — 實踐上述演算法的程式碼基礎。
+*   **GO-OpenCL Engine Support** by [神龟](https://github.com/zjl88858/forza-painter-geometrize-gpu) - 引入該開發者提出的另一種更高效的GPU實現。
