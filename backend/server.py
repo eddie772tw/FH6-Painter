@@ -132,6 +132,10 @@ class PainterServer:
             output_dir = os.path.join(ROOT_DIR, "output", img_base)
             output_json = os.path.join(output_dir, f"{img_base}.json")
         profile_path = config.get("profile_path", None)
+        if not profile_path:
+            profile_path = os.path.join(
+                ROOT_DIR, "settings", "c. balanced - good quality and speed.ini"
+            )
         layers = config.get("layers", 1000)
         engine_code = config.get("engine_code", "NUMBA")
 
