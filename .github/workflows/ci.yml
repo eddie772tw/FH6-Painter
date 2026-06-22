@@ -81,6 +81,16 @@ jobs:
         pip install -r requirements.txt
         pip install pyinstaller
 
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
+    - name: Set up Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: x86_64-pc-windows-msvc
+
     - name: Build Standalone Windows Executable
       shell: cmd
       run: |
@@ -90,5 +100,5 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: FH6_Painter_Studio_Windows_Preview
-        path: dist/FH6_Painter_Studio
+        path: frontend/src-tauri/target/release/bundle/
         retention-days: 7

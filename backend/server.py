@@ -19,7 +19,7 @@ except ImportError as e:
     pass
 
 try:
-    from gui.utils import scan_gpus, scan_profiles
+    from utils import scan_gpus, scan_profiles
 except ImportError:
     scan_profiles = None
     scan_gpus = None
