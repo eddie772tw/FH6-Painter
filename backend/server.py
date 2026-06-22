@@ -18,12 +18,19 @@ except ImportError as e:
     print(f"Failed to import EvaluatorFactory: {e}")
     pass
 
+try:
+    from gui.utils import scan_gpus, scan_profiles
+except ImportError:
+    scan_profiles = None
+    scan_gpus = None
+
 
 class PainterServer:
     def __init__(self):
         self.clients = set()
         self.is_generating = False
         self.cancel_flag = False
+        self.current_go_evaluator = None
 
     async def register(self, websocket):
         self.clients.add(websocket)
@@ -52,12 +59,287 @@ class PainterServer:
                 )
             except Exception as e:
                 print(f"Error sending engines_list: {e}")
+        elif action == "get_profiles":
+            profiles_list = []
+            if scan_profiles:
+                try:
+                    raw_profiles = scan_profiles()
+                    for p in raw_profiles:
+                        profiles_list.append(
+                            {
+                                "filename": p.get("filename", ""),
+                                "name": p.get("name", ""),
+                                "desc": p.get("desc", ""),
+                                "path": p.get("path", ""),
+                            }
+                        )
+                except Exception as e:
+                    print(f"Error scanning profiles: {e}")
+            await websocket.send(
+                json.dumps({"action": "profiles_list", "data": profiles_list})
+            )
+        elif action == "get_gpus":
+            gpus_list = []
+            if scan_gpus:
+                try:
+                    gpus_list = scan_gpus()
+                except Exception as e:
+                    print(f"Error scanning GPUs: {e}")
+            await websocket.send(json.dumps({"action": "gpus_list", "data": gpus_list}))
+        elif action == "get_profile_settings":
+            profile_name = data.get("profile_name", "")
+            settings_dir = os.path.join(ROOT_DIR, "settings")
+            profile_path = os.path.join(settings_dir, f"{profile_name}.ini")
+
+            stopAt, randomSamples, mutatedSamples, desc = (
+                "2000",
+                "20000",
+                "200",
+                "No description available.",
+            )
+            if os.path.exists(profile_path):
+                try:
+                    from tools.fh6_painter_generator import load_profile
+
+                    params = load_profile(profile_path)
+                    stopAt = params.get("stopAt", "2000")
+                    randomSamples = params.get("randomSamples", "20000")
+                    mutatedSamples = params.get("mutatedSamples", "200")
+
+                    with open(profile_path, "r", encoding="utf-8") as f:
+                        for line in f:
+                            if line.strip().startswith("description"):
+                                parts = line.split("=", 1)
+                                if len(parts) == 2:
+                                    desc = parts[1].strip()
+                                break
+                except Exception as e:
+                    print(f"Error loading profile settings: {e}")
+            await websocket.send(
+                json.dumps(
+                    {
+                        "action": "profile_settings",
+                        "profile_name": profile_name,
+                        "settings": {
+                            "stopAt": stopAt,
+                            "randomSamples": randomSamples,
+                            "mutatedSamples": mutatedSamples,
+                            "description": desc,
+                        },
+                    }
+                )
+            )
+        elif action == "get_checkpoints":
+            img_path = data.get("img_path", "")
+            checkpoints = {}
+            if img_path:
+                img_base = os.path.splitext(os.path.basename(img_path))[0]
+                if img_base.endswith("_masked"):
+                    img_base = img_base[:-7]
+                if img_base != "_temp_resume":
+                    output_dir = os.path.join(ROOT_DIR, "output", img_base)
+                    if os.path.exists(output_dir):
+                        import glob
+
+                        for f in glob.glob(
+                            os.path.join(output_dir, f"{img_base}_*.json")
+                        ):
+                            basename = os.path.basename(f)
+                            num_str = basename.replace(img_base + "_", "").replace(
+                                ".json", ""
+                            )
+                            try:
+                                num = int(num_str)
+                                checkpoints[num] = os.path.abspath(f)
+                            except Exception:
+                                pass
+                if img_path.lower().endswith(".json") and os.path.exists(img_path):
+                    try:
+                        with open(img_path, "r", encoding="utf-8") as f:
+                            json_data = json.load(f)
+                        num_layers = max(0, len(json_data.get("shapes", [])) - 1)
+                        if num_layers > 0:
+                            checkpoints[num_layers] = os.path.abspath(img_path)
+                    except Exception:
+                        pass
+            sorted_cps = [
+                {"layer": k, "path": v} for k, v in sorted(checkpoints.items())
+            ]
+            await websocket.send(
+                json.dumps({"action": "checkpoints_list", "checkpoints": sorted_cps})
+            )
+        elif action == "rewind_checkpoint":
+            filepath = data.get("path", "")
+            slice_layer = data.get("layer", 1)
+            try:
+                with open(filepath, "r", encoding="utf-8") as f:
+                    json_data = json.load(f)
+                shapes = json_data.get("shapes", [])
+                sliced_shapes = shapes[: slice_layer + 1]
+                temp_path = os.path.join(os.path.dirname(filepath), "_temp_resume.json")
+                with open(temp_path, "w", encoding="utf-8") as f:
+                    json.dump({"shapes": sliced_shapes}, f)
+
+                header = shapes[0] if len(shapes) > 0 else {}
+                h_data = header.get("data", [0.0, 0.0, 600.0, 600.0])
+                h_color = header.get("color", [128, 128, 128, 0])
+                width = int(h_data[2]) if len(h_data) >= 3 else 600
+                height = int(h_data[3]) if len(h_data) >= 4 else 600
+                avg_r, avg_g, avg_b = h_color[0], h_color[1], h_color[2]
+
+                import copy
+
+                import numpy as np
+
+                from tools.fh6_painter_generator import scale_shapes_list
+
+                render_scale = 2.0
+                width_high = int(width * render_scale)
+                height_high = int(height * render_scale)
+                shapes_copied = copy.deepcopy(sliced_shapes)
+                scale_shapes_list(shapes_copied, render_scale)
+
+                canvas_arr = np.zeros((height_high, width_high, 4), dtype=np.float32)
+                evaluator = EvaluatorFactory.create_evaluator(
+                    "NUMBA",
+                    np.zeros((height_high, width_high, 3), dtype=np.float32),
+                    None,
+                )
+                evaluator.rebuild_canvas(canvas_arr, shapes_copied, avg_r, avg_g, avg_b)
+                evaluator.cleanup()
+
+                import base64
+                import io
+
+                from PIL import Image
+
+                rgb_arr = canvas_arr[:, :, :3].astype(np.uint8)
+                img = Image.fromarray(rgb_arr, "RGB")
+                buffer = io.BytesIO()
+                img.save(buffer, format="JPEG", quality=85)
+                b64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
+
+                await websocket.send(
+                    json.dumps(
+                        {
+                            "action": "rewind_success",
+                            "temp_path": os.path.abspath(temp_path),
+                            "layer": slice_layer,
+                            "preview_base64": b64,
+                            "shapes": sliced_shapes,
+                        }
+                    )
+                )
+            except Exception as e:
+                await websocket.send(
+                    json.dumps({"action": "rewind_failed", "error": str(e)})
+                )
+        elif action == "load_json_file":
+            filepath = data.get("path", "")
+            try:
+                with open(filepath, "r", encoding="utf-8") as f:
+                    json_data = json.load(f)
+                shapes = json_data.get("shapes", [])
+
+                header = shapes[0] if len(shapes) > 0 else {}
+                h_data = header.get("data", [0.0, 0.0, 600.0, 600.0])
+                h_color = header.get("color", [128, 128, 128, 0])
+                width = int(h_data[2]) if len(h_data) >= 3 else 600
+                height = int(h_data[3]) if len(h_data) >= 4 else 600
+                avg_r, avg_g, avg_b = h_color[0], h_color[1], h_color[2]
+
+                import copy
+
+                import numpy as np
+
+                from tools.fh6_painter_generator import scale_shapes_list
+
+                render_scale = 2.0
+                width_high = int(width * render_scale)
+                height_high = int(height * render_scale)
+                shapes_copied = copy.deepcopy(shapes)
+                scale_shapes_list(shapes_copied, render_scale)
+
+                canvas_arr = np.zeros((height_high, width_high, 4), dtype=np.float32)
+                evaluator = EvaluatorFactory.create_evaluator(
+                    "NUMBA",
+                    np.zeros((height_high, width_high, 3), dtype=np.float32),
+                    None,
+                )
+                evaluator.rebuild_canvas(canvas_arr, shapes_copied, avg_r, avg_g, avg_b)
+                evaluator.cleanup()
+
+                import base64
+                import io
+
+                from PIL import Image
+
+                rgb_arr = canvas_arr[:, :, :3].astype(np.uint8)
+                img = Image.fromarray(rgb_arr, "RGB")
+                buffer = io.BytesIO()
+                img.save(buffer, format="JPEG", quality=85)
+                b64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
+
+                await websocket.send(
+                    json.dumps(
+                        {
+                            "action": "load_json_success",
+                            "path": os.path.abspath(filepath),
+                            "shapes": shapes,
+                            "preview_base64": b64,
+                        }
+                    )
+                )
+            except Exception as e:
+                await websocket.send(
+                    json.dumps({"action": "load_json_failed", "error": str(e)})
+                )
+        elif action == "browse_file":
+            try:
+                import tkinter as tk
+                from tkinter import filedialog
+
+                root = tk.Tk()
+                root.withdraw()
+                root.attributes("-topmost", True)
+                file_path = filedialog.askopenfilename(
+                    title="Select Image or JSON File",
+                    filetypes=[
+                        (
+                            "Supported Files (*.png;*.jpg;*.jpeg;*.bmp;*.webp;*.json)",
+                            "*.png;*.jpg;*.jpeg;*.bmp;*.webp;*.json",
+                        ),
+                        (
+                            "Images (*.png;*.jpg;*.jpeg;*.bmp;*.webp)",
+                            "*.png;*.jpg;*.jpeg;*.bmp;*.webp",
+                        ),
+                        ("Geometry JSON (*.json)", "*.json"),
+                        ("All files (*.*)", "*.*"),
+                    ],
+                )
+                root.destroy()
+                if file_path:
+                    file_path = os.path.abspath(file_path)
+                await websocket.send(
+                    json.dumps({"action": "file_selected", "path": file_path})
+                )
+            except Exception as e:
+                print(f"Error opening file dialog: {e}")
+                await websocket.send(
+                    json.dumps({"action": "file_selected", "path": "", "error": str(e)})
+                )
         elif action == "start_generation":
             config = data.get("config", {})
             if not self.is_generating:
                 self.generator_task = asyncio.create_task(self.start_generation(config))
         elif action == "stop_generation":
             self.cancel_flag = True
+            go_eval = getattr(self, "current_go_evaluator", None)
+            if go_eval:
+                try:
+                    go_eval.stop_generator()
+                except Exception as e:
+                    print(f"Error stopping Go evaluator: {e}")
         elif action == "inject_geometry":
             config = data.get("config", {})
             asyncio.create_task(self.inject_geometry(config))
@@ -72,12 +354,12 @@ class PainterServer:
 
     async def inject_geometry(self, config):
         img_path = config.get("json_path", "")
-        
+
         # Reconstruct the expected JSON path from the original image filename
         img_base = os.path.splitext(os.path.basename(img_path))[0]
         output_dir = os.path.join(ROOT_DIR, "output", img_base)
         json_path = os.path.join(output_dir, f"{img_base}.json")
-        
+
         layers = config.get("layers", 3000)
 
         await self.broadcast(
@@ -132,20 +414,140 @@ class PainterServer:
         from tools.fh6_painter_generator import run_generator
 
         img_path = config.get("img_path", "")
+
+        # Resolve resume path
+        resume_path = config.get("resume_path", None)
+        if img_path.lower().endswith(".json"):
+            resume_path = img_path
+            original_img_path = config.get("original_img_path", "")
+            if original_img_path and os.path.exists(original_img_path):
+                img_path = original_img_path
+            else:
+                json_base = os.path.splitext(os.path.basename(img_path))[0]
+                if json_base.endswith("_masked"):
+                    json_base = json_base[:-7]
+                if json_base == "_temp_resume":
+                    json_base = ""
+
+                found_img = None
+                if json_base:
+                    import glob
+
+                    json_dir = os.path.dirname(img_path)
+                    for img_ext in [".png", ".jpg", ".jpeg", ".bmp", ".webp"]:
+                        candidates = glob.glob(
+                            os.path.join(json_dir, f"{json_base}*{img_ext}")
+                        )
+                        if candidates:
+                            found_img = candidates[0]
+                            break
+                if found_img:
+                    img_path = found_img
+
+        # Copy original image to output folder
+        if (
+            img_path
+            and not img_path.lower().endswith(".json")
+            and os.path.exists(img_path)
+        ):
+            try:
+                img_base = os.path.splitext(os.path.basename(img_path))[0]
+                output_dir = os.path.join(ROOT_DIR, "output", img_base)
+                os.makedirs(output_dir, exist_ok=True)
+                dest_img_path = os.path.join(output_dir, os.path.basename(img_path))
+                if os.path.abspath(img_path) != os.path.abspath(dest_img_path):
+                    import shutil
+
+                    shutil.copy2(img_path, dest_img_path)
+                    img_path = dest_img_path
+            except Exception as e:
+                print(f"[Warning] Failed to copy original image to output: {e}")
+
+        # Apply Region Mask (Alpha Masking) if ROI is defined and enabled
+        roi_config = config.get("roi", {})
+        if (
+            roi_config.get("enabled", False)
+            and img_path
+            and not img_path.lower().endswith(".json")
+            and os.path.exists(img_path)
+        ):
+            try:
+                import numpy as np
+                from PIL import Image
+
+                with Image.open(img_path) as src_img:
+                    src_img = src_img.convert("RGBA")
+                    arr = np.array(src_img)
+
+                    rx1 = roi_config.get("x1", 0)
+                    ry1 = roi_config.get("y1", 0)
+                    rx2 = roi_config.get("x2", arr.shape[1] - 1)
+                    ry2 = roi_config.get("y2", arr.shape[0] - 1)
+
+                    rx1 = max(0, min(rx1, arr.shape[1] - 1))
+                    rx2 = max(0, min(rx2, arr.shape[1] - 1))
+                    ry1 = max(0, min(ry1, arr.shape[0] - 1))
+                    ry2 = max(0, min(ry2, arr.shape[0] - 1))
+
+                    x_min, x_max = min(rx1, rx2), max(rx1, rx2)
+                    y_min, y_max = min(ry1, ry2), max(ry1, ry2)
+
+                    alpha_mask = np.zeros((arr.shape[0], arr.shape[1]), dtype=np.uint8)
+                    shape_mode = roi_config.get("shape", "rectangle")
+
+                    if shape_mode == "ellipse":
+                        center_x = (x_min + x_max) / 2.0
+                        center_y = (y_min + y_max) / 2.0
+                        radius_x = (x_max - x_min) / 2.0
+                        radius_y = (y_max - y_min) / 2.0
+                        if radius_x > 0 and radius_y > 0:
+                            yy, xx = np.ogrid[: arr.shape[0], : arr.shape[1]]
+                            ellipse_dist = ((xx - center_x) / radius_x) ** 2 + (
+                                (yy - center_y) / radius_y
+                            ) ** 2
+                            alpha_mask[ellipse_dist <= 1.0] = 255
+                    else:
+                        alpha_mask[y_min : y_max + 1, x_min : x_max + 1] = 255
+
+                    arr[:, :, 3] = np.minimum(arr[:, :, 3], alpha_mask)
+
+                    masked_img = Image.fromarray(arr)
+                    img_base = os.path.splitext(os.path.basename(img_path))[0]
+                    output_dir = os.path.join(ROOT_DIR, "output", img_base)
+                    os.makedirs(output_dir, exist_ok=True)
+                    masked_path = os.path.join(output_dir, f"{img_base}_masked.png")
+                    masked_img.save(masked_path)
+                    img_path = masked_path
+                    print(f"[Region Mask] Mask applied. Path: {img_path}")
+            except Exception as e:
+                print(f"Error applying ROI mask: {e}")
+
         output_json = config.get("output_json", "")
-        if not output_json:
+        if not output_json and img_path:
             img_base = os.path.splitext(os.path.basename(img_path))[0]
+            if img_base.endswith("_masked"):
+                img_base = img_base[:-7]
             output_dir = os.path.join(ROOT_DIR, "output", img_base)
             output_json = os.path.join(output_dir, f"{img_base}.json")
+
         profile_path = config.get("profile_path", None)
+        if not profile_path and config.get("profile_name"):
+            profile_path = os.path.join(
+                ROOT_DIR, "settings", f"{config.get('profile_name')}.ini"
+            )
         if not profile_path:
             profile_path = os.path.join(
                 ROOT_DIR, "settings", "c. balanced - good quality and speed.ini"
             )
+
         layers = config.get("layers", 1000)
         engine_code = config.get("engine_code", "NUMBA")
+        taichi_arch = config.get("taichi_arch", "Vulkan")
+        taichi_device_id = config.get("taichi_device_id", 0)
+        use_pure_gpu = config.get("use_pure_gpu", False)
+        candidates_limit = config.get("candidates_limit", None)
+        steps_limit = config.get("steps_limit", None)
 
-        # Accumulate shapes to stream Vector Renderer (will be used in deep refactoring)
         _shapes_cache = []
 
         def generator_cb(curr, total, speed, eta, canvas_arr, shapes_list=None):
@@ -162,23 +564,39 @@ class PainterServer:
                     "curr": curr,
                     "total": total,
                     "speed": speed,
+                    "slate": 0.0,
                     "eta": eta,
                     "shapes": _shapes_cache,
                 }
             )
             self._sync_broadcast(loop, msg)
+
+            # Yield JIT execution response if Numba/Taichi is running, matching legacy workers.py release timing
+            if engine_code == "TAICHI":
+                time.sleep(0.002)
+            elif engine_code == "NUMBA":
+                time.sleep(0.001)
             return True
 
-        # Fallback settings if not provided
-        opt_settings = {
-            "image_pyramid": {"enabled": True},
-            "importance_sampling": {"enabled": True},
-            "simulated_annealing": {"enabled": True},
-            "dynamic_freeze": {"enabled": True},
-            "error_weighting": {"enabled": True},
-            "decaying_shape": {"enabled": True},
-            "early_convergence": {"enabled": False},
-        }
+        # Read optimization settings
+        opt_settings = config.get(
+            "opt_settings",
+            {
+                "image_pyramid": {"enabled": True},
+                "importance_sampling": {"enabled": True},
+                "simulated_annealing": {"enabled": True},
+                "dynamic_freeze": {"enabled": True},
+                "error_weighting": {"enabled": True},
+                "decaying_shape": {"enabled": True},
+                "early_convergence": {"enabled": False},
+            },
+        )
+        # Sync early convergence check
+        if "early_convergence" not in opt_settings:
+            opt_settings["early_convergence"] = {}
+        opt_settings["early_convergence"]["enabled"] = config.get(
+            "early_convergence", False
+        )
 
         try:
             if engine_code == "GO_OPENCL":
@@ -198,6 +616,7 @@ class PainterServer:
 
                 if eval_cls:
                     evaluator = eval_cls(np.zeros((2, 2, 3), dtype=np.float32))
+                    self.current_go_evaluator = evaluator
 
                     def go_progress(curr, total, speed, eta):
                         if self.cancel_flag:
@@ -218,7 +637,6 @@ class PainterServer:
                         if self.cancel_flag:
                             return
                         try:
-                            # arr is a numpy array (H, W, 3) RGB
                             img = Image.fromarray(arr.astype("uint8"), "RGB")
                             buffer = io.BytesIO()
                             img.save(buffer, format="JPEG", quality=85)
@@ -232,20 +650,21 @@ class PainterServer:
 
                     def go_success():
                         try:
-                            with open(output_json, "r", encoding="utf-8") as f:
-                                res = json.load(f)
-                                if "shapes" in res:
-                                    msg = json.dumps(
-                                        {
-                                            "action": "metrics",
-                                            "curr": layers,
-                                            "total": layers,
-                                            "speed": 0.0,
-                                            "eta": 0.0,
-                                            "shapes": res["shapes"],
-                                        }
-                                    )
-                                    self._sync_broadcast(loop, msg)
+                            if os.path.exists(output_json):
+                                with open(output_json, "r", encoding="utf-8") as f:
+                                    res = json.load(f)
+                                    if "shapes" in res:
+                                        msg = json.dumps(
+                                            {
+                                                "action": "metrics",
+                                                "curr": layers,
+                                                "total": layers,
+                                                "speed": 0.0,
+                                                "eta": 0.0,
+                                                "shapes": res["shapes"],
+                                            }
+                                        )
+                                        self._sync_broadcast(loop, msg)
                         except Exception as e:
                             print(f"Failed to read final Go JSON: {e}")
 
@@ -254,6 +673,7 @@ class PainterServer:
                         output_json=output_json,
                         profile_path=profile_path,
                         layers=layers,
+                        resume_path=resume_path,
                         progress_callback=go_progress,
                         preview_callback=go_preview,
                         on_success_callback=go_success,
@@ -263,15 +683,19 @@ class PainterServer:
                     )
             else:
                 res = run_generator(
-                    img_path,
-                    output_json,
-                    profile_path,
-                    layers,
-                    None,
-                    None,
-                    generator_cb,
-                    opt_settings,
-                    engine_code,
+                    image_path=img_path,
+                    output_path=output_json,
+                    profile_path=profile_path,
+                    layers_limit=layers,
+                    candidates_limit=candidates_limit,
+                    steps_limit=steps_limit,
+                    progress_callback=generator_cb,
+                    opt_settings=opt_settings,
+                    engine_name=engine_code,
+                    taichi_arch=taichi_arch,
+                    taichi_device_id=taichi_device_id,
+                    use_pure_gpu=use_pure_gpu,
+                    resume_path=resume_path,
                 )
             if res != 0:
                 self._sync_broadcast(
@@ -285,6 +709,8 @@ class PainterServer:
                     {"action": "generation_status", "status": "failed", "error": str(e)}
                 ),
             )
+        finally:
+            self.current_go_evaluator = None
 
     async def start_generation(self, config):
         self.is_generating = True

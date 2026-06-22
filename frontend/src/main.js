@@ -3,10 +3,22 @@
 const wsUrl = "ws://localhost:8765";
 let ws = null;
 let currentShapes = [];
+let currentCheckpoints = [];
+let totalLayersLimit = 1000;
+let isGenerating = false;
+
+// ROI Selection State
+let roiEnabled = false;
+let roiSelection = null; // { x1, y1, x2, y2 } in original image pixels
+let isRoiDragging = false;
+let isRoiMoving = false;
+let roiDragStart = null; // { x, y } in client space
+let roiMoveStart = null; // { x, y } in image pixels
 
 // UI Elements
 const btnGenerate = document.getElementById("btn-generate");
 const btnInject = document.getElementById("btn-inject");
+const btnBrowseNative = document.getElementById("btn-browse-native");
 const overlay = document.getElementById("connection-overlay");
 const canvas = /** @type {HTMLCanvasElement} */ (document.getElementById("preview-canvas"));
 const ctx = canvas.getContext("2d");
@@ -14,13 +26,49 @@ const ctx = canvas.getContext("2d");
 const valLayers = document.getElementById("val-layers");
 const valSpeed = document.getElementById("val-speed");
 const valEta = document.getElementById("val-eta");
-const engineSelect = document.getElementById("engine-select");
-const layersInput = document.getElementById("layers-input");
+const engineSelect = /** @type {HTMLSelectElement} */ (document.getElementById("engine-select"));
+const layersInput = /** @type {HTMLInputElement} */ (document.getElementById("layers-input"));
 const fileInput = document.getElementById("file-input");
 const filePathDisplay = document.getElementById("file-path-display");
 const uploadZone = document.getElementById("upload-zone");
 
+// New UI Elements
+const profileSelect = /** @type {HTMLSelectElement} */ (document.getElementById("profile-select"));
+const profileDesc = document.getElementById("profile-desc");
+const taichiSettingsPanel = document.getElementById("taichi-settings-panel");
+const taichiArchSelect = /** @type {HTMLSelectElement} */ (document.getElementById("taichi-arch-select"));
+const chkHybrid = /** @type {HTMLInputElement} */ (document.getElementById("chk-hybrid"));
+const taichiDeviceSelect = /** @type {HTMLSelectElement} */ (document.getElementById("taichi-device-select"));
+const chkOverride = /** @type {HTMLInputElement} */ (document.getElementById("chk-override"));
+const overrideSettingsPanel = document.getElementById("override-settings-panel");
+const candidatesInput = /** @type {HTMLInputElement} */ (document.getElementById("candidates-input"));
+const stepsInput = /** @type {HTMLInputElement} */ (document.getElementById("steps-input"));
+
+// Optimizations UI
+const optPyramid = /** @type {HTMLInputElement} */ (document.getElementById("opt-pyramid"));
+const optFreeze = /** @type {HTMLInputElement} */ (document.getElementById("opt-freeze"));
+const optImportance = /** @type {HTMLInputElement} */ (document.getElementById("opt-importance"));
+const optWeight = /** @type {HTMLInputElement} */ (document.getElementById("opt-weight"));
+const optAnnealing = /** @type {HTMLInputElement} */ (document.getElementById("opt-annealing"));
+const optDecay = /** @type {HTMLInputElement} */ (document.getElementById("opt-decay"));
+const chkEarlyConv = /** @type {HTMLInputElement} */ (document.getElementById("chk-early-conv"));
+
+// ROI UI
+const roiEnabledCheckbox = /** @type {HTMLInputElement} */ (document.getElementById("roi-enabled"));
+const roiControls = document.getElementById("roi-controls");
+const roiBoundsDisplay = document.getElementById("roi-bounds-display");
+const rewindLayerInput = /** @type {HTMLInputElement} */ (document.getElementById("rewind-layer-input"));
+const btnRewind = document.getElementById("btn-rewind");
+const rewindHint = document.getElementById("rewind-hint");
+
+// Timeline UI
+const timelineSlider = /** @type {HTMLInputElement} */ (document.getElementById("timeline-slider"));
+const checkpointsContainer = document.getElementById("checkpoints-container");
+const timelineVal = document.getElementById("timeline-val");
+
 let selectedFilePath = "";
+let originalImageWidth = 600;
+let originalImageHeight = 600;
 
 // Initialize WebSocket
 function connectWebSocket() {
@@ -30,7 +78,11 @@ function connectWebSocket() {
     console.log("Connected to Python backend");
     overlay.classList.add("hidden");
     btnGenerate.classList.remove("disabled");
+    
+    // Fetch initial configuration listings
     ws.send(JSON.stringify({ action: "get_engines" }));
+    ws.send(JSON.stringify({ action: "get_profiles" }));
+    ws.send(JSON.stringify({ action: "get_gpus" }));
   };
 
   ws.onclose = () => {
@@ -47,12 +99,9 @@ function connectWebSocket() {
   };
 
   ws.onmessage = (event) => {
-    // If it's a string, parse as JSON. If Blob/ArrayBuffer, handle binary.
     if (typeof event.data === "string") {
       const msg = JSON.parse(event.data);
       handleBackendMessage(msg);
-    } else {
-      handleBinaryStream(event.data);
     }
   };
 }
@@ -70,17 +119,128 @@ function handleBackendMessage(msg) {
       });
       break;
 
+    case "profiles_list":
+      profileSelect.innerHTML = "";
+      msg.data.forEach(p => {
+        const option = document.createElement("option");
+        option.value = p.name;
+        option.textContent = p.name;
+        profileSelect.appendChild(option);
+      });
+      // Select first profile and load settings
+      if (msg.data.length > 0) {
+        profileSelect.value = msg.data[0].name;
+        fetchProfileSettings(msg.data[0].name);
+      }
+      break;
+
+    case "gpus_list":
+      taichiDeviceSelect.innerHTML = "";
+      if (msg.data && msg.data.length > 0) {
+        msg.data.forEach((gpu, idx) => {
+          const option = document.createElement("option");
+          option.value = idx.toString();
+          option.textContent = `(${idx}) ${gpu}`;
+          taichiDeviceSelect.appendChild(option);
+        });
+      } else {
+        const option = document.createElement("option");
+        option.value = "0";
+        option.textContent = "(0) Default Device";
+        taichiDeviceSelect.appendChild(option);
+      }
+      break;
+
+    case "profile_settings":
+      if (msg.settings) {
+        layersInput.value = msg.settings.stopAt;
+        candidatesInput.value = msg.settings.randomSamples;
+        stepsInput.value = msg.settings.mutatedSamples;
+        profileDesc.textContent = msg.settings.description || "No description available.";
+      }
+      break;
+
+    case "checkpoints_list":
+      currentCheckpoints = msg.checkpoints || [];
+      renderCheckpointsTrack();
+      break;
+
+    case "rewind_success":
+      selectedFilePath = msg.temp_path;
+      valLayers.textContent = `${msg.layer} / ${layersInput.value}`;
+      timelineSlider.value = msg.layer;
+      timelineVal.textContent = `${Math.round((msg.layer / parseInt(layersInput.value)) * 100)}%`;
+      
+      if (msg.shapes) {
+        currentShapes = msg.shapes;
+        renderShapes();
+      }
+      rewindHint.textContent = `Successfully rewound to layer ${msg.layer}`;
+      rewindHint.style.color = "var(--primary-color)";
+      break;
+
+    case "rewind_failed":
+      alert("Rewind failed: " + msg.error);
+      rewindHint.textContent = "Rewind failed";
+      rewindHint.style.color = "#D32F2F";
+      break;
+
+    case "load_json_success":
+      selectedFilePath = msg.path;
+      filePathDisplay.textContent = `Loaded JSON: ${msg.path}`;
+      if (msg.shapes) {
+        currentShapes = msg.shapes;
+        const layerCount = Math.max(0, currentShapes.length - 1);
+        valLayers.textContent = `${layerCount} / ${layersInput.value}`;
+        timelineSlider.disabled = false;
+        timelineSlider.max = layersInput.value;
+        timelineSlider.value = layerCount;
+        timelineVal.textContent = `${Math.round((layerCount / parseInt(layersInput.value)) * 100)}%`;
+        renderShapes();
+      }
+      // Scan checkpoints for new project context
+      ws.send(JSON.stringify({ action: "get_checkpoints", img_path: msg.path }));
+      break;
+
+    case "load_json_failed":
+      alert("Failed to load JSON file: " + msg.error);
+      break;
+
+    case "file_selected":
+      if (msg.path) {
+        selectedFilePath = msg.path;
+        filePathDisplay.textContent = `Selected: ${msg.path}`;
+        
+        if (msg.path.toLowerCase().endsWith(".json")) {
+          // Send request to load the JSON geometry file
+          ws.send(JSON.stringify({ action: "load_json_file", path: msg.path }));
+        } else {
+          // If it's an image, draw placeholder/canvas preview
+          // Since we can't load local file paths directly via file protocol, we send load request if needed or let standard image loading handle it.
+          // In Tauri sidecar, we can scan checkpoints for the image
+          ws.send(JSON.stringify({ action: "get_checkpoints", img_path: msg.path }));
+        }
+      }
+      break;
+
     case "generation_status":
       if (msg.status === "started") {
+        isGenerating = true;
         btnGenerate.textContent = "STOP GENERATION";
         btnGenerate.style.background = "#D32F2F";
         btnGenerate.style.boxShadow = "0 0 15px rgba(211, 47, 47, 0.4)";
         btnInject.classList.add("disabled");
+        timelineSlider.disabled = true;
       } else {
+        isGenerating = false;
         btnGenerate.textContent = "START GENERATION";
         btnGenerate.style.background = "var(--primary-color)";
         btnGenerate.style.boxShadow = "0 0 15px var(--glow-primary)";
         btnInject.classList.remove("disabled");
+        timelineSlider.disabled = false;
+        
+        // Refresh checkpoints when generation completes
+        ws.send(JSON.stringify({ action: "get_checkpoints", img_path: selectedFilePath }));
       }
       break;
 
@@ -88,6 +248,11 @@ function handleBackendMessage(msg) {
       valLayers.textContent = `${msg.curr} / ${msg.total}`;
       valSpeed.textContent = `${msg.speed.toFixed(1)} L/s`;
       valEta.textContent = `${msg.eta.toFixed(0)}s`;
+      
+      // Update timeline progress
+      timelineSlider.max = msg.total.toString();
+      timelineSlider.value = msg.curr.toString();
+      timelineVal.textContent = `${Math.round((msg.curr / msg.total) * 100)}%`;
       
       if (msg.shapes) {
         if (msg.shapes.length > 0) {
@@ -126,10 +291,26 @@ function handleBackendMessage(msg) {
   }
 }
 
-async function handleBinaryStream(blob) {
-  // Useful for raw pixel buffers (Error map, original image preview)
-  const arrayBuffer = await blob.arrayBuffer();
-  // Decode logic... 
+function fetchProfileSettings(name) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ action: "get_profile_settings", profile_name: name }));
+  }
+}
+
+function renderCheckpointsTrack() {
+  checkpointsContainer.innerHTML = "";
+  const totalVal = parseInt(layersInput.value) || 1000;
+  
+  currentCheckpoints.forEach(cp => {
+    const pct = (cp.layer / totalVal) * 100;
+    if (pct >= 0 && pct <= 100) {
+      const marker = document.createElement("div");
+      marker.className = "checkpoint-marker";
+      marker.style.left = `${pct}%`;
+      marker.title = `Checkpoint at Layer ${cp.layer}`;
+      checkpointsContainer.appendChild(marker);
+    }
+  });
 }
 
 // Vector Render Engine
@@ -139,7 +320,7 @@ function renderShapes() {
   // Clear canvas
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   
-  // Base background (Optional: can be driven by a header shape)
+  // Base background (gray placeholder)
   ctx.fillStyle = "#808080";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
@@ -156,28 +337,115 @@ function renderShapes() {
       ctx.fill();
     }
   });
+  
+  // Draw ROI region boundary overlay if enabled
+  if (roiEnabled && roiSelection) {
+    ctx.save();
+    ctx.strokeStyle = "#FF3333";
+    ctx.lineWidth = Math.max(1.5, canvas.width / 400);
+    ctx.setLineDash([6, 4]);
+    
+    const { x1, y1, x2, y2 } = roiSelection;
+    const shapeMode = /** @type {HTMLInputElement} */ (document.querySelector('input[name="roi-shape"]:checked')).value;
+    
+    if (shapeMode === "ellipse") {
+      const rx = Math.abs(x2 - x1) / 2;
+      const ry = Math.abs(y2 - y1) / 2;
+      const cx = (x1 + x2) / 2;
+      const cy = (y1 + y2) / 2;
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, rx, ry, 0, 0, 2 * Math.PI);
+      ctx.stroke();
+    } else {
+      ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+    }
+    ctx.restore();
+  }
+}
+
+// ROI Mouse Helpers
+// Translate client mouse coordinate to canvas original image pixel coordinates
+function getCanvasImageCoords(e) {
+  const rect = canvas.getBoundingClientRect();
+  const clientX = e.clientX - rect.left;
+  const clientY = e.clientY - rect.top;
+  
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  
+  return {
+    x: Math.round(clientX * scaleX),
+    y: Math.round(clientY * scaleY)
+  };
+}
+
+function isPointInRoi(x, y) {
+  if (!roiSelection) return false;
+  const minX = Math.min(roiSelection.x1, roiSelection.x2);
+  const maxX = Math.max(roiSelection.x1, roiSelection.x2);
+  const minY = Math.min(roiSelection.y1, roiSelection.y2);
+  const maxY = Math.max(roiSelection.y1, roiSelection.y2);
+  
+  return x >= minX && x <= maxX && y >= minY && y <= maxY;
 }
 
 // UI Event Listeners
 btnGenerate.addEventListener("click", () => {
   if (btnGenerate.classList.contains("disabled")) return;
   
-  if (btnGenerate.textContent === "STOP GENERATION") {
+  if (isGenerating) {
     ws.send(JSON.stringify({ action: "stop_generation" }));
   } else {
+    // Collect all dynamic options
+    const opt_settings = {
+      image_pyramid: { enabled: optPyramid.checked },
+      importance_sampling: { enabled: optImportance.checked },
+      simulated_annealing: { enabled: optAnnealing.checked },
+      dynamic_freeze: { enabled: optFreeze.checked },
+      error_weighting: { enabled: optWeight.checked },
+      decaying_shape: { enabled: optDecay.checked }
+    };
+    
+    const startConfig = {
+      img_path: selectedFilePath,
+      profile_name: profileSelect.value,
+      layers: parseInt(layersInput.value),
+      engine_code: engineSelect.value,
+      opt_settings: opt_settings,
+      early_convergence: chkEarlyConv.checked,
+      
+      // Taichi
+      taichi_arch: taichiArchSelect.value,
+      use_pure_gpu: !chkHybrid.checked,
+      taichi_device_id: parseInt(taichiDeviceSelect.value),
+      
+      // ROI
+      roi: {
+        enabled: roiEnabled && roiSelection !== null,
+        shape: /** @type {HTMLInputElement} */ (document.querySelector('input[name="roi-shape"]:checked')).value,
+        x1: roiSelection ? Math.min(roiSelection.x1, roiSelection.x2) : 0,
+        y1: roiSelection ? Math.min(roiSelection.y1, roiSelection.y2) : 0,
+        x2: roiSelection ? Math.max(roiSelection.x1, roiSelection.x2) : 0,
+        y2: roiSelection ? Math.max(roiSelection.x1, roiSelection.x2) : 0
+      }
+    };
+    
+    // Add overrides if checked
+    if (chkOverride.checked) {
+      startConfig.candidates_limit = parseInt(candidatesInput.value);
+      startConfig.steps_limit = parseInt(stepsInput.value);
+    }
+    
     ws.send(JSON.stringify({
       action: "start_generation",
-      config: {
-        img_path: selectedFilePath,
-        layers: parseInt(layersInput.value),
-        engine_code: engineSelect.value
-      }
+      config: startConfig
     }));
   }
 });
 
 btnInject.addEventListener("click", () => {
   if (btnInject.classList.contains("disabled")) return;
+  
   ws.send(JSON.stringify({
     action: "inject_geometry",
     config: {
@@ -187,7 +455,223 @@ btnInject.addEventListener("click", () => {
   }));
 });
 
-// Drag and Drop (Native HTML5 fallback, since we might not run inside Tauri yet)
+btnBrowseNative.addEventListener("click", () => {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ action: "browse_file" }));
+  }
+});
+
+// Dropdowns and Panels Toggles
+profileSelect.addEventListener("change", (e) => {
+  const target = /** @type {HTMLSelectElement} */ (e.target);
+  fetchProfileSettings(target.value);
+});
+
+engineSelect.addEventListener("change", () => {
+  if (engineSelect.value === "TAICHI") {
+    taichiSettingsPanel.classList.remove("hidden");
+  } else {
+    taichiSettingsPanel.classList.add("hidden");
+  }
+  
+  if (engineSelect.value === "GO_OPENCL") {
+    roiEnabledCheckbox.checked = false;
+    roiEnabledCheckbox.disabled = true;
+    roiEnabled = false;
+    roiControls.classList.add("hidden");
+    roiSelection = null;
+    renderShapes();
+  } else {
+    roiEnabledCheckbox.disabled = false;
+  }
+});
+
+chkOverride.addEventListener("change", () => {
+  if (chkOverride.checked) {
+    overrideSettingsPanel.classList.remove("hidden");
+  } else {
+    overrideSettingsPanel.classList.add("hidden");
+  }
+});
+
+roiEnabledCheckbox.addEventListener("change", () => {
+  roiEnabled = roiEnabledCheckbox.checked;
+  if (roiEnabled) {
+    roiControls.classList.remove("hidden");
+  } else {
+    roiControls.classList.add("hidden");
+    roiSelection = null;
+    roiBoundsDisplay.textContent = "None";
+    renderShapes();
+  }
+});
+
+document.querySelectorAll('input[name="roi-shape"]').forEach(radio => {
+  radio.addEventListener("change", () => {
+    if (roiSelection) renderShapes();
+  });
+});
+
+// Timeline Scrubbing Event
+timelineSlider.addEventListener("change", () => {
+  const targetLayer = parseInt(timelineSlider.value);
+  if (!currentCheckpoints || currentCheckpoints.length === 0) return;
+  
+  // Find the checkpoint that represents the closest upper bound layer
+  let bestCp = null;
+  for (let i = 0; i < currentCheckpoints.length; i++) {
+    const cp = currentCheckpoints[i];
+    if (cp.layer >= targetLayer) {
+      bestCp = cp;
+      break;
+    }
+  }
+  if (!bestCp && currentCheckpoints.length > 0) {
+    bestCp = currentCheckpoints[currentCheckpoints.length - 1];
+  }
+  
+  if (bestCp) {
+    rewindHint.textContent = `Scrubbing to layer ${targetLayer}...`;
+    rewindHint.style.color = "var(--secondary-color)";
+    ws.send(JSON.stringify({
+      action: "rewind_checkpoint",
+      path: bestCp.path,
+      layer: targetLayer
+    }));
+  }
+});
+
+btnRewind.addEventListener("click", () => {
+  const targetLayer = parseInt(rewindLayerInput.value);
+  if (isNaN(targetLayer) || targetLayer < 1) {
+    alert("Please enter a valid layer number");
+    return;
+  }
+  
+  // Find closest checkpoint path
+  let bestCp = null;
+  for (let i = 0; i < currentCheckpoints.length; i++) {
+    const cp = currentCheckpoints[i];
+    if (cp.layer >= targetLayer) {
+      bestCp = cp;
+      break;
+    }
+  }
+  if (!bestCp && currentCheckpoints.length > 0) {
+    bestCp = currentCheckpoints[currentCheckpoints.length - 1];
+  }
+  
+  if (bestCp) {
+    rewindHint.textContent = `Rewinding to layer ${targetLayer}...`;
+    rewindHint.style.color = "var(--secondary-color)";
+    ws.send(JSON.stringify({
+      action: "rewind_checkpoint",
+      path: bestCp.path,
+      layer: targetLayer
+    }));
+  } else {
+    alert("No checkpoints available to rewind");
+  }
+});
+
+// Canvas Mouse Listeners for ROI Painting
+canvas.addEventListener("mousedown", (e) => {
+  if (!roiEnabled || isGenerating) return;
+  
+  const coords = getCanvasImageCoords(e);
+  
+  // Left Click
+  if (e.button === 0) {
+    // If clicking inside existing selection, start moving it
+    if (roiSelection && isPointInRoi(coords.x, coords.y)) {
+      isRoiMoving = true;
+      roiMoveStart = {
+        x: coords.x,
+        y: coords.y,
+        origX1: roiSelection.x1,
+        origY1: roiSelection.y1,
+        origX2: roiSelection.x2,
+        origY2: roiSelection.y2
+      };
+    } else {
+      // Start a brand new selection box
+      isRoiDragging = true;
+      roiDragStart = { x: coords.x, y: coords.y };
+      roiSelection = {
+        x1: coords.x,
+        y1: coords.y,
+        x2: coords.x,
+        y2: coords.y
+      };
+    }
+  }
+});
+
+canvas.addEventListener("mousemove", (e) => {
+  if (!roiEnabled || isGenerating) return;
+  
+  const coords = getCanvasImageCoords(e);
+  
+  if (isRoiDragging && roiDragStart) {
+    roiSelection.x2 = coords.x;
+    roiSelection.y2 = coords.y;
+    
+    // Bounds string
+    const xMin = Math.min(roiSelection.x1, roiSelection.x2);
+    const xMax = Math.max(roiSelection.x1, roiSelection.x2);
+    const yMin = Math.min(roiSelection.y1, roiSelection.y2);
+    const yMax = Math.max(roiSelection.y1, roiSelection.y2);
+    roiBoundsDisplay.textContent = `(${xMin}, ${yMin}) to (${xMax}, ${yMax})`;
+    renderShapes();
+  } else if (isRoiMoving && roiMoveStart) {
+    const dx = coords.x - roiMoveStart.x;
+    const dy = coords.y - roiMoveStart.y;
+    
+    roiSelection.x1 = roiMoveStart.origX1 + dx;
+    roiSelection.y1 = roiMoveStart.origY1 + dy;
+    roiSelection.x2 = roiMoveStart.origX2 + dx;
+    roiSelection.y2 = roiMoveStart.origY2 + dy;
+    
+    // Bounds string
+    const xMin = Math.min(roiSelection.x1, roiSelection.x2);
+    const xMax = Math.max(roiSelection.x1, roiSelection.x2);
+    const yMin = Math.min(roiSelection.y1, roiSelection.y2);
+    const yMax = Math.max(roiSelection.y1, roiSelection.y2);
+    roiBoundsDisplay.textContent = `(${xMin}, ${yMin}) to (${xMax}, ${yMax})`;
+    renderShapes();
+  }
+});
+
+canvas.addEventListener("mouseup", (e) => {
+  if (!roiEnabled || isGenerating) return;
+  
+  if (e.button === 0) {
+    isRoiDragging = false;
+    isRoiMoving = false;
+    
+    // Validate selection size
+    if (roiSelection) {
+      const w = Math.abs(roiSelection.x2 - roiSelection.x1);
+      const h = Math.abs(roiSelection.y2 - roiSelection.y1);
+      if (w < 5 || h < 5) {
+        roiSelection = null;
+        roiBoundsDisplay.textContent = "None";
+        renderShapes();
+      }
+    }
+  }
+});
+
+canvas.addEventListener("contextmenu", (e) => {
+  if (!roiEnabled) return;
+  e.preventDefault(); // suppress native menu
+  
+  roiSelection = null;
+  roiBoundsDisplay.textContent = "None";
+  renderShapes();
+});
+
+// Drag and Drop (Native HTML5 fallback)
 uploadZone.addEventListener("dragover", (e) => {
   e.preventDefault();
   uploadZone.style.borderColor = "var(--primary-color)";
@@ -211,23 +695,45 @@ uploadZone.addEventListener("click", () => {
 });
 
 fileInput.addEventListener("change", (e) => {
-  if (e.target.files.length > 0) {
-    handleFileSelect(e.target.files[0]);
+  const target = /** @type {HTMLInputElement} */ (e.target);
+  if (target.files.length > 0) {
+    handleFileSelect(target.files[0]);
   }
 });
 
 function handleFileSelect(file) {
-  // In a real Tauri app, we'd use @tauri-apps/plugin-dialog to get the absolute path
-  // For standard web, we can only get the file name or a blob URL
-  selectedFilePath = file.name; // Placeholder for absolute path
+  // Absolute path placeholder
+  selectedFilePath = file.name;
   filePathDisplay.textContent = `Selected: ${file.name}`;
   
-  // If it's an image, draw it temporarily to the canvas
-  if (file.type.startsWith("image/")) {
+  if (file.name.toLowerCase().endsWith(".json")) {
+    // If browser-based upload in non-Tauri environment, we can read JSON locally to preview
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = JSON.parse(/** @type {string} */ (e.target.result));
+        if (data.shapes) {
+          currentShapes = data.shapes;
+          const layerCount = Math.max(0, currentShapes.length - 1);
+          valLayers.textContent = `${layerCount} / ${layersInput.value}`;
+          timelineSlider.disabled = false;
+          timelineSlider.max = layersInput.value;
+          timelineSlider.value = layerCount;
+          timelineVal.textContent = `${Math.round((layerCount / parseInt(layersInput.value)) * 100)}%`;
+          renderShapes();
+        }
+      } catch (ex) {
+        console.error("Failed to parse JSON file locally", ex);
+      }
+    };
+    reader.readAsText(file);
+  } else if (file.type.startsWith("image/")) {
     const img = new Image();
     img.onload = () => {
       canvas.width = img.width;
       canvas.height = img.height;
+      originalImageWidth = img.width;
+      originalImageHeight = img.height;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.drawImage(img, 0, 0);
     };

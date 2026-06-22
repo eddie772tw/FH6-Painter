@@ -38,6 +38,9 @@
             <span>or click to browse</span>
             <input type="file" id="file-input" hidden accept=".png,.jpg,.jpeg,.webp,.json">
           </div>
+          <div class="button-row" style="margin-top: 10px;">
+            <button id="btn-browse-native" class="btn secondary select-btn" style="width: 100%;">BROWSE NATIVE</button>
+          </div>
           <p id="file-path-display" class="file-path"></p>
         </section>
 
@@ -49,16 +52,139 @@
           </div>
           
           <div class="input-group">
+            <label>Speed/Quality Profile</label>
+            <select id="profile-select" class="cyber-select">
+              <option value="">Loading profiles...</option>
+            </select>
+            <span id="profile-desc" class="desc-text">Select a speed/quality profile.</span>
+          </div>
+
+          <div class="input-group">
+            <label>Max Layers / Shapes</label>
+            <input type="number" id="layers-input" class="cyber-input" value="1000" min="500" max="3000">
+            <span class="desc-text-info">FH6 Limits: Bumper ~1000 | Left/Right/Top ~3000</span>
+          </div>
+
+          <div class="input-group">
             <label>Engine Core</label>
             <select id="engine-select" class="cyber-select">
               <option value="NUMBA">Numba JIT (CPU)</option>
               <option value="TAICHI">Taichi JIT (GPU)</option>
+              <option value="GO_OPENCL">Go-OpenCL (GPU, Fastest)</option>
             </select>
           </div>
 
-          <div class="input-group">
-            <label>Max Layers</label>
-            <input type="number" id="layers-input" class="cyber-input" value="1000" min="500" max="3000">
+          <!-- Taichi GPU settings (hidden by default) -->
+          <div id="taichi-settings-panel" class="hidden-settings hidden">
+            <div class="input-group">
+              <label>Taichi Arch GPU Mode</label>
+              <select id="taichi-arch-select" class="cyber-select">
+                <option value="Vulkan">Vulkan</option>
+                <option value="CUDA">CUDA</option>
+                <option value="OpenGL">OpenGL</option>
+                <option value="CPU">CPU</option>
+              </select>
+            </div>
+            <div class="input-group checkbox-row">
+              <input type="checkbox" id="chk-hybrid" checked>
+              <label for="chk-hybrid">Enable Hybrid Mode (Hybrid)</label>
+            </div>
+            <div class="input-group">
+              <label>Taichi GPU Device</label>
+              <select id="taichi-device-select" class="cyber-select">
+                <option value="0">(0) Default</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Advanced overrides -->
+          <div class="input-group checkbox-row">
+            <input type="checkbox" id="chk-override">
+            <label for="chk-override">Enable Advanced Sample Override</label>
+          </div>
+          <div id="override-settings-panel" class="hidden-settings hidden">
+            <div class="input-group">
+              <label>Candidates (Samples)</label>
+              <input type="number" id="candidates-input" class="cyber-input" value="20000" min="1000" max="200000">
+            </div>
+            <div class="input-group">
+              <label>Hill-climb Steps</label>
+              <input type="number" id="steps-input" class="cyber-input" value="200" min="10" max="2000">
+            </div>
+          </div>
+        </section>
+
+        <!-- Advanced Optimizations -->
+        <section class="glass-card" id="optimizations-card">
+          <div class="card-header">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="icon"><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+            <h2>Advanced Optimizations</h2>
+          </div>
+          <div class="opt-toggles-grid">
+            <div class="opt-toggle" title="【漸進式像素採樣】&#10;在生成前期（形狀較大時）跳過部分像素以大幅提速，隨進度逐漸恢復全像素精細評估。">
+              <input type="checkbox" id="opt-pyramid" checked>
+              <label for="opt-pyramid">Progressive Sampling</label>
+            </div>
+            <div class="opt-toggle" title="【動態凍結遮罩】&#10;自動鎖定已經完美匹配的像素區域，避開重複評估以大幅減少運算負擔。">
+              <input type="checkbox" id="opt-freeze" checked>
+              <label for="opt-freeze">Dynamic Freeze</label>
+            </div>
+            <div class="opt-toggle" title="【錯誤驅動重點採樣】&#10;依據殘餘誤差圖進行重點採樣，將隨機橢圓生成優先配置於高誤差區域。">
+              <input type="checkbox" id="opt-importance" checked>
+              <label for="opt-importance">Importance Sampling</label>
+            </div>
+            <div class="opt-toggle" title="【區域誤差加權】&#10;根據像素的空間特徵（如前景或邊緣）對誤差進行加權，提升邊緣清晰度。">
+              <input type="checkbox" id="opt-weight" checked>
+              <label for="opt-weight">Error Weighting</label>
+            </div>
+            <div class="opt-toggle" title="【解析解最佳色彩】&#10;在評估幾何時利用解析解直接算出最優顏色，使爬山收斂速度倍增，無需隨機模擬退火。">
+              <input type="checkbox" id="opt-annealing" checked>
+              <label for="opt-annealing">Analytical Color</label>
+            </div>
+            <div class="opt-toggle" title="【衰減式形狀限縮】&#10;隨著貼圖數量增加，動態縮小橢圓最大半徑以避免破壞已有的微小細節。">
+              <input type="checkbox" id="opt-decay" checked>
+              <label for="opt-decay">Decaying Shape</label>
+            </div>
+          </div>
+          <div class="input-group checkbox-row" style="margin-top: 12px; border-top: 1px solid var(--glass-border); padding-top: 12px;">
+            <input type="checkbox" id="chk-early-conv" checked>
+            <label for="chk-early-conv">Enable Early Convergence (提早收斂)</label>
+          </div>
+        </section>
+
+        <!-- Region Painting (Canvas ROI) -->
+        <section class="glass-card" id="roi-card">
+          <div class="card-header">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="icon"><path d="M3 3h18v18H3zM9 9h6v6H9z"/></svg>
+            <h2>Region Painting</h2>
+          </div>
+          <div class="input-group checkbox-row">
+            <input type="checkbox" id="roi-enabled">
+            <label for="roi-enabled">Enable Region Selection</label>
+          </div>
+          <div id="roi-controls" class="hidden-settings hidden">
+            <div class="input-group">
+              <label>Selection Shape</label>
+              <div class="radio-row">
+                <input type="radio" id="roi-shape-rect" name="roi-shape" value="rectangle" checked>
+                <label for="roi-shape-rect">Rectangle</label>
+                <input type="radio" id="roi-shape-ellipse" name="roi-shape" value="ellipse">
+                <label for="roi-shape-ellipse">Ellipse</label>
+              </div>
+            </div>
+            <div class="roi-display-box">
+              <span class="display-label">Selected Bounds:</span>
+              <span id="roi-bounds-display" class="display-value">None</span>
+              <span class="display-hint">Drag/resize on canvas. Right click to clear.</span>
+            </div>
+            <div class="rewind-box" style="margin-top: 12px; border-top: 1px solid var(--glass-border); padding-top: 12px;">
+              <label>Rewind Layer</label>
+              <div class="rewind-row">
+                <input type="number" id="rewind-layer-input" class="cyber-input" style="width: 100px;" placeholder="Layer">
+                <button id="btn-rewind" class="btn secondary select-btn">Rewind</button>
+              </div>
+              <span id="rewind-hint" class="desc-text"></span>
+            </div>
           </div>
         </section>
 
@@ -69,8 +195,7 @@
         
         <!-- Live Preview Workbench -->
         <div class="workbench glass-card">
-          <div class="canvas-container">
-            <!-- For raw binary / pixel mapping -->
+          <div class="canvas-container" id="canvas-container">
             <canvas id="preview-canvas" width="600" height="600"></canvas>
             
             <div id="connection-overlay" class="overlay-state">
@@ -78,6 +203,17 @@
             </div>
           </div>
           
+          <div class="timeline-panel" id="timeline-panel">
+            <div class="timeline-row">
+              <span class="timeline-lbl">TIMELINE</span>
+              <div class="slider-container">
+                <input type="range" id="timeline-slider" class="cyber-slider" value="0" min="0" max="100" disabled>
+                <div id="checkpoints-container" class="checkpoints-container"></div>
+              </div>
+              <span class="timeline-val" id="timeline-val">0%</span>
+            </div>
+          </div>
+
           <div class="metrics-hud">
             <div class="metric-box">
               <span class="label">LAYERS</span>
