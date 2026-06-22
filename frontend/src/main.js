@@ -449,6 +449,15 @@ function handleBackendMessage(msg) {
         }
       }
       break;
+
+    case "clear_roi":
+      roiSelection = null;
+      roiBoundsDisplay.textContent = "None";
+      if (ctx) {
+        renderShapes();
+      }
+      console.log("[Region Painting] ROI cleared due to early convergence restart.");
+      break;
   }
 }
 

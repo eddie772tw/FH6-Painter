@@ -566,6 +566,8 @@ class PainterServer:
             except Exception as e:
                 print(f"[Warning] Failed to copy original image to output: {e}")
 
+        original_target_image_path = img_path
+
         # Apply Region Mask (Alpha Masking) if ROI is defined and enabled
         roi_config = config.get("roi", {})
         if (
@@ -702,6 +704,7 @@ class PainterServer:
         opt_settings["early_convergence"]["enabled"] = config.get(
             "early_convergence", False
         )
+        opt_settings["roi_enabled"] = config.get("roi", {}).get("enabled", False)
 
         try:
             if engine_code == "GO_OPENCL":
@@ -808,6 +811,14 @@ class PainterServer:
                     json.dumps({"action": "generation_status", "status": "failed"}),
                 )
         except Exception as e:
+            if str(e) == "EARLY_CONVERGENCE_WITH_ROI":
+                self._sync_broadcast(loop, json.dumps({"action": "clear_roi"}))
+                if "roi" in config:
+                    config["roi"]["enabled"] = False
+                config["img_path"] = original_target_image_path
+                config["resume_path"] = output_json
+                return self.run_generator_blocking(config, loop)
+
             self._sync_broadcast(
                 loop,
                 json.dumps(

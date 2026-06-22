@@ -288,6 +288,9 @@ class WorkersMixin:
                     ),
                 )
         except Exception as e:
+            if str(e) == "EARLY_CONVERGENCE_WITH_ROI":
+                self.root.after(0, self.restart_generation_without_roi)
+                return
             # 捕獲所有異常 (包括 Taichi 編譯、硬體相容性、CUDA/OpenGL 崩潰)
             import traceback
 
@@ -395,6 +398,37 @@ class WorkersMixin:
             "1. If using Taichi, try switching 'Taichi Arch GPU Mode' to 'Vulkan' (Recommended) or 'CPU'.\n"
             "2. Switch 'JIT Engine Plugin' to 'Numba JIT' for maximum baseline compatibility.",
         )
+
+    def restart_generation_without_roi(self):
+        self.log_to_console("[System] 偵測到提早收斂，自動清除區域繪製設定並繼續生成...\n")
+        if hasattr(self, "var_roi_enabled"):
+            self.var_roi_enabled.set(False)
+        self.selection_roi = None
+        if hasattr(self, "_redraw_roi_shape"):
+            self._redraw_roi_shape()
+        if hasattr(self, "_update_roi_range_label"):
+            self._update_roi_range_label()
+            
+        self.is_generating = False
+        self.unlock_ui()
+        self.active_thread = None
+
+        if hasattr(self, "last_generated_image_path") and self.last_generated_image_path:
+            img_base = os.path.splitext(os.path.basename(self.last_generated_image_path))[0]
+            from gui.utils import get_project_root
+            output_json = os.path.join(get_project_root(), "output", img_base, f"{img_base}.json")
+            if os.path.exists(output_json):
+                if hasattr(self, "combo_source"):
+                    self.combo_source.set("Resume from JSON")
+                if hasattr(self, "update_file_list"):
+                    self.update_file_list()
+                
+                self.entry_file_path.delete(0, 'end')
+                self.entry_file_path.insert(0, output_json)
+                self.start_generation()
+                return
+                
+        self.log_to_console("[System] 無法找到要接續的 JSON 檔案。\n")
 
     def stop_generation(self):
         """Sets the cancellation flag to abort active shape generation."""

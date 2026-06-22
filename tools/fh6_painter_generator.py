@@ -820,6 +820,10 @@ def run_generator(
                                     f"[Early Convergence] 偵測到細節已飽和，但由於啟用漸進式像素採樣，先提升像素採樣精度 (將限制最大 sample_step 為 {next_limit})，本次不收斂圖層數量。"
                                 )
                             else:
+                                if opt_settings.get("roi_enabled", False):
+                                    print("\n[Early Convergence] 由於啟用了區域繪製，觸發提早收斂時將自動清除選取範圍並繼續生成...")
+                                    raise Exception("EARLY_CONVERGENCE_WITH_ROI")
+
                                 # 收斂層數則以 early_step 為步進向上取整，且不得超過原定最大層數 original_layers
                                 best_t = min(
                                     int(math.ceil(current_layer / float(early_step)))
