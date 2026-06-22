@@ -167,7 +167,10 @@ class ForzaStudioGUI(
         self.root.after(100, self.poll_background_updates)
 
         if windnd:
-            windnd.hook_drop(self.root, self.on_file_drop)
+            if hasattr(windnd, "hook_dropfiles"):
+                windnd.hook_dropfiles(self.root, self.on_file_drop)
+            elif hasattr(windnd, "hook_drop"):
+                windnd.hook_drop(self.root, self.on_file_drop)
 
         if preload_file:
             self.entry_file_path.insert(0, os.path.abspath(preload_file))
