@@ -647,9 +647,7 @@ def locate_layer_pointers(handle, layer_count, max_candidates):
                         ptr = read_u64(handle, table_addr + i * 8)
                         if not is_user_ptr(ptr):
                             valid_ptrs = False
-                            failure_detail = (
-                                f"[{type_name}] 圖層 {i} 指針 0x{ptr:X} 不是有效的用戶空間指針"
-                            )
+                            failure_detail = f"[{type_name}] 圖層 {i} 指針 0x{ptr:X} 不是有效的用戶空間指針"
                             break
 
                         sp, det = score_layer_adaptive(
