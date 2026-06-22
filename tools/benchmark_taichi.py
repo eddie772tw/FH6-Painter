@@ -116,7 +116,9 @@ def run_preset_benchmark(evaluator, res_w, res_h, batch_size, optimization_steps
     
     # Warm-up (1 run) to compile JIT kernels
     try:
-        evaluator.search_best_shape(current_canvas, batch_size, params)
+        warmup_params = params.copy()
+        warmup_params["optimization_steps"] = 1
+        evaluator.search_best_shape(current_canvas, batch_size, warmup_params)
         if HAS_TAICHI:
             ti.sync()
     except Exception as e:
