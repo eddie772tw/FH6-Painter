@@ -1,0 +1,4 @@
+websockets>=11.0.3
+numpy
+Pillow
+numba

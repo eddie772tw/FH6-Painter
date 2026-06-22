@@ -1,0 +1,162 @@
+import os
+import sys
+import json
+import asyncio
+import websockets
+import threading
+import time
+
+# Add tools path for dependencies
+sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tools"))
+try:
+    from evaluators import EvaluatorFactory
+except ImportError:
+    pass
+
+class PainterServer:
+    def __init__(self):
+        self.clients = set()
+        self.is_generating = False
+        self.cancel_flag = False
+
+    async def register(self, websocket):
+        self.clients.add(websocket)
+        try:
+            async for message in websocket:
+                await self.handle_message(websocket, message)
+        finally:
+            self.clients.remove(websocket)
+
+    async def handle_message(self, websocket, message):
+        data = json.loads(message)
+        action = data.get("action")
+
+        if action == "ping":
+            await websocket.send(json.dumps({"action": "pong"}))
+        elif action == "get_engines":
+            engines = []
+            if "EvaluatorFactory" in globals():
+                engines = EvaluatorFactory.get_available_evaluators()
+            await websocket.send(json.dumps({"action": "engines_list", "data": engines}))
+        elif action == "start_generation":
+            config = data.get("config", {})
+            if not self.is_generating:
+                self.generator_task = asyncio.create_task(self.start_generation(config))
+        elif action == "stop_generation":
+            self.cancel_flag = True
+        elif action == "inject_geometry":
+            config = data.get("config", {})
+            asyncio.create_task(self.inject_geometry(config))
+
+    async def broadcast(self, message):
+        if self.clients:
+            await asyncio.gather(*(client.send(message) for client in self.clients))
+
+    async def broadcast_binary(self, binary_data):
+        if self.clients:
+            await asyncio.gather(*(client.send(binary_data) for client in self.clients))
+
+    async def inject_geometry(self, config):
+        json_path = config.get("json_path")
+        layers = config.get("layers", 3000)
+        
+        await self.broadcast(json.dumps({
+            "action": "injection_status",
+            "status": "started"
+        }))
+        
+        try:
+            from tools.fh6_import_layer_table import run_importer
+            loop = asyncio.get_running_loop()
+            # run_importer blocks, use thread executor
+            result = await loop.run_in_executor(
+                None, 
+                run_importer, 
+                json_path, layers, False, False, False, False, 63.0, 1.0, 200000
+            )
+            
+            if result == 0:
+                await self.broadcast(json.dumps({"action": "injection_status", "status": "completed"}))
+            else:
+                await self.broadcast(json.dumps({"action": "injection_status", "status": "failed", "error": f"Exit code {result}"}))
+        except Exception as e:
+            await self.broadcast(json.dumps({"action": "injection_status", "status": "failed", "error": str(e)}))
+
+    def _sync_broadcast(self, loop, message):
+        """Helper to call async broadcast from synchronous thread"""
+        asyncio.run_coroutine_threadsafe(self.broadcast(message), loop)
+
+    def run_generator_blocking(self, config, loop):
+        from tools.fh6_painter_generator import run_generator
+        img_path = config.get("img_path", "")
+        output_json = config.get("output_json", img_path + "_out.json")
+        profile_path = config.get("profile_path", None)
+        layers = config.get("layers", 1000)
+        engine_code = config.get("engine_code", "NUMBA")
+        
+        # Accumulate shapes to stream Vector Renderer
+        shapes_cache = []
+        
+        def generator_cb(curr, total, speed, eta, canvas_arr):
+            if self.cancel_flag:
+                return "ABORT"
+            
+            # Since the current engine only returns numpy array, we simulate reading the JSON buffer
+            # In a real deep refactoring, we'd modify run_generator to pass the actual current shape
+            
+            # For now, we will notify metrics to frontend
+            msg = json.dumps({
+                "action": "metrics",
+                "curr": curr,
+                "total": total,
+                "speed": speed,
+                "eta": eta
+            })
+            self._sync_broadcast(loop, msg)
+            return True
+
+        # Fallback settings if not provided
+        opt_settings = {
+            "image_pyramid": {"enabled": True},
+            "importance_sampling": {"enabled": True},
+            "simulated_annealing": {"enabled": True},
+            "dynamic_freeze": {"enabled": True},
+            "error_weighting": {"enabled": True},
+            "decaying_shape": {"enabled": True},
+            "early_convergence": {"enabled": False}
+        }
+
+        try:
+            res = run_generator(
+                img_path, output_json, profile_path, layers, None, None,
+                generator_cb, opt_settings, engine_code
+            )
+            if res != 0:
+                self._sync_broadcast(loop, json.dumps({"action": "generation_status", "status": "failed"}))
+        except Exception as e:
+            self._sync_broadcast(loop, json.dumps({"action": "generation_status", "status": "failed", "error": str(e)}))
+
+    async def start_generation(self, config):
+        self.is_generating = True
+        self.cancel_flag = False
+        
+        await self.broadcast(json.dumps({
+            "action": "generation_status",
+            "status": "started"
+        }))
+
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, self.run_generator_blocking, config, loop)
+
+        self.is_generating = False
+        if not self.cancel_flag:
+            await self.broadcast(json.dumps({"action": "generation_status", "status": "completed"}))
+
+async def main():
+    server = PainterServer()
+    async with websockets.serve(server.register, "localhost", 8765):
+        print("FH6 Painter Backend API Server running on ws://localhost:8765")
+        await asyncio.Future()  # run forever
+
+if __name__ == "__main__":
+    asyncio.run(main())
