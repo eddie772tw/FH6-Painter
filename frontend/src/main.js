@@ -90,8 +90,22 @@ function handleBackendMessage(msg) {
       valEta.textContent = `${msg.eta.toFixed(0)}s`;
       
       if (msg.shapes) {
-        currentShapes = msg.shapes;
-        renderShapes();
+        if (msg.shapes.length > 0) {
+          currentShapes = msg.shapes;
+          renderShapes();
+        } else {
+          currentShapes = [];
+          if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+      }
+      break;
+
+    case "pixel_preview":
+      if (msg.image_base64) {
+        canvas.style.backgroundImage = `url(data:image/jpeg;base64,${msg.image_base64})`;
+        canvas.style.backgroundSize = "contain";
+        canvas.style.backgroundPosition = "center";
+        canvas.style.backgroundRepeat = "no-repeat";
       }
       break;
 

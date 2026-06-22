@@ -149,7 +149,7 @@ class PainterServer:
                     "total": total,
                     "speed": speed,
                     "eta": eta,
-                    "shapes": _shapes_cache
+                    "shapes": _shapes_cache,
                 }
             )
             self._sync_broadcast(loop, msg)
@@ -167,17 +167,91 @@ class PainterServer:
         }
 
         try:
-            res = run_generator(
-                img_path,
-                output_json,
-                profile_path,
-                layers,
-                None,
-                None,
-                generator_cb,
-                opt_settings,
-                engine_code,
-            )
+            if engine_code == "GO_OPENCL":
+                from evaluators import EvaluatorFactory
+                import numpy as np
+                import base64
+                from PIL import Image
+                import io
+                
+                eval_cls = None
+                for e in EvaluatorFactory.get_available_evaluators():
+                    if e["code"] == "GO_OPENCL":
+                        eval_cls = e["class"]
+                        break
+                
+                if eval_cls:
+                    evaluator = eval_cls(np.zeros((2,2,3), dtype=np.float32))
+                    
+                    def go_progress(curr, total, speed, eta):
+                        if self.cancel_flag:
+                            evaluator.cancel_flag = True
+                        msg = json.dumps({
+                            "action": "metrics",
+                            "curr": curr,
+                            "total": total,
+                            "speed": speed,
+                            "eta": eta,
+                            "shapes": []
+                        })
+                        self._sync_broadcast(loop, msg)
+                    
+                    def go_preview(arr):
+                        if self.cancel_flag:
+                            return
+                        try:
+                            # arr is a numpy array (H, W, 3) RGB
+                            img = Image.fromarray(arr.astype("uint8"), "RGB")
+                            buffer = io.BytesIO()
+                            img.save(buffer, format="JPEG", quality=85)
+                            b64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
+                            msg = json.dumps({
+                                "action": "pixel_preview",
+                                "image_base64": b64
+                            })
+                            self._sync_broadcast(loop, msg)
+                        except Exception as e:
+                            print(f"Error sending preview: {e}")
+
+                    def go_success():
+                        try:
+                            with open(output_json, "r", encoding="utf-8") as f:
+                                res = json.load(f)
+                                if "shapes" in res:
+                                    msg = json.dumps({
+                                        "action": "metrics",
+                                        "curr": layers,
+                                        "total": layers,
+                                        "speed": 0.0,
+                                        "eta": 0.0,
+                                        "shapes": res["shapes"]
+                                    })
+                                    self._sync_broadcast(loop, msg)
+                        except Exception as e:
+                            print(f"Failed to read final Go JSON: {e}")
+                    
+                    res = evaluator.run_generator(
+                        img_path=img_path,
+                        output_json=output_json,
+                        profile_path=profile_path,
+                        layers=layers,
+                        progress_callback=go_progress,
+                        preview_callback=go_preview,
+                        on_success_callback=go_success,
+                        on_failed_callback=lambda msg: print(f"Go Engine Failed: {msg}")
+                    )
+            else:
+                res = run_generator(
+                    img_path,
+                    output_json,
+                    profile_path,
+                    layers,
+                    None,
+                    None,
+                    generator_cb,
+                    opt_settings,
+                    engine_code,
+                )
             if res != 0:
                 self._sync_broadcast(
                     loop,
