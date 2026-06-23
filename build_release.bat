@@ -65,6 +65,7 @@ if not exist "%~dp0dist" mkdir "%~dp0dist"
     --noconfirm ^
     --onefile ^
     --windowed ^
+    --noupx ^
     --icon="%~dp0app_icon.ico" ^
     --distpath "%~dp0dist" ^
     --name "FH6_Painter_Studio" ^
@@ -73,6 +74,12 @@ if not exist "%~dp0dist" mkdir "%~dp0dist"
     --collect-all "taichi" ^
     --collect-all "numba" ^
     --collect-all "llvmlite" ^
+    --exclude-module "PIL._imagingcms" ^
+    --exclude-module "PIL.ImageCms" ^
+    --exclude-module "PIL._webp" ^
+    --exclude-module "PIL._imagingtk" ^
+    --exclude-module "PIL.ImageTk" ^
+    --exclude-module "PIL._imagingmorph" ^
     --hidden-import "utils" ^
     --hidden-import "evaluators.numba_kernels" ^
     --hidden-import "evaluators.numba_evaluator" ^
