@@ -51,6 +51,8 @@ if not exist "%~dp0frontend\src-tauri\bin" mkdir "%~dp0frontend\src-tauri\bin"
     --distpath "%~dp0frontend\src-tauri\bin" ^
     --name "server-sidecar-x86_64-pc-windows-msvc" ^
     --collect-all "taichi" ^
+    --hidden-import "utils" ^
+    --hidden-import "evaluators.numba_kernels" ^
     --hidden-import "evaluators.numba_evaluator" ^
     --hidden-import "evaluators.taichi_evaluator" ^
     --hidden-import "evaluators.go_opencl_evaluator" ^

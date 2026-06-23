@@ -96,9 +96,16 @@ jobs:
       run: |
         call build_release.bat
 
+    - name: Prepare Portable Release Folder
+      shell: cmd
+      run: |
+        mkdir PortableRelease
+        copy frontend\src-tauri\target\release\FH6_Painter_Studio.exe PortableRelease\
+        copy frontend\src-tauri\target\release\server-sidecar-x86_64-pc-windows-msvc.exe PortableRelease\
+
     - name: Upload build artifact preview
       uses: actions/upload-artifact@v4
       with:
-        name: FH6_Painter_Studio_Windows_Preview
-        path: frontend/src-tauri/target/release/bundle/
+        name: FH6_Painter_Studio_Windows_Portable
+        path: PortableRelease/
         retention-days: 7

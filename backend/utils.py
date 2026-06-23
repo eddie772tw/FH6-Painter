@@ -4,7 +4,7 @@ import sys
 
 def get_project_root():
     if getattr(sys, "frozen", False):
-        return os.path.dirname(sys.executable)
+        return sys._MEIPASS
     return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
