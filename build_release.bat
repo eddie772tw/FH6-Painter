@@ -75,8 +75,8 @@ echo.
 :: 3. Run Tauri Build
 echo [INFO] Running Tauri Build...
 cd "%~dp0frontend"
-call npm install
-call npm run tauri build
+call npm install || exit /b 1
+call npm run tauri build || exit /b 1
 
 if errorlevel 1 (
     echo.
