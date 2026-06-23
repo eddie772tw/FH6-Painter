@@ -23,10 +23,13 @@ except ImportError as e:
     pass
 
 try:
-    from utils import scan_gpus, scan_profiles
+    from utils import get_output_base_dir, scan_gpus, scan_profiles
 except ImportError:
     scan_profiles = None
     scan_gpus = None
+
+    def get_output_base_dir():
+        return ROOT_DIR
 
 
 def get_project_base(filepath):
@@ -193,7 +196,7 @@ class PainterServer:
             if img_path:
                 img_base = get_project_base(img_path)
                 if img_base:
-                    output_dir = os.path.join(ROOT_DIR, "output", img_base)
+                    output_dir = os.path.join(get_output_base_dir(), "output", img_base)
                     if os.path.exists(output_dir):
                         import glob
 
@@ -253,7 +256,7 @@ class PainterServer:
                 sliced_shapes = shapes[: slice_layer + 1]
 
                 project_base = get_project_base(filepath)
-                temp_dir = os.path.join(ROOT_DIR, "output", project_base)
+                temp_dir = os.path.join(get_output_base_dir(), "output", project_base)
                 os.makedirs(temp_dir, exist_ok=True)
                 temp_path = os.path.join(temp_dir, "_temp_resume.json")
 
@@ -452,7 +455,7 @@ class PainterServer:
         elif action == "generate_text_vinyl":
             text_val = data.get("text", "")
             font_size = data.get("font_size", 72)
-            out_path = os.path.join(ROOT_DIR, "output", "text_vinyl.json")
+            out_path = os.path.join(get_output_base_dir(), "output", "text_vinyl.json")
             os.makedirs(os.path.dirname(out_path), exist_ok=True)
             try:
                 from tools.text_generator import save_text_json
@@ -478,7 +481,7 @@ class PainterServer:
             self.preview_enabled = data.get("enabled", True)
         elif action == "open_output":
             try:
-                output_dir = os.path.join(ROOT_DIR, "output")
+                output_dir = os.path.join(get_output_base_dir(), "output")
                 os.makedirs(output_dir, exist_ok=True)
                 if os.name == "nt":
                     os.startfile(output_dir)
@@ -511,7 +514,7 @@ class PainterServer:
 
         # Reconstruct the expected JSON path from the original image filename
         img_base = get_project_base(img_path)
-        output_dir = os.path.join(ROOT_DIR, "output", img_base)
+        output_dir = os.path.join(get_output_base_dir(), "output", img_base)
         json_path = os.path.join(output_dir, f"{img_base}.json")
 
         layers = config.get("layers", 3000)
@@ -621,7 +624,7 @@ class PainterServer:
 
                     # Check output folder first, then the directory of img_path
                     for json_dir in [
-                        os.path.join(ROOT_DIR, "output", json_base),
+                        os.path.join(get_output_base_dir(), "output", json_base),
                         os.path.dirname(img_path),
                     ]:
                         for img_ext in [".png", ".jpg", ".jpeg", ".bmp", ".webp"]:
@@ -650,7 +653,7 @@ class PainterServer:
         ):
             try:
                 img_base = get_project_base(img_path)
-                output_dir = os.path.join(ROOT_DIR, "output", img_base)
+                output_dir = os.path.join(get_output_base_dir(), "output", img_base)
                 os.makedirs(output_dir, exist_ok=True)
                 dest_img_path = os.path.join(output_dir, os.path.basename(img_path))
                 if os.path.abspath(img_path) != os.path.abspath(dest_img_path):
@@ -742,7 +745,9 @@ class PainterServer:
 
                         masked_img = Image.fromarray(arr)
                         img_base = get_project_base(img_path)
-                        output_dir = os.path.join(ROOT_DIR, "output", img_base)
+                        output_dir = os.path.join(
+                            get_output_base_dir(), "output", img_base
+                        )
                         os.makedirs(output_dir, exist_ok=True)
                         masked_path = os.path.join(output_dir, f"{img_base}_masked.png")
                         masked_img.save(masked_path)
@@ -754,7 +759,7 @@ class PainterServer:
         output_json = config.get("output_json", "")
         if not output_json and img_path:
             img_base = get_project_base(img_path)
-            output_dir = os.path.join(ROOT_DIR, "output", img_base)
+            output_dir = os.path.join(get_output_base_dir(), "output", img_base)
             output_json = os.path.join(output_dir, f"{img_base}.json")
 
         profile_path = config.get("profile_path", None)

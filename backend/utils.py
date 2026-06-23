@@ -8,6 +8,12 @@ def get_project_root():
     return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
+def get_output_base_dir():
+    if getattr(sys, "frozen", False):
+        return os.path.dirname(sys.executable)
+    return get_project_root()
+
+
 def scan_profiles():
     """Scans the 'settings' directory for available .ini configurations."""
     profiles = []

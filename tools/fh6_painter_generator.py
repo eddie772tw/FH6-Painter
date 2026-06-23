@@ -14,6 +14,12 @@ os.environ["DISABLE_OBS_CAPTURE"] = "1"
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
+def get_output_base_dir():
+    if getattr(sys, "frozen", False):
+        return os.path.dirname(sys.executable)
+    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
 HAS_DEPENDENCIES = True
 try:
     import numpy as np
@@ -156,7 +162,7 @@ def run_generator(
         img_base = os.path.splitext(os.path.basename(image_path))[0]
         script_dir = os.path.dirname(os.path.abspath(__file__))
         project_root = os.path.dirname(script_dir)  # parent of 'tools'
-        output_dir = os.path.join(project_root, "output", img_base)
+        output_dir = os.path.join(get_output_base_dir(), "output", img_base)
         output_path = os.path.join(output_dir, f"{img_base}.json")
 
     # Load settings from profile
