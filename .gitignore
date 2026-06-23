@@ -76,4 +76,5 @@ optimization_settings.json
 .coverage
 test_out_utf8.txt
 *.log
-frontend/src-tauri/bin/server-sidecar-x86_64-pc-windows-msvc.exe
+frontend/src-tauri/bin/*.exe
+frontend/src-tauri/bin/*.pdb

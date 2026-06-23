@@ -8,7 +8,11 @@ import time
 import websockets
 
 # Add project root and tools path for dependencies
-ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if getattr(sys, "frozen", False):
+    ROOT_DIR = sys._MEIPASS
+else:
+    ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 sys.path.append(ROOT_DIR)
 sys.path.append(os.path.join(ROOT_DIR, "tools"))
 

@@ -14,11 +14,12 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let sidecar_command = app.shell().sidecar("server-sidecar").unwrap();
-            let (mut rx, mut _child) = sidecar_command
+            let (mut rx, mut child) = sidecar_command
                 .spawn()
                 .expect("Failed to spawn sidecar");
             
             tauri::async_runtime::spawn(async move {
+                let _child_handle = child;
                 while let Some(event) = rx.recv().await {
                     if let CommandEvent::Stdout(line) = event {
                         println!("sidecar: {}", String::from_utf8_lossy(&line));
