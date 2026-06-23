@@ -51,8 +51,13 @@ if not exist "%~dp0frontend\src-tauri\bin" mkdir "%~dp0frontend\src-tauri\bin"
     --distpath "%~dp0frontend\src-tauri\bin" ^
     --name "server-sidecar-x86_64-pc-windows-msvc" ^
     --collect-all "taichi" ^
-    --add-data "evaluators\*;evaluators" ^
-    --add-data "tools\*;tools" ^
+    --hidden-import "evaluators.numba_evaluator" ^
+    --hidden-import "evaluators.taichi_evaluator" ^
+    --hidden-import "evaluators.go_opencl_evaluator" ^
+    --hidden-import "tools.fh6_import_layer_table" ^
+    --hidden-import "tools.fh6_painter_generator" ^
+    --add-data "tools\bin\*;tools\bin" ^
+    --add-data "tools\fh6-heuristics.json;tools" ^
     --add-data "settings\*;settings" ^
     "%~dp0backend\server.py"
 

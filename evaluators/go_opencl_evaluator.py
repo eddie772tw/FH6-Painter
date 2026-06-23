@@ -15,7 +15,7 @@ from evaluators.base_evaluator import BaseEvaluator
 
 def get_project_root():
     if getattr(sys, "frozen", False):
-        return os.path.dirname(sys.executable)
+        return sys._MEIPASS
     # Since this file is in evaluators/go_opencl_evaluator.py, parent is root
     return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 

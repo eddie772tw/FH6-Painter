@@ -1,9 +1,9 @@
 # -*- mode: python ; coding: utf-8 -*-
 from PyInstaller.utils.hooks import collect_all
 
-datas = [('evaluators\\*', 'evaluators'), ('tools\\*', 'tools')]
+datas = [('settings\\*', 'settings'), ('tools\\bin\\*', 'tools\\bin'), ('tools\\fh6-heuristics.json', 'tools')]
 binaries = []
-hiddenimports = []
+hiddenimports = ['numba', 'taichi', 'PIL._tkinter_finder', 'evaluators.numba_evaluator', 'evaluators.taichi_evaluator', 'evaluators.go_opencl_evaluator', 'tools.fh6_import_layer_table', 'tools.fh6_painter_generator']
 tmp_ret = collect_all('taichi')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
