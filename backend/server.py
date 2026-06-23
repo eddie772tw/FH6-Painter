@@ -680,10 +680,15 @@ class PainterServer:
                         src_img = src_img.convert("RGBA")
                         arr = np.array(src_img)
 
-                        rx1 = roi_config.get("x1", 0)
-                        ry1 = roi_config.get("y1", 0)
-                        rx2 = roi_config.get("x2", arr.shape[1] - 1)
-                        ry2 = roi_config.get("y2", arr.shape[0] - 1)
+                        cw = roi_config.get("canvas_w", arr.shape[1])
+                        ch = roi_config.get("canvas_h", arr.shape[0])
+                        scale_x = arr.shape[1] / cw if cw > 0 else 1.0
+                        scale_y = arr.shape[0] / ch if ch > 0 else 1.0
+
+                        rx1 = int(roi_config.get("x1", 0) * scale_x)
+                        ry1 = int(roi_config.get("y1", 0) * scale_y)
+                        rx2 = int(roi_config.get("x2", arr.shape[1] - 1) * scale_x)
+                        ry2 = int(roi_config.get("y2", arr.shape[0] - 1) * scale_y)
 
                         rx1 = max(0, min(rx1, arr.shape[1] - 1))
                         rx2 = max(0, min(rx2, arr.shape[1] - 1))

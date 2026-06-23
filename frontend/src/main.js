@@ -155,6 +155,25 @@ function connectWebSocket() {
   };
 }
 
+function updateCanvasSize(newWidth, newHeight) {
+  if (newWidth && newHeight) {
+    if (roiSelection && originalImageWidth && originalImageHeight) {
+      if (originalImageWidth !== newWidth || originalImageHeight !== newHeight) {
+        const scaleX = newWidth / originalImageWidth;
+        const scaleY = newHeight / originalImageHeight;
+        roiSelection.x1 *= scaleX;
+        roiSelection.y1 *= scaleY;
+        roiSelection.x2 *= scaleX;
+        roiSelection.y2 *= scaleY;
+      }
+    }
+    canvas.width = newWidth;
+    canvas.height = newHeight;
+    originalImageWidth = newWidth;
+    originalImageHeight = newHeight;
+  }
+}
+
 function handleBackendMessage(msg) {
   switch (msg.action) {
     case "engines_list":
@@ -324,10 +343,7 @@ function handleBackendMessage(msg) {
       rewindLayerInput.value = msg.layer.toString();
       
       if (msg.width && msg.height) {
-        canvas.width = msg.width;
-        canvas.height = msg.height;
-        originalImageWidth = msg.width;
-        originalImageHeight = msg.height;
+        updateCanvasSize(msg.width, msg.height);
       }
       if (msg.preview_base64) {
         canvas.style.backgroundImage = `url(data:image/jpeg;base64,${msg.preview_base64})`;
@@ -354,10 +370,7 @@ function handleBackendMessage(msg) {
       selectedFilePath = msg.path;
       filePathDisplay.textContent = `Loaded JSON: ${msg.path}`;
       if (msg.width && msg.height) {
-        canvas.width = msg.width;
-        canvas.height = msg.height;
-        originalImageWidth = msg.width;
-        originalImageHeight = msg.height;
+        updateCanvasSize(msg.width, msg.height);
       }
       if (msg.preview_base64) {
         canvas.style.backgroundImage = `url(data:image/jpeg;base64,${msg.preview_base64})`;
@@ -388,10 +401,7 @@ function handleBackendMessage(msg) {
       selectedFilePath = msg.path;
       filePathDisplay.textContent = `Loaded Image: ${msg.path}`;
       if (msg.width && msg.height) {
-        canvas.width = msg.width;
-        canvas.height = msg.height;
-        originalImageWidth = msg.width;
-        originalImageHeight = msg.height;
+        updateCanvasSize(msg.width, msg.height);
       }
       if (msg.preview_base64) {
         canvas.style.backgroundImage = `url(data:image/jpeg;base64,${msg.preview_base64})`;
@@ -469,8 +479,7 @@ function handleBackendMessage(msg) {
       timelineVal.textContent = `${Math.round((msg.curr / msg.total) * 100)}%`;
       
       if (msg.width && msg.height) {
-        canvas.width = msg.width;
-        canvas.height = msg.height;
+        updateCanvasSize(msg.width, msg.height);
       }
       
       if (msg.shapes) {
@@ -682,7 +691,9 @@ btnGenerate.addEventListener("click", () => {
         x1: roiSelection ? Math.min(roiSelection.x1, roiSelection.x2) : 0,
         y1: roiSelection ? Math.min(roiSelection.y1, roiSelection.y2) : 0,
         x2: roiSelection ? Math.max(roiSelection.x1, roiSelection.x2) : 0,
-        y2: roiSelection ? Math.max(roiSelection.y1, roiSelection.y2) : 0
+        y2: roiSelection ? Math.max(roiSelection.y1, roiSelection.y2) : 0,
+        canvas_w: canvas.width,
+        canvas_h: canvas.height
       }
     };
     
