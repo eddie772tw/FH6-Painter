@@ -609,7 +609,8 @@ class PainterServer:
                             )
                             # Filter out masked images to prevent lingering bounds
                             candidates = [
-                                c for c in candidates 
+                                c
+                                for c in candidates
                                 if not c.endswith(f"_masked{img_ext}")
                             ]
                             if candidates:
@@ -964,6 +965,7 @@ def check_parent_alive():
     print("Parent process disconnected. Exiting sidecar.")
     os._exit(0)
 
+
 def check_frontend_alive(proc):
     proc.wait()
     print("Frontend process exited. Exiting backend.")
@@ -999,12 +1001,15 @@ class BroadcastLogger:
 
 
 async def main():
-    if getattr(sys, 'frozen', False):
+    if getattr(sys, "frozen", False):
         frontend_path = os.path.join(sys._MEIPASS, "frontend.exe")
         if os.path.exists(frontend_path):
             import subprocess
+
             proc = subprocess.Popen([frontend_path, "--no-sidecar"])
-            threading.Thread(target=check_frontend_alive, args=(proc,), daemon=True).start()
+            threading.Thread(
+                target=check_frontend_alive, args=(proc,), daemon=True
+            ).start()
         else:
             print("Frontend executable not found in bundle!")
     else:
