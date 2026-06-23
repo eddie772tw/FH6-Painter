@@ -977,8 +977,12 @@ class BroadcastLogger:
         self.loop = loop
 
     def write(self, message):
-        self.original_stream.write(message)
-        self.original_stream.flush()
+        if self.original_stream:
+            try:
+                self.original_stream.write(message)
+                self.original_stream.flush()
+            except Exception:
+                pass
         if message.strip():
             try:
                 msg = json.dumps({"action": "log", "text": message})
@@ -987,7 +991,11 @@ class BroadcastLogger:
                 pass
 
     def flush(self):
-        self.original_stream.flush()
+        if self.original_stream:
+            try:
+                self.original_stream.flush()
+            except Exception:
+                pass
 
 
 async def main():
