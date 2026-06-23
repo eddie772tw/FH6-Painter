@@ -272,7 +272,7 @@ def run_generator(
     if resume_shapes:
         header = resume_shapes[0]
         if header.get("type") == 1 and len(header.get("color", [])) >= 4:
-            has_alpha = header["color"][3] <= 0
+            has_alpha = has_alpha or (header["color"][3] <= 0)
     if has_alpha:
         img = img_raw.convert("RGBA")
         print("Detected transparent background. Enabling Alpha-guided Ambient Padding.")

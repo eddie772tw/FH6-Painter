@@ -55,9 +55,7 @@ const valSpeed = document.getElementById("val-speed");
 const valEta = document.getElementById("val-eta");
 const engineSelect = /** @type {HTMLSelectElement} */ (document.getElementById("engine-select"));
 const layersInput = /** @type {HTMLInputElement} */ (document.getElementById("layers-input"));
-const fileInput = document.getElementById("file-input");
 const filePathDisplay = document.getElementById("file-path-display");
-const uploadZone = document.getElementById("upload-zone");
 
 // New UI Elements
 const profileSelect = /** @type {HTMLSelectElement} */ (document.getElementById("profile-select"));
@@ -1017,82 +1015,6 @@ btnTogglePreview.addEventListener("click", () => {
   }
 });
 
-// Drag and Drop (Native HTML5 fallback)
-uploadZone.addEventListener("dragover", (e) => {
-  e.preventDefault();
-  uploadZone.style.borderColor = "var(--primary-color)";
-});
-
-uploadZone.addEventListener("dragleave", () => {
-  uploadZone.style.borderColor = "var(--glass-border)";
-});
-
-uploadZone.addEventListener("drop", (e) => {
-  e.preventDefault();
-  uploadZone.style.borderColor = "var(--glass-border)";
-  if (e.dataTransfer.files.length > 0) {
-    const file = e.dataTransfer.files[0];
-    handleFileSelect(file);
-  }
-});
-
-uploadZone.addEventListener("click", () => {
-  fileInput.click();
-});
-
-fileInput.addEventListener("change", (e) => {
-  const target = /** @type {HTMLInputElement} */ (e.target);
-  if (target.files.length > 0) {
-    handleFileSelect(target.files[0]);
-  }
-});
-
-function handleFileSelect(file) {
-  // Absolute path placeholder
-  selectedFilePath = file.name;
-  filePathDisplay.textContent = `Selected: ${file.name}`;
-  
-  if (file.name.toLowerCase().endsWith(".json")) {
-    // If browser-based upload in non-Tauri environment, we can read JSON locally to preview
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const data = JSON.parse(/** @type {string} */ (e.target.result));
-        if (data.shapes) {
-          currentShapes = data.shapes;
-          const layerCount = Math.max(0, currentShapes.length - 1);
-          valLayers.textContent = `${layerCount} / ${layersInput.value}`;
-          timelineSlider.disabled = false;
-          timelineSlider.max = layersInput.value;
-          timelineSlider.value = layerCount;
-          timelineVal.textContent = `${Math.round((layerCount / parseInt(layersInput.value)) * 100)}%`;
-          renderShapes();
-        }
-      } catch (ex) {
-        console.error("Failed to parse JSON file locally", ex);
-      }
-    };
-    reader.readAsText(file);
-  } else if (file.type.startsWith("image/")) {
-    const img = new Image();
-    img.onload = () => {
-      canvas.width = img.width;
-      canvas.height = img.height;
-      originalImageWidth = img.width;
-      originalImageHeight = img.height;
-      
-      canvas.style.backgroundImage = `url(${img.src})`;
-      canvas.style.backgroundSize = "contain";
-      canvas.style.backgroundPosition = "center";
-      canvas.style.backgroundRepeat = "no-repeat";
-      
-      currentShapes = [];
-      renderShapes();
-    };
-    img.src = URL.createObjectURL(file);
-  }
-  updateButtonStates();
-}
 
 // Tauri Native File Drop Listener
 if (window.__TAURI__) {
