@@ -476,6 +476,27 @@ class PainterServer:
             asyncio.create_task(self.run_benchmark())
         elif action == "set_preview":
             self.preview_enabled = data.get("enabled", True)
+        elif action == "open_output":
+            try:
+                output_dir = os.path.join(ROOT_DIR, "output")
+                os.makedirs(output_dir, exist_ok=True)
+                if os.name == "nt":
+                    os.startfile(output_dir)
+                else:
+                    import subprocess
+
+                    subprocess.Popen(["xdg-open", output_dir])
+            except Exception as e:
+                print(f"Failed to open output directory: {e}")
+        elif action == "open_url":
+            try:
+                import webbrowser
+
+                url = data.get("url")
+                if url:
+                    webbrowser.open(url)
+            except Exception as e:
+                print(f"Failed to open URL: {e}")
 
     async def broadcast(self, message):
         if self.clients:

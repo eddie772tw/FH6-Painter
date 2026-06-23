@@ -14,8 +14,8 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let args: Vec<String> = std::env::args().collect();
-            if args.contains(&"--no-sidecar".to_string()) {
-                println!("Skipping sidecar startup as --no-sidecar was passed.");
+            if args.contains(&"--no-sidecar".to_string()) || std::env::var("FH6_NO_SIDECAR").is_ok() {
+                println!("Skipping sidecar startup as --no-sidecar was passed or FH6_NO_SIDECAR env var is set.");
                 return Ok(());
             }
 

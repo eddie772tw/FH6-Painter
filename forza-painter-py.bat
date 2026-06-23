@@ -106,6 +106,12 @@ if exist "%VENV_DIR%\Scripts\ruff.exe" (
 )
 
 :: Start Tauri Sidecar Architecture
+echo [INFO] Terminating old backend instances to prevent port conflicts...
+taskkill /F /FI "WINDOWTITLE eq FH6 Painter Backend*" /T >nul 2>nul
+for /f "tokens=5" %%a in ('netstat -aon ^| find ":8765" ^| find "LISTENING"') do (
+    taskkill /F /PID %%a >nul 2>nul
+)
+
 echo [INFO] Starting Python WebSocket Backend...
 start "FH6 Painter Backend" "!PY_EXE!" backend\server.py
 
@@ -116,6 +122,7 @@ call npm install
 where cargo >nul 2>nul
 if %errorlevel% equ 0 (
     echo [INFO] Rust environment detected. Starting native Tauri app...
+    set "FH6_NO_SIDECAR=1"
     call npm run tauri dev
 ) else (
     echo [INFO] Rust not detected. Falling back to Vite Web Server...

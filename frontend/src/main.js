@@ -1,5 +1,4 @@
 // @ts-check
-import { open as openUrl } from '@tauri-apps/plugin-shell';
 
 const wsUrl = "ws://localhost:8765";
 let ws = null;
@@ -29,6 +28,7 @@ const ctx = canvas.getContext("2d");
 // Header Buttons
 const btnTogglePreview = document.getElementById("btn-toggle-preview");
 const btnMarket = document.getElementById("btn-market");
+const btnOutput = document.getElementById("btn-output");
 const btnBenchmark = document.getElementById("btn-benchmark");
 const btnShowLogs = document.getElementById("btn-show-logs");
 
@@ -991,11 +991,18 @@ btnStartBenchmark.addEventListener("click", () => {
 });
 
 btnMarket.addEventListener("click", () => {
-  // Use Tauri plugin-shell to securely open the URL
-  try {
-    openUrl("https://painter6.com");
-  } catch (e) {
+  // Delegate URL opening to the backend Python server for 100% reliability
+  // across both Tauri native windows and standard browsers.
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ action: "open_url", url: "https://painter6.com" }));
+  } else {
     window.open("https://painter6.com", "_blank");
+  }
+});
+
+btnOutput.addEventListener("click", () => {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ action: "open_output" }));
   }
 });
 
