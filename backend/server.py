@@ -834,7 +834,7 @@ class PainterServer:
                     loop,
                     json.dumps({"action": "generation_status", "status": "failed"}),
                 )
-            elif pending_roi_phase2:
+            elif pending_roi_phase2 and not self.cancel_flag:
                 print(
                     f"[System] 建立初步輪廓 ({roi_min_layers} 層) 完成，將自動重啟並套用區域繪製進行後續生成。"
                 )
@@ -845,6 +845,8 @@ class PainterServer:
 
         except Exception as e:
             if str(e) == "EARLY_CONVERGENCE_WITH_ROI":
+                if self.cancel_flag:
+                    return
                 self._sync_broadcast(loop, json.dumps({"action": "clear_roi"}))
                 if "roi" in config:
                     config["roi"]["enabled"] = False
