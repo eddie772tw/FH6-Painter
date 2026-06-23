@@ -65,6 +65,8 @@ dist/
 !package-lock.json
 !frontend/package.json
 !frontend/package-lock.json
+!tauri.conf.json
+!frontend/src-tauri/tauri.conf.json
 tools/benchmark_taichi.py
 optimization_settings.json
 /tools/benchmark_history.json
