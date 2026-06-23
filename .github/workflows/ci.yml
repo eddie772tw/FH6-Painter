@@ -100,8 +100,7 @@ jobs:
       shell: cmd
       run: |
         mkdir PortableRelease
-        copy frontend\src-tauri\target\release\frontend.exe PortableRelease\FH6_Painter_Studio.exe
-        copy frontend\src-tauri\target\release\server-sidecar.exe PortableRelease\
+        copy dist\FH6_Painter_Studio.exe PortableRelease\
 
     - name: Upload build artifact preview
       uses: actions/upload-artifact@v4

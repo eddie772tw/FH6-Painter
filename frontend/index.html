@@ -21,6 +21,12 @@
         <h1>FH6 Painter</h1>
         <span class="badge">STUDIO</span>
       </div>
+      <div class="header-actions" data-tauri-drag-region>
+        <button id="btn-toggle-preview" class="btn-header text-green">關閉預覽 / Disable Preview</button>
+        <button id="btn-market" class="btn-header text-orange">前往市場 / Open Market</button>
+        <button id="btn-benchmark" class="btn-header text-blue">效能測試 / Benchmark</button>
+        <button id="btn-show-logs" class="btn-header text-blue">診斷主控台 / Show Logs</button>
+      </div>
     </header>
 
     <main class="workspace">
@@ -38,8 +44,9 @@
             <span>or click to browse</span>
             <input type="file" id="file-input" hidden accept=".png,.jpg,.jpeg,.webp,.json">
           </div>
-          <div class="button-row" style="margin-top: 10px;">
-            <button id="btn-browse-native" class="btn secondary select-btn" style="width: 100%;">BROWSE NATIVE</button>
+          <div class="button-row" style="margin-top: 10px; display: flex; gap: 10px;">
+            <button id="btn-browse-native" class="btn secondary select-btn" style="flex: 1;">BROWSE NATIVE</button>
+            <button id="btn-text-vinyl" class="btn secondary select-btn" style="flex: 1;">TEXT VINYL</button>
           </div>
           <p id="file-path-display" class="file-path"></p>
         </section>
@@ -213,6 +220,10 @@
             <div id="connection-overlay" class="overlay-state">
               <h3>CONNECTING TO ENGINE...</h3>
             </div>
+            <div id="preview-disabled-overlay" class="overlay-state hidden">
+              <h3>PREVIEW DISABLED</h3>
+              <p>Click 'Enable Preview' to restore visual fitting</p>
+            </div>
           </div>
           
           <div class="timeline-panel" id="timeline-panel">
@@ -250,5 +261,59 @@
 
       </section>
     </main>
+
+    <!-- Modals -->
+    <!-- Text Vinyl Modal -->
+    <div id="modal-text-vinyl" class="modal-overlay hidden">
+      <div class="modal-window">
+        <div class="modal-header">
+          <h3>Text Vinyl Generator</h3>
+          <button class="btn-close-modal" data-target="modal-text-vinyl">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="input-group">
+            <label>Enter text for vinyl:</label>
+            <input type="text" id="text-vinyl-input" class="cyber-input" placeholder="Type here...">
+          </div>
+          <div class="input-group">
+            <label>Font Size</label>
+            <input type="number" id="text-vinyl-size" class="cyber-input" value="72" min="10" max="500">
+          </div>
+          <button id="btn-generate-text" class="btn primary" style="width: 100%; margin-top: 15px; padding: 12px; flex: none;">Generate JSON</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Diagnostic Log Console Modal -->
+    <div id="modal-logs" class="modal-overlay hidden">
+      <div class="modal-window large">
+        <div class="modal-header">
+          <h3>系統即時診斷主控台 / Real-time Diagnostic Log Console</h3>
+          <button class="btn-close-modal" data-target="modal-logs">&times;</button>
+        </div>
+        <div class="modal-body">
+          <pre id="console-logs" class="console-output"></pre>
+          <button id="btn-clear-logs" class="btn secondary" style="width: 100%; margin-top: 10px; padding: 10px; flex: none;">清除日誌 / Clear Logs</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Benchmark Console Modal -->
+    <div id="modal-benchmark" class="modal-overlay hidden">
+      <div class="modal-window large">
+        <div class="modal-header">
+          <h3>🏆 性能基準測試主控台 / Performance Benchmark Console</h3>
+          <button class="btn-close-modal" data-target="modal-benchmark">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+            <button id="btn-start-benchmark" class="btn primary" style="padding: 10px 20px; flex: none;">Start Benchmark</button>
+            <span id="benchmark-status" style="font-weight: bold; color: #888;">READY</span>
+          </div>
+          <pre id="console-benchmark" class="console-output"></pre>
+        </div>
+      </div>
+    </div>
+
   </body>
 </html>

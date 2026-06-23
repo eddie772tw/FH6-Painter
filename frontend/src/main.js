@@ -1,4 +1,5 @@
 // @ts-check
+import { open as openUrl } from '@tauri-apps/plugin-shell';
 
 const wsUrl = "ws://localhost:8765";
 let ws = null;
@@ -19,9 +20,35 @@ let roiMoveStart = null; // { x, y } in image pixels
 const btnGenerate = document.getElementById("btn-generate");
 const btnInject = document.getElementById("btn-inject");
 const btnBrowseNative = document.getElementById("btn-browse-native");
+const btnTextVinyl = document.getElementById("btn-text-vinyl");
 const overlay = document.getElementById("connection-overlay");
 const canvas = /** @type {HTMLCanvasElement} */ (document.getElementById("preview-canvas"));
+const previewDisabledOverlay = document.getElementById("preview-disabled-overlay");
 const ctx = canvas.getContext("2d");
+
+// Header Buttons
+const btnTogglePreview = document.getElementById("btn-toggle-preview");
+const btnMarket = document.getElementById("btn-market");
+const btnBenchmark = document.getElementById("btn-benchmark");
+const btnShowLogs = document.getElementById("btn-show-logs");
+
+// Modals
+const modalTextVinyl = document.getElementById("modal-text-vinyl");
+const modalLogs = document.getElementById("modal-logs");
+const modalBenchmark = document.getElementById("modal-benchmark");
+const closeBtns = document.querySelectorAll(".btn-close-modal");
+
+// Modal Inputs
+const textVinylInput = /** @type {HTMLInputElement} */ (document.getElementById("text-vinyl-input"));
+const textVinylSize = /** @type {HTMLInputElement} */ (document.getElementById("text-vinyl-size"));
+const btnGenerateText = document.getElementById("btn-generate-text");
+const consoleLogs = document.getElementById("console-logs");
+const btnClearLogs = document.getElementById("btn-clear-logs");
+const btnStartBenchmark = document.getElementById("btn-start-benchmark");
+const benchmarkStatus = document.getElementById("benchmark-status");
+const consoleBenchmark = document.getElementById("console-benchmark");
+
+let isPreviewEnabled = true;
 
 const valLayers = document.getElementById("val-layers");
 const valSpeed = document.getElementById("val-speed");
@@ -256,6 +283,37 @@ function handleBackendMessage(msg) {
           renderShapes();
         }
       }
+      break;
+
+    case "text_vinyl_success":
+      if (msg.path) {
+        modalTextVinyl.classList.add("hidden");
+        ws.send(JSON.stringify({ action: "load_json_file", path: msg.path }));
+      }
+      break;
+
+    case "log":
+      if (msg.text) {
+        consoleLogs.textContent += msg.text;
+        consoleLogs.scrollTop = consoleLogs.scrollHeight;
+      }
+      break;
+
+    case "benchmark_log":
+      if (msg.text) {
+        consoleBenchmark.textContent += msg.text;
+        consoleBenchmark.scrollTop = consoleBenchmark.scrollHeight;
+      }
+      break;
+
+    case "benchmark_done":
+      benchmarkStatus.textContent = msg.status || "DONE";
+      if (msg.status === "PASSED") {
+        benchmarkStatus.style.color = "var(--primary-color)";
+      } else {
+        benchmarkStatus.style.color = "#D32F2F";
+      }
+      btnStartBenchmark.disabled = false;
       break;
 
     case "rewind_success":
@@ -544,12 +602,35 @@ function getCanvasImageCoords(e) {
   const clientX = e.clientX - rect.left;
   const clientY = e.clientY - rect.top;
   
-  const scaleX = canvas.width / rect.width;
-  const scaleY = canvas.height / rect.height;
+  // Calculate letterboxing offsets due to object-fit: contain
+  const intrinsicRatio = canvas.width / canvas.height;
+  const rectRatio = rect.width / rect.height;
+  
+  let renderWidth = rect.width;
+  let renderHeight = rect.height;
+  let offsetX = 0;
+  let offsetY = 0;
+  
+  if (intrinsicRatio > rectRatio) {
+    // Width is constrained, height is letterboxed
+    renderHeight = rect.width / intrinsicRatio;
+    offsetY = (rect.height - renderHeight) / 2;
+  } else {
+    // Height is constrained, width is letterboxed
+    renderWidth = rect.height * intrinsicRatio;
+    offsetX = (rect.width - renderWidth) / 2;
+  }
+  
+  // Coordinates relative to the actual rendered image
+  const imageX = clientX - offsetX;
+  const imageY = clientY - offsetY;
+  
+  const scaleX = canvas.width / renderWidth;
+  const scaleY = canvas.height / renderHeight;
   
   return {
-    x: Math.round(clientX * scaleX),
-    y: Math.round(clientY * scaleY)
+    x: Math.max(0, Math.min(canvas.width - 1, Math.round(imageX * scaleX))),
+    y: Math.max(0, Math.min(canvas.height - 1, Math.round(imageY * scaleY)))
   };
 }
 
@@ -848,6 +929,81 @@ canvas.addEventListener("contextmenu", (e) => {
   roiSelection = null;
   roiBoundsDisplay.textContent = "None";
   renderShapes();
+});
+
+// Modals Logic
+closeBtns.forEach(btn => {
+  btn.addEventListener("click", () => {
+    const targetId = btn.getAttribute("data-target");
+    if (targetId) document.getElementById(targetId).classList.add("hidden");
+  });
+});
+
+btnTextVinyl.addEventListener("click", () => {
+  modalTextVinyl.classList.remove("hidden");
+  textVinylInput.focus();
+});
+
+btnGenerateText.addEventListener("click", () => {
+  const text = textVinylInput.value.trim();
+  const size = parseInt(textVinylSize.value) || 72;
+  if (!text) return;
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({
+      action: "generate_text_vinyl",
+      text: text,
+      font_size: size
+    }));
+    btnGenerateText.textContent = "Generating...";
+    setTimeout(() => { btnGenerateText.textContent = "Generate JSON"; }, 1000);
+  }
+});
+
+btnShowLogs.addEventListener("click", () => {
+  modalLogs.classList.remove("hidden");
+});
+
+btnClearLogs.addEventListener("click", () => {
+  consoleLogs.textContent = "";
+});
+
+btnBenchmark.addEventListener("click", () => {
+  modalBenchmark.classList.remove("hidden");
+});
+
+btnStartBenchmark.addEventListener("click", () => {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    consoleBenchmark.textContent = "";
+    benchmarkStatus.textContent = "RUNNING...";
+    benchmarkStatus.style.color = "var(--secondary-color)";
+    btnStartBenchmark.disabled = true;
+    ws.send(JSON.stringify({ action: "start_benchmark" }));
+  }
+});
+
+btnMarket.addEventListener("click", () => {
+  // Use Tauri plugin-shell to securely open the URL
+  try {
+    openUrl("https://painter6.com");
+  } catch (e) {
+    window.open("https://painter6.com", "_blank");
+  }
+});
+
+btnTogglePreview.addEventListener("click", () => {
+  isPreviewEnabled = !isPreviewEnabled;
+  if (isPreviewEnabled) {
+    btnTogglePreview.textContent = "關閉預覽 / Disable Preview";
+    btnTogglePreview.classList.add("text-green");
+    previewDisabledOverlay.classList.add("hidden");
+  } else {
+    btnTogglePreview.textContent = "開啟預覽 / Enable Preview";
+    btnTogglePreview.classList.remove("text-green");
+    previewDisabledOverlay.classList.remove("hidden");
+  }
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ action: "set_preview", enabled: isPreviewEnabled }));
+  }
 });
 
 // Drag and Drop (Native HTML5 fallback)

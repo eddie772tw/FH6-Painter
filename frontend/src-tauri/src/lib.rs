@@ -13,21 +13,30 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
-            let sidecar_command = app.shell().sidecar("server-sidecar").unwrap();
-            let (mut rx, mut child) = sidecar_command
-                .spawn()
-                .expect("Failed to spawn sidecar");
-            
-            tauri::async_runtime::spawn(async move {
-                let _child_handle = child;
-                while let Some(event) = rx.recv().await {
-                    if let CommandEvent::Stdout(line) = event {
-                        println!("sidecar: {}", String::from_utf8_lossy(&line));
-                    } else if let CommandEvent::Stderr(line) = event {
-                        println!("sidecar err: {}", String::from_utf8_lossy(&line));
-                    }
+            let args: Vec<String> = std::env::args().collect();
+            if args.contains(&"--no-sidecar".to_string()) {
+                println!("Skipping sidecar startup as --no-sidecar was passed.");
+                return Ok(());
+            }
+
+            if let Ok(sidecar_command) = app.shell().sidecar("server-sidecar") {
+                if let Ok((mut rx, child)) = sidecar_command.spawn() {
+                    tauri::async_runtime::spawn(async move {
+                        let _child_handle = child;
+                        while let Some(event) = rx.recv().await {
+                            if let CommandEvent::Stdout(line) = event {
+                                println!("sidecar: {}", String::from_utf8_lossy(&line));
+                            } else if let CommandEvent::Stderr(line) = event {
+                                println!("sidecar err: {}", String::from_utf8_lossy(&line));
+                            }
+                        }
+                    });
+                } else {
+                    println!("Failed to spawn sidecar, continuing without it.");
                 }
-            });
+            } else {
+                println!("Sidecar configuration not found, continuing without it.");
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![greet])

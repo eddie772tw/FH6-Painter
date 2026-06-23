@@ -2,7 +2,7 @@
 setlocal enabledelayedexpansion
 
 echo ====================================================================
-echo      FH6 Painter - Standalone Release Bundler (Tauri Sidecar)
+echo      FH6 Painter - Standalone Release Bundler
 echo ====================================================================
 echo.
 
@@ -39,18 +39,37 @@ if not exist "%PYINSTALLER_EXE%" (
     )
 )
 
-:: 2. Build Python Server Sidecar
-echo [INFO] Running PyInstaller to compile Python backend sidecar...
+:: 2. Run Tauri Build
+echo [INFO] Running Tauri Build...
 echo --------------------------------------------------------------------
-if not exist "%~dp0frontend\src-tauri\bin" mkdir "%~dp0frontend\src-tauri\bin"
+cd "%~dp0frontend"
+call npm install || exit /b 1
+call npm run tauri build || exit /b 1
+
+if errorlevel 1 (
+    echo.
+    echo [ERROR] Tauri Build encountered an error!
+    if not "%GITHUB_ACTIONS%" == "true" pause
+    exit /b 1
+)
+echo [SUCCESS] Tauri Frontend built successfully.
+echo.
+cd "%~dp0"
+
+:: 3. Build Final Executable with PyInstaller
+echo [INFO] Running PyInstaller to create final standalone executable...
+echo --------------------------------------------------------------------
+if not exist "%~dp0dist" mkdir "%~dp0dist"
 
 "%PYINSTALLER_EXE%" ^
     --noconfirm ^
     --onefile ^
-    --console ^
-    --distpath "%~dp0frontend\src-tauri\bin" ^
-    --name "server-sidecar-x86_64-pc-windows-msvc" ^
+    --windowed ^
+    --icon="%~dp0app_icon.ico" ^
+    --distpath "%~dp0dist" ^
+    --name "FH6_Painter_Studio" ^
     --paths "%~dp0." ^
+    --add-data "%~dp0frontend\src-tauri\target\release\frontend.exe;." ^
     --collect-all "taichi" ^
     --collect-all "numba" ^
     --collect-all "llvmlite" ^
@@ -74,22 +93,7 @@ if errorlevel 1 (
     if not "%GITHUB_ACTIONS%" == "true" pause
     exit /b 1
 )
-echo [SUCCESS] Backend sidecar bundled successfully.
-echo.
-
-:: 3. Run Tauri Build
-echo [INFO] Running Tauri Build...
-cd "%~dp0frontend"
-call npm install || exit /b 1
-call npm run tauri build || exit /b 1
-
-if errorlevel 1 (
-    echo.
-    echo [ERROR] Tauri Build encountered an error!
-    if not "%GITHUB_ACTIONS%" == "true" pause
-    exit /b 1
-)
-echo [SUCCESS] Tauri Frontend and final bundle built successfully.
+echo [SUCCESS] Standalone executable created successfully.
 echo.
 
 :: 4. Success screen
@@ -97,7 +101,7 @@ echo ====================================================================
 echo      FH6 Painter standalone bundle created successfully
 echo ====================================================================
 echo  Distribution Executable Path:
-echo  %~dp0frontend\src-tauri\target\release\bundle\
+echo  %~dp0dist\FH6_Painter_Studio.exe
 echo.
 if not "%GITHUB_ACTIONS%" == "true" pause
 exit /b 0

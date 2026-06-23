@@ -88,6 +88,7 @@ class PainterServer:
         self.is_generating = False
         self.cancel_flag = False
         self.current_go_evaluator = None
+        self.preview_enabled = True
 
     async def register(self, websocket):
         self.clients.add(websocket)
@@ -448,6 +449,33 @@ class PainterServer:
         elif action == "inject_geometry":
             config = data.get("config", {})
             asyncio.create_task(self.inject_geometry(config))
+        elif action == "generate_text_vinyl":
+            text_val = data.get("text", "")
+            font_size = data.get("font_size", 72)
+            out_path = os.path.join(ROOT_DIR, "output", "text_vinyl.json")
+            os.makedirs(os.path.dirname(out_path), exist_ok=True)
+            try:
+                from tools.text_generator import save_text_json
+
+                save_text_json(text_val, "arial.ttf", font_size, out_path)
+                await websocket.send(
+                    json.dumps(
+                        {
+                            "action": "text_vinyl_success",
+                            "path": os.path.abspath(out_path),
+                        }
+                    )
+                )
+            except Exception as e:
+                await websocket.send(
+                    json.dumps(
+                        {"action": "log", "text": f"Text Vinyl Error: {str(e)}\n"}
+                    )
+                )
+        elif action == "start_benchmark":
+            asyncio.create_task(self.run_benchmark())
+        elif action == "set_preview":
+            self.preview_enabled = data.get("enabled", True)
 
     async def broadcast(self, message):
         if self.clients:
@@ -511,6 +539,42 @@ class PainterServer:
                 )
             )
 
+    async def run_benchmark(self):
+        script_path = os.path.join(ROOT_DIR, "tools", "benchmark_taichi.py")
+        try:
+            process = await asyncio.create_subprocess_exec(
+                sys.executable,
+                script_path,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+            )
+            while True:
+                line = await process.stdout.readline()
+                if not line:
+                    break
+                decoded_line = line.decode("utf-8", errors="replace").rstrip()
+                await self.broadcast(
+                    json.dumps({"action": "benchmark_log", "text": decoded_line + "\n"})
+                )
+
+            await process.wait()
+            status = "PASSED" if process.returncode == 0 else "FAILED"
+            await self.broadcast(
+                json.dumps({"action": "benchmark_done", "status": status})
+            )
+        except Exception as e:
+            await self.broadcast(
+                json.dumps(
+                    {
+                        "action": "benchmark_log",
+                        "text": f"Error starting benchmark: {str(e)}\n",
+                    }
+                )
+            )
+            await self.broadcast(
+                json.dumps({"action": "benchmark_done", "status": "FAILED"})
+            )
+
     def _sync_broadcast(self, loop, message):
         """Helper to call async broadcast from synchronous thread"""
         asyncio.run_coroutine_threadsafe(self.broadcast(message), loop)
@@ -543,6 +607,11 @@ class PainterServer:
                             candidates = glob.glob(
                                 os.path.join(json_dir, f"{json_base}*{img_ext}")
                             )
+                            # Filter out masked images to prevent lingering bounds
+                            candidates = [
+                                c for c in candidates 
+                                if not c.endswith(f"_masked{img_ext}")
+                            ]
                             if candidates:
                                 found_img = candidates[0]
                                 break
@@ -772,6 +841,8 @@ class PainterServer:
                     def go_preview(arr):
                         if self.cancel_flag:
                             return
+                        if not getattr(self, "preview_enabled", True):
+                            return
                         try:
                             img = Image.fromarray(arr.astype("uint8"), "RGB")
                             buffer = io.BytesIO()
@@ -893,12 +964,53 @@ def check_parent_alive():
     print("Parent process disconnected. Exiting sidecar.")
     os._exit(0)
 
+def check_frontend_alive(proc):
+    proc.wait()
+    print("Frontend process exited. Exiting backend.")
+    os._exit(0)
+
+
+class BroadcastLogger:
+    def __init__(self, original_stream, server_instance, loop):
+        self.original_stream = original_stream
+        self.server = server_instance
+        self.loop = loop
+
+    def write(self, message):
+        self.original_stream.write(message)
+        self.original_stream.flush()
+        if message.strip():
+            try:
+                msg = json.dumps({"action": "log", "text": message})
+                self.server._sync_broadcast(self.loop, msg)
+            except Exception:
+                pass
+
+    def flush(self):
+        self.original_stream.flush()
+
 
 async def main():
-    threading.Thread(target=check_parent_alive, daemon=True).start()
+    if getattr(sys, 'frozen', False):
+        frontend_path = os.path.join(sys._MEIPASS, "frontend.exe")
+        if os.path.exists(frontend_path):
+            import subprocess
+            proc = subprocess.Popen([frontend_path, "--no-sidecar"])
+            threading.Thread(target=check_frontend_alive, args=(proc,), daemon=True).start()
+        else:
+            print("Frontend executable not found in bundle!")
+    else:
+        threading.Thread(target=check_parent_alive, daemon=True).start()
+
     server = PainterServer()
+    loop = asyncio.get_running_loop()
+
+    # Redirect stdout and stderr to broadcast to frontend
+    sys.stdout = BroadcastLogger(sys.stdout, server, loop)
+    sys.stderr = BroadcastLogger(sys.stderr, server, loop)
+
     async with websockets.serve(server.register, "localhost", 8765):
-        print("FH6 Painter Backend API Server running on ws://localhost:8765")
+        print("FH6 Painter Backend API Server running on ws://localhost:8765\n")
         await asyncio.Future()  # run forever
 
 
