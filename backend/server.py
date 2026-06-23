@@ -879,12 +879,20 @@ class PainterServer:
         )
 
 
+def check_parent_alive():
+    try:
+        sys.stdin.read()
+    except Exception:
+        pass
+    print("Parent process disconnected. Exiting sidecar.")
+    os._exit(0)
+
 async def main():
+    threading.Thread(target=check_parent_alive, daemon=True).start()
     server = PainterServer()
     async with websockets.serve(server.register, "localhost", 8765):
         print("FH6 Painter Backend API Server running on ws://localhost:8765")
         await asyncio.Future()  # run forever
-
 
 if __name__ == "__main__":
     asyncio.run(main())
