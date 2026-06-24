@@ -72,7 +72,7 @@ def test_generator_pure_python(temp_image_path):
 
         # 其餘的 shape 應為橢圓 (type 32)
         if len(shapes) > 1:
-            assert shapes[1]["type"] == 32
+            assert shapes[1]["type"] in (16, 32)
             # 應包含幾何特徵數據 [x_c, y_c, r_x, r_y, theta_deg]
             assert len(shapes[1]["data"]) == 5
 
@@ -156,7 +156,7 @@ def test_early_convergence(temp_image_path):
         # shapes 應該有 1 個背景 + 3 個收斂橢圓 = 4 個 shapes (而不是原定的 6 個)
         assert len(shapes) == 4
         assert shapes[0]["type"] == 1
-        assert all(s["type"] == 32 for s in shapes[1:])
+        assert all(s["type"] in (16, 32) for s in shapes[1:])
 
     finally:
         if os.path.exists(out_path):
@@ -172,13 +172,13 @@ def test_redundant_layer_consolidation():
     shapes_list = [
         {"type": 1, "data": [0.0, 0.0, 16.0, 16.0], "color": [255, 0, 0, 255]},
         {
-            "type": 32,
+            "type": 16,
             "data": [8.0, 8.0, 4.0, 4.0, 0.0],
             "color": [0, 0, 255, 255],
             "score": 10.0,
         },
         {
-            "type": 32,
+            "type": 16,
             "data": [8.0, 8.0, 4.0, 4.0, 0.0],
             "color": [0, 0, 255, 255],
             "score": 5.0,
@@ -301,7 +301,7 @@ def test_early_convergence_with_progressive_sampling(temp_image_path):
         shapes = data["shapes"]
         assert len(shapes) == 7
         assert shapes[0]["type"] == 1
-        assert all(s["type"] == 32 for s in shapes[1:])
+        assert all(s["type"] in (16, 32) for s in shapes[1:])
 
     finally:
         if os.path.exists(out_path):

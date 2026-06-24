@@ -197,6 +197,100 @@ def evaluate_candidate_ti(
                             sum_ct_b += c_b * t_b
                             x += 1
                     y += 1
+            elif use_weight == 1 and use_uncovered == 0:
+                y = min_y
+                while y <= max_y:
+                    dy = ti.cast(y, ti.f32) - y_c
+                    b_val = dy * b_coeff
+                    discriminant = a - dy * dy * inv_rx2_ry2
+                    if discriminant >= 0.0:
+                        sqrt_d = ti.math.sqrt(discriminant)
+                        dx_min = (-b_val - sqrt_d) * inv_a
+                        dx_max = (-b_val + sqrt_d) * inv_a
+                        x_start = ti.max(
+                            min_x, ti.cast(ti.math.ceil(x_c + dx_min), ti.i32)
+                        )
+                        x_end = ti.min(
+                            max_x, ti.cast(ti.math.floor(x_c + dx_max), ti.i32)
+                        )
+
+                        x = x_start
+                        while x <= x_end:
+                            t_r = target_r[y, x]
+                            t_g = target_g[y, x]
+                            t_b = target_b[y, x]
+
+                            c_r = canvas_r[y, x]
+                            c_g = canvas_g[y, x]
+                            c_b = canvas_b[y, x]
+
+                            w = weight_map[y, x]
+
+                            count += w
+                            sum_t_r += t_r * w
+                            sum_t_g += t_g * w
+                            sum_t_b += t_b * w
+
+                            sum_c_r += c_r * w
+                            sum_c_g += c_g * w
+                            sum_c_b += c_b * w
+
+                            sum_c2_r += (c_r * c_r) * w
+                            sum_c2_g += (c_g * c_g) * w
+                            sum_c2_b += (c_b * c_b) * w
+
+                            sum_ct_r += (c_r * t_r) * w
+                            sum_ct_g += (c_g * t_g) * w
+                            sum_ct_b += (c_b * t_b) * w
+                            x += 1
+                    y += 1
+            elif use_weight == 0 and use_uncovered == 1:
+                y = min_y
+                while y <= max_y:
+                    dy = ti.cast(y, ti.f32) - y_c
+                    b_val = dy * b_coeff
+                    discriminant = a - dy * dy * inv_rx2_ry2
+                    if discriminant >= 0.0:
+                        sqrt_d = ti.math.sqrt(discriminant)
+                        dx_min = (-b_val - sqrt_d) * inv_a
+                        dx_max = (-b_val + sqrt_d) * inv_a
+                        x_start = ti.max(
+                            min_x, ti.cast(ti.math.ceil(x_c + dx_min), ti.i32)
+                        )
+                        x_end = ti.min(
+                            max_x, ti.cast(ti.math.floor(x_c + dx_max), ti.i32)
+                        )
+
+                        x = x_start
+                        while x <= x_end:
+                            t_r = target_r[y, x]
+                            t_g = target_g[y, x]
+                            t_b = target_b[y, x]
+
+                            c_r = canvas_r[y, x]
+                            c_g = canvas_g[y, x]
+                            c_b = canvas_b[y, x]
+
+                            w = uncovered_map[y, x]
+
+                            count += w
+                            sum_t_r += t_r * w
+                            sum_t_g += t_g * w
+                            sum_t_b += t_b * w
+
+                            sum_c_r += c_r * w
+                            sum_c_g += c_g * w
+                            sum_c_b += c_b * w
+
+                            sum_c2_r += (c_r * c_r) * w
+                            sum_c2_g += (c_g * c_g) * w
+                            sum_c2_b += (c_b * c_b) * w
+
+                            sum_ct_r += (c_r * t_r) * w
+                            sum_ct_g += (c_g * t_g) * w
+                            sum_ct_b += (c_b * t_b) * w
+                            x += 1
+                    y += 1
             else:
                 y = min_y
                 while y <= max_y:
@@ -224,11 +318,7 @@ def evaluate_candidate_ti(
                             c_g = canvas_g[y, x]
                             c_b = canvas_b[y, x]
 
-                            w = 1.0
-                            if use_weight == 1:
-                                w = weight_map[y, x]
-                            if use_uncovered == 1:
-                                w = w * uncovered_map[y, x]
+                            w = weight_map[y, x] * uncovered_map[y, x]
 
                             count += w
                             sum_t_r += t_r * w

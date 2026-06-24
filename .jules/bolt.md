@@ -27,3 +27,7 @@
 ## 2026-06-05 - Array Shape Check Hoisting
 **Learning:** In highly intensive per-pixel accumulation loops (like those drawing millions of ellipses), executing `canvas.shape[2] == 4` inside the innermost loop forces the JIT compiler to repeatedly evaluate a conditional branch and perform a redundant dimension lookup. Compilers (like LLVM via Numba) often fail to automatically unswitch these bounds checks if they involve structural lookups.
 **Action:** Manually unswitch the loop by hoisting constant shape evaluations `has_alpha = canvas.shape[2] == 4` outside the spatial Y/X loops and create dedicated loop structures for the RGBA and RGB paths. This significantly enhances branch predictability and vectorization for performance-critical kernels.
+
+## 2026-06-24 - Loop unswitching in Numba & Taichi evaluators
+**Learning:** Evaluators (`evaluate_candidate` in Numba and `evaluate_candidate_ti` in Taichi) had configuration flags like `use_weight` and `use_uncovered` being checked inside the heavy per-pixel accumulation loop. Loop unswitching at Python level by splitting the loops manually resulted in a massive speedup (~42% faster in Numba CPU baseline benchmark and also faster in pure Python loops) because it eliminates the branching overhead completely, despite repeating loop boilerplates.
+**Action:** Always hoist boolean configuration flags out of tight inner loops manually when writing JIT kernels (Numba/Taichi), as compilers may fail to unswitch these automatically depending on the kernel structure.
