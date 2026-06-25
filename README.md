@@ -45,6 +45,11 @@ Support Go-OpenCL, Taichi, and Numba acceleration across CPU and GPU, provide GU
 │   ├── a. keemstar fast...ini
 │   ├── c. balanced...         # 預設平衡配置檔 / Default balanced configuration
 │   └── g. i hate my pc...ini  
+├── gui/                       # GUI 核心組件目錄 / Refactored GUI components
+│   ├── app.py                 # 應用程式主進入點 / Application main entry
+│   ├── settings.py            # 配置管理 / Settings management
+│   ├── workers.py             # 背景執行緒 / Background workers
+│   └── dialogs.py             # 彈出視窗組件 / Dialog components
 ├── evaluators/                # JIT 評估器核心組件目錄 / JIT Evaluator plugins
 │   ├── __init__.py            # 評估器載入工廠 / Evaluator Factory (含 3.14 防護機制)
 │   ├── base_evaluator.py      # 基礎評估器類別 / Base Evaluator Class
@@ -56,9 +61,14 @@ Support Go-OpenCL, Taichi, and Numba acceleration across CPU and GPU, provide GU
 │   ├── bin/                   # 外部二進位工具目錄 / External Binaries
 │   ├── fh6_import_layer_table.py # 記憶體掃描與寫入核心 / Win32 RAM scanner & injector
 │   ├── fh6_painter_generator.py # JIT 幾何生成器 / JIT shape generator tool
+│   ├── text_generator.py        # 文字車貼生成器 / Text-to-livery generator
 │   ├── benchmark_taichi.py      # 效能對決分析腳本 / Cross-res JIT Profiler
 │   ├── fh6-heuristics.json      # 記憶體掃描快取 / Memory scan heuristics
 │   └── verify_boundary.py       # 邊界驗證工具 / Boundary validation tool
+├── tests/                     # 測試與驗證 / Unit tests and Pytest framework
+│   ├── test_evaluators.py     # 評估器單元測試 / Evaluator unit tests
+│   ├── test_importer.py       # 記憶體匯入測試 / Importer unit tests
+│   └── test_gui.py            # GUI 單元測試 / GUI unit tests
 ```
 
 ---
