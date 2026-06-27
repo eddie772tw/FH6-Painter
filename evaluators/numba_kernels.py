@@ -189,21 +189,26 @@ def evaluate_candidate(
                         w = w * uncovered_map[y, x]
 
                     count += w
+
+                    w_cr = c_r * w
+                    w_cg = c_g * w
+                    w_cb = c_b * w
+
                     sum_t_r += t_r * w
                     sum_t_g += t_g * w
                     sum_t_b += t_b * w
 
-                    sum_c_r += c_r * w
-                    sum_c_g += c_g * w
-                    sum_c_b += c_b * w
+                    sum_c_r += w_cr
+                    sum_c_g += w_cg
+                    sum_c_b += w_cb
 
-                    sum_c2_r += (c_r * c_r) * w
-                    sum_c2_g += (c_g * c_g) * w
-                    sum_c2_b += (c_b * c_b) * w
+                    sum_c2_r += c_r * w_cr
+                    sum_c2_g += c_g * w_cg
+                    sum_c2_b += c_b * w_cb
 
-                    sum_ct_r += (c_r * t_r) * w
-                    sum_ct_g += (c_g * t_g) * w
-                    sum_ct_b += (c_b * t_b) * w
+                    sum_ct_r += t_r * w_cr
+                    sum_ct_g += t_g * w_cg
+                    sum_ct_b += t_b * w_cb
 
     # Overhang Tolerance Check: reject if shape has >1% transparent overhang or no opaque pixels
     if count == 0.0 or (check_contour and (count_transparent * 100.0 > count)):
