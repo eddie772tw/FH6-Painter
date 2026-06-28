@@ -27,3 +27,6 @@
 ## 2026-06-05 - Array Shape Check Hoisting
 **Learning:** In highly intensive per-pixel accumulation loops (like those drawing millions of ellipses), executing `canvas.shape[2] == 4` inside the innermost loop forces the JIT compiler to repeatedly evaluate a conditional branch and perform a redundant dimension lookup. Compilers (like LLVM via Numba) often fail to automatically unswitch these bounds checks if they involve structural lookups.
 **Action:** Manually unswitch the loop by hoisting constant shape evaluations `has_alpha = canvas.shape[2] == 4` outside the spatial Y/X loops and create dedicated loop structures for the RGBA and RGB paths. This significantly enhances branch predictability and vectorization for performance-critical kernels.
+## 2026-06-28 - Algebraic factoring and hoisting in JIT kernels
+**Learning:** In tight JIT inner loops, factorizing common multipliers (like weight w) out of accumulation paths and hoisting constant array calculations (like r*a_f) outside the loop significantly reduces operations per pixel and speeds up Numba and Taichi execution times.
+**Action:** Always manually expand and factor algebraic terms when writing pixel-processing inner loops, since JIT compilers might not automatically do this cross-variable association.

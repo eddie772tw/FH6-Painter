@@ -188,22 +188,31 @@ def evaluate_candidate(
                     if use_uncovered:
                         w = w * uncovered_map[y, x]
 
+                    t_r_w = t_r * w
+                    t_g_w = t_g * w
+                    t_b_w = t_b * w
+
+                    c_r_w = c_r * w
+                    # Optimized: extracted common w multiplier
+                    c_g_w = c_g * w
+                    c_b_w = c_b * w
+
                     count += w
-                    sum_t_r += t_r * w
-                    sum_t_g += t_g * w
-                    sum_t_b += t_b * w
+                    sum_t_r += t_r_w
+                    sum_t_g += t_g_w
+                    sum_t_b += t_b_w
 
-                    sum_c_r += c_r * w
-                    sum_c_g += c_g * w
-                    sum_c_b += c_b * w
+                    sum_c_r += c_r_w
+                    sum_c_g += c_g_w
+                    sum_c_b += c_b_w
 
-                    sum_c2_r += (c_r * c_r) * w
-                    sum_c2_g += (c_g * c_g) * w
-                    sum_c2_b += (c_b * c_b) * w
+                    sum_c2_r += c_r * c_r_w
+                    sum_c2_g += c_g * c_g_w
+                    sum_c2_b += c_b * c_b_w
 
-                    sum_ct_r += (c_r * t_r) * w
-                    sum_ct_g += (c_g * t_g) * w
-                    sum_ct_b += (c_b * t_b) * w
+                    sum_ct_r += c_r * t_r_w
+                    sum_ct_g += c_g * t_g_w
+                    sum_ct_b += c_b * t_b_w
 
     # Overhang Tolerance Check: reject if shape has >1% transparent overhang or no opaque pixels
     if count == 0.0 or (check_contour and (count_transparent * 100.0 > count)):
@@ -324,6 +333,12 @@ def draw_ellipse(canvas, x_c, y_c, r_x, r_y, theta, r, g, b, alpha):
 
     has_alpha = canvas.shape[2] == 4
 
+    r_val_af = r_val * a_f
+    g_val_af = g_val * a_f
+    b_val_af = b_val * a_f
+    alpha_val = np.float32(alpha)
+    # Optimized: hoisted r, g, b multiplications
+
     if has_alpha:
         for y in range(min_y, max_y + 1):
             dy = np.float32(y - y_c)
@@ -337,10 +352,10 @@ def draw_ellipse(canvas, x_c, y_c, r_x, r_y, theta, r, g, b, alpha):
                 x_end = min(max_x, int(math.floor(x_c + dx_max)))
 
                 for x in range(x_start, x_end + 1):
-                    canvas[y, x, 0] = canvas[y, x, 0] * one_minus_a + r_val * a_f
-                    canvas[y, x, 1] = canvas[y, x, 1] * one_minus_a + g_val * a_f
-                    canvas[y, x, 2] = canvas[y, x, 2] * one_minus_a + b_val * a_f
-                    canvas[y, x, 3] = canvas[y, x, 3] * one_minus_a + np.float32(alpha)
+                    canvas[y, x, 0] = canvas[y, x, 0] * one_minus_a + r_val_af
+                    canvas[y, x, 1] = canvas[y, x, 1] * one_minus_a + g_val_af
+                    canvas[y, x, 2] = canvas[y, x, 2] * one_minus_a + b_val_af
+                    canvas[y, x, 3] = canvas[y, x, 3] * one_minus_a + alpha_val
     else:
         for y in range(min_y, max_y + 1):
             dy = np.float32(y - y_c)
@@ -354,9 +369,9 @@ def draw_ellipse(canvas, x_c, y_c, r_x, r_y, theta, r, g, b, alpha):
                 x_end = min(max_x, int(math.floor(x_c + dx_max)))
 
                 for x in range(x_start, x_end + 1):
-                    canvas[y, x, 0] = canvas[y, x, 0] * one_minus_a + r_val * a_f
-                    canvas[y, x, 1] = canvas[y, x, 1] * one_minus_a + g_val * a_f
-                    canvas[y, x, 2] = canvas[y, x, 2] * one_minus_a + b_val * a_f
+                    canvas[y, x, 0] = canvas[y, x, 0] * one_minus_a + r_val_af
+                    canvas[y, x, 1] = canvas[y, x, 1] * one_minus_a + g_val_af
+                    canvas[y, x, 2] = canvas[y, x, 2] * one_minus_a + b_val_af
 
 
 @numba.jit(nopython=True, fastmath=True, cache=True)

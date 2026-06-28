@@ -230,22 +230,31 @@ def evaluate_candidate_ti(
                             if use_uncovered == 1:
                                 w = w * uncovered_map[y, x]
 
+                            t_r_w = t_r * w
+                            t_g_w = t_g * w
+                            t_b_w = t_b * w
+
+                            c_r_w = c_r * w
+                            # Optimized: extracted common w multiplier
+                            c_g_w = c_g * w
+                            c_b_w = c_b * w
+
                             count += w
-                            sum_t_r += t_r * w
-                            sum_t_g += t_g * w
-                            sum_t_b += t_b * w
+                            sum_t_r += t_r_w
+                            sum_t_g += t_g_w
+                            sum_t_b += t_b_w
 
-                            sum_c_r += c_r * w
-                            sum_c_g += c_g * w
-                            sum_c_b += c_b * w
+                            sum_c_r += c_r_w
+                            sum_c_g += c_g_w
+                            sum_c_b += c_b_w
 
-                            sum_c2_r += (c_r * c_r) * w
-                            sum_c2_g += (c_g * c_g) * w
-                            sum_c2_b += (c_b * c_b) * w
+                            sum_c2_r += c_r * c_r_w
+                            sum_c2_g += c_g * c_g_w
+                            sum_c2_b += c_b * c_b_w
 
-                            sum_ct_r += (c_r * t_r) * w
-                            sum_ct_g += (c_g * t_g) * w
-                            sum_ct_b += (c_b * t_b) * w
+                            sum_ct_r += c_r * t_r_w
+                            sum_ct_g += c_g * t_g_w
+                            sum_ct_b += c_b * t_b_w
                             x += 1
                     y += 1
 
@@ -597,6 +606,11 @@ def draw_ellipse_gpu(
 
     inv_a = 1.0 / a if a > 0.0 else 0.0
 
+    r_af = r * a_f
+    g_af = g * a_f
+    b_af = b * a_f
+    # Optimized: hoisted r, g, b multiplications
+
     for y in range(min_y, max_y + 1):
         dy = ti.cast(y, ti.f32) - y_c
         b_val = dy * b_coeff
@@ -609,9 +623,9 @@ def draw_ellipse_gpu(
             x_end = ti.min(max_x, ti.cast(ti.math.floor(x_c + dx_max), ti.i32))
 
             for x in range(x_start, x_end + 1):
-                canvas[y, x, 0] = canvas[y, x, 0] * one_minus_a + r * a_f
-                canvas[y, x, 1] = canvas[y, x, 1] * one_minus_a + g * a_f
-                canvas[y, x, 2] = canvas[y, x, 2] * one_minus_a + b * a_f
+                canvas[y, x, 0] = canvas[y, x, 0] * one_minus_a + r_af
+                canvas[y, x, 1] = canvas[y, x, 1] * one_minus_a + g_af
+                canvas[y, x, 2] = canvas[y, x, 2] * one_minus_a + b_af
 
 
 @ti.kernel
