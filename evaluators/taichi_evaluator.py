@@ -822,6 +822,9 @@ def select_final_best_gpu(
 
 
 class TaichiEvaluator(BaseEvaluator):
+    _is_taichi_initialized = False
+    _taichi_arch_name = "N/A"
+
     def __init__(
         self,
         target_image: np.ndarray,
@@ -834,60 +837,66 @@ class TaichiEvaluator(BaseEvaluator):
         self.arch_name = "N/A"
 
         if HAS_TAICHI:
-            # 阻斷隱式 Vulkan Layers（如 Game Capture, OBS, Discord overlay 等）注入，防止產生大量垃圾調試輸出並提升啟動穩定度
-            import os
-
-            os.environ["VK_LOADER_LAYERS_DISABLE"] = "~implicit~"
-            os.environ["DISABLE_OBS_CAPTURE"] = "1"
-
-            arch_map = {
-                "Vulkan": ti.vulkan,
-                "CUDA": ti.cuda,
-                "OpenGL": ti.opengl,
-                "CPU": ti.cpu,
-            }
-
-            if taichi_device_id is not None:
+            if TaichiEvaluator._is_taichi_initialized:
+                self.initialized = True
+                self.arch_name = TaichiEvaluator._taichi_arch_name
+            else:
+                # 阻斷隱式 Vulkan Layers（如 Game Capture, OBS, Discord overlay 等）注入，防止產生大量垃圾調試輸出並提升啟動穩定度
                 import os
 
-                os.environ["CUDA_VISIBLE_DEVICES"] = str(taichi_device_id)
-                os.environ["VULKAN_DEVICE_INDEX"] = str(taichi_device_id)
-                os.environ["VULKAN_PHYSICAL_DEVICE_INDEX"] = str(taichi_device_id)
+                os.environ["VK_LOADER_LAYERS_DISABLE"] = "~implicit~"
+                os.environ["DISABLE_OBS_CAPTURE"] = "1"
 
-            backends = []
-            if taichi_arch and taichi_arch in arch_map:
-                backends.append(
-                    (
-                        arch_map[taichi_arch],
-                        f"GPU - {taichi_arch}" if taichi_arch != "CPU" else "CPU",
-                    )
-                )
-            else:
-                backends = [
-                    (ti.vulkan, "GPU - Vulkan"),
-                    (ti.cuda, "GPU - CUDA"),
-                    (ti.opengl, "GPU - OpenGL"),
-                    (ti.cpu, "CPU"),
-                ]
+                arch_map = {
+                    "Vulkan": ti.vulkan,
+                    "CUDA": ti.cuda,
+                    "OpenGL": ti.opengl,
+                    "CPU": ti.cpu,
+                }
 
-            for arch, name in backends:
-                try:
-                    ti.init(arch=arch, log_level=ti.WARN)
-                    # Verify backend with a test allocation
-                    test = ti.field(dtype=ti.f32, shape=1)
-                    test[0] = 1.0
+                if taichi_device_id is not None:
+                    import os
 
-                    self.initialized = True
-                    self.arch_name = name
-                    print(
-                        f"[Taichi JIT Backend] Successfully initialized backend: {name} (Device ID: {taichi_device_id})"
+                    os.environ["CUDA_VISIBLE_DEVICES"] = str(taichi_device_id)
+                    os.environ["VULKAN_DEVICE_INDEX"] = str(taichi_device_id)
+                    os.environ["VULKAN_PHYSICAL_DEVICE_INDEX"] = str(taichi_device_id)
+
+                backends = []
+                if taichi_arch and taichi_arch in arch_map:
+                    backends.append(
+                        (
+                            arch_map[taichi_arch],
+                            f"GPU - {taichi_arch}" if taichi_arch != "CPU" else "CPU",
+                        )
                     )
-                    break
-                except Exception as e:
-                    print(
-                        f"[Taichi Backend Warning] Attempt to initialize {arch} failed: {e}"
-                    )
-                    continue
+                else:
+                    backends = [
+                        (ti.vulkan, "GPU - Vulkan"),
+                        (ti.cuda, "GPU - CUDA"),
+                        (ti.opengl, "GPU - OpenGL"),
+                        (ti.cpu, "CPU"),
+                    ]
+
+                for arch, name in backends:
+                    try:
+                        ti.init(arch=arch, log_level=ti.WARN)
+                        # Verify backend with a test allocation
+                        test = ti.field(dtype=ti.f32, shape=1)
+                        test[0] = 1.0
+
+                        self.initialized = True
+                        self.arch_name = name
+                        TaichiEvaluator._is_taichi_initialized = True
+                        TaichiEvaluator._taichi_arch_name = name
+                        print(
+                            f"[Taichi JIT Backend] Successfully initialized backend: {name} (Device ID: {taichi_device_id})"
+                        )
+                        break
+                    except Exception as e:
+                        print(
+                            f"[Taichi Backend Warning] Attempt to initialize {arch} failed: {e}"
+                        )
+                        continue
 
             if self.initialized:
                 try:

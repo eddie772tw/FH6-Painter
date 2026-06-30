@@ -61,6 +61,12 @@ dist/
 # Keep key configuration JSONs tracked
 !optimization_settings.json
 !tools/fh6-heuristics.json
+!package.json
+!package-lock.json
+!frontend/package.json
+!frontend/package-lock.json
+!tauri.conf.json
+!frontend/src-tauri/tauri.conf.json
 tools/benchmark_taichi.py
 optimization_settings.json
 /tools/benchmark_history.json
@@ -68,3 +74,7 @@ optimization_settings.json
 
 optimization_settings.json
 .coverage
+test_out_utf8.txt
+*.log
+frontend/src-tauri/bin/*.exe
+frontend/src-tauri/bin/*.pdb

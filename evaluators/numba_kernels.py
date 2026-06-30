@@ -205,8 +205,8 @@ def evaluate_candidate(
                     sum_ct_g += (c_g * t_g) * w
                     sum_ct_b += (c_b * t_b) * w
 
-    # Overhang Tolerance Check: reject if shape has >1% transparent overhang or no opaque pixels
-    if count == 0.0 or (check_contour and (count_transparent * 100.0 > count)):
+    # Overhang Tolerance Check: reject if shape has ANY transparent overhang or no opaque pixels
+    if count == 0.0 or (check_contour and (count_transparent > 0.0)):
         return np.float32(0.0), np.float32(0.0), np.float32(0.0), np.float32(99999999.0)
 
     inv_count = np.float32(1.0) / count

@@ -1,5 +1,4 @@
 @echo off
-chcp 65001 >nul
 setlocal enabledelayedexpansion
 
 :: Check Python 3.13 standard location
@@ -51,17 +50,16 @@ exit /b 1
 :run
 cd /D "%~dp0"
 
-:: 校驗 Python 版本
+:: Validate Python Version
 "!PY_EXE!" -c "import sys; sys.exit(0 if sys.version_info.major == 3 and sys.version_info.minor in (13, 14) else 1)" >nul 2>nul
 if %errorlevel% neq 0 (
-    echo [ERROR] 本專案要求 Python 3.13 或 Python 3.14 
-    echo [ERROR] 當前系統中的 Python 版本不相容 
-    echo 請安裝相容的 Python 3.13/3.14 版本後再重新運行本腳本
+    echo [ERROR] Project requires Python 3.13 or 3.14
+    echo [ERROR] Current Python version is incompatible.
     pause
     exit /b 1
 )
 
-:: 檢查是否存在 .venv 或 venv 虛擬環境目錄
+:: Check if virtual environment exists
 set "VENV_DIR=%~dp0.venv"
 if not exist "%VENV_DIR%" (
     if exist "%~dp0venv" (
@@ -69,53 +67,65 @@ if not exist "%VENV_DIR%" (
     )
 )
 
-:: 如果虛擬環境中的 python 存在，則跳過建立步驟
 if exist "%VENV_DIR%\Scripts\python.exe" goto :venv_exists
 
-echo [INFO] 找不到虛擬環境，正在目錄中建立虛擬環境 (.venv)...
+echo [INFO] Virtual environment not found, creating .venv ...
 set "VENV_DIR=%~dp0.venv"
 "!PY_EXE!" -m venv "%~dp0.venv"
 if errorlevel 1 (
-    echo [ERROR] 建立虛擬環境失敗。
+    echo [ERROR] Failed to create virtual environment.
     pause
     exit /b 1
 )
 
 :venv_exists
-:: 將 PY_EXE 切換為虛擬環境中的 Python 執行檔
+:: Set PY_EXE to the virtual environment's python.exe
 set "PY_EXE=%VENV_DIR%\Scripts\python.exe"
 
-:: 檢查是否缺少基礎依賴庫 (嘗試載入 pillow/PIL、numpy、numba 和 taichi)
-"!PY_EXE!" -c "import PIL, numpy, numba, taichi" >nul 2>nul
+:: Check for basic dependencies
+"!PY_EXE!" -c "import PIL, numpy, numba, taichi, websockets" >nul 2>nul
 if %errorlevel% equ 0 goto :dependencies_ok
 
-echo [INFO] 偵測到缺少依賴套件或首次啟動。正在安裝依賴套件...
+echo [INFO] Installing dependencies into the virtual environment...
 "!PY_EXE!" -m pip install --upgrade pip
 "!PY_EXE!" -m pip install -r "%~dp0requirements.txt"
+"!PY_EXE!" -m pip install -r "%~dp0backend\requirements.txt"
 if errorlevel 1 (
-    echo [ERROR] 安裝依賴套件失敗。
+    echo [ERROR] Failed to install dependencies.
     pause
     exit /b 1
 )
 
 :dependencies_ok
 
-:: 執行 Ruff 程式碼自動排版與靜態檢查
+:: Run Ruff if available
 if exist "%VENV_DIR%\Scripts\ruff.exe" (
-    echo [INFO] 正在運行 Ruff 進行程式碼品質校驗與自動排版...
+    echo [INFO] Running Ruff...
     "%VENV_DIR%\Scripts\ruff.exe" check . --fix
     "%VENV_DIR%\Scripts\ruff.exe" format .
 )
 
-:: 啟動應用程式
-if "%~1" == "" (
-    "!PY_EXE!" fh6_painter_studio_gui.py
-) else (
-    if "%~2" == "" (
-        "!PY_EXE!" fh6_painter_studio_gui.py "%~1"
-    ) else (
-        "!PY_EXE!" fh6_painter_launcher.py %*
-    )
+:: Start Tauri Sidecar Architecture
+echo [INFO] Terminating old backend instances to prevent port conflicts...
+taskkill /F /FI "WINDOWTITLE eq FH6 Painter Backend*" /T >nul 2>nul
+for /f "tokens=5" %%a in ('netstat -aon ^| find ":8765" ^| find "LISTENING"') do (
+    taskkill /F /PID %%a >nul 2>nul
 )
 
+echo [INFO] Starting Python WebSocket Backend...
+start "FH6 Painter Backend" "!PY_EXE!" backend\server.py
 
+echo [INFO] Checking and installing frontend dependencies...
+cd /D "%~dp0frontend"
+call npm install
+
+where cargo >nul 2>nul
+if %errorlevel% equ 0 (
+    echo [INFO] Rust environment detected. Starting native Tauri app...
+    set "FH6_NO_SIDECAR=1"
+    call npm run tauri dev
+) else (
+    echo [INFO] Rust not detected. Falling back to Vite Web Server...
+    start http://localhost:1420
+    call npm run dev
+)

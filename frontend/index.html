@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FH6 Painter Studio</title>
+    
+    <!-- Google Fonts: Outfit for display, Inter for UI -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Outfit:wght@400;600;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    
+    <link rel="stylesheet" href="/src/styles.css" />
+    <script type="module" src="/src/main.js" defer></script>
+  </head>
+
+  <body>
+    <!-- Tauri Native Custom Titlebar Area (Drag Region) -->
+    <header data-tauri-drag-region class="titlebar">
+      <div class="logo-area" data-tauri-drag-region>
+        <h1>FH6 Painter</h1>
+        <span class="badge">STUDIO</span>
+      </div>
+      <div class="header-actions" data-tauri-drag-region>
+        <button id="btn-toggle-preview" class="btn-header text-green">關閉預覽 / Disable Preview</button>
+        <button id="btn-output" class="btn-header text-blue">開啟輸出 / Open Output</button>
+        <button id="btn-market" class="btn-header text-orange">前往市場 / Open Market</button>
+        <button id="btn-benchmark" class="btn-header text-blue">效能測試 / Benchmark</button>
+        <button id="btn-show-logs" class="btn-header text-blue">診斷主控台 / Show Logs</button>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <!-- Left Panel: Controls -->
+      <aside class="panel left-panel">
+        
+        <!-- Input Source Card -->
+        <section class="glass-card">
+          <div class="card-header">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="icon"><path d="M4 14v1a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-1M16 6l-4-4-4 4M12 2v13"/></svg>
+            <h2>Input Source</h2>
+          </div>
+          <div class="button-row" style="margin-top: 10px; display: flex; gap: 10px;">
+            <button id="btn-browse-native" class="btn secondary select-btn" style="flex: 1; padding: 12px; font-weight: bold;">BROWSE FILE</button>
+            <button id="btn-text-vinyl" class="btn secondary select-btn" style="flex: 1; padding: 12px; font-weight: bold;">TEXT VINYL</button>
+          </div>
+          <p id="file-path-display" class="file-path" style="margin-top: 10px;"></p>
+        </section>
+
+        <!-- Generation Settings -->
+        <section class="glass-card">
+          <div class="card-header">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="icon"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            <h2>Engine Settings</h2>
+          </div>
+          
+          <div class="input-group">
+            <label>Speed/Quality Profile</label>
+            <select id="profile-select" class="cyber-select">
+              <option value="">Loading profiles...</option>
+            </select>
+            <span id="profile-desc" class="desc-text">Select a speed/quality profile.</span>
+          </div>
+
+          <div class="input-group">
+            <label>Max Layers / Shapes</label>
+            <input type="number" id="layers-input" class="cyber-input" value="1000" min="500" max="3000">
+            <span class="desc-text-info">FH6 Limits: Bumper ~1000 | Left/Right/Top ~3000</span>
+          </div>
+
+          <div class="input-group">
+            <label>Engine Core</label>
+            <select id="engine-select" class="cyber-select">
+              <option value="NUMBA">Numba JIT (CPU)</option>
+              <option value="TAICHI">Taichi JIT (GPU)</option>
+              <option value="GO_OPENCL">Go-OpenCL (GPU, Fastest)</option>
+            </select>
+          </div>
+
+          <!-- Taichi GPU settings (hidden by default) -->
+          <div id="taichi-settings-panel" class="hidden-settings hidden">
+            <div class="input-group">
+              <label>Taichi Arch GPU Mode</label>
+              <select id="taichi-arch-select" class="cyber-select">
+                <option value="Vulkan">Vulkan</option>
+                <option value="CUDA">CUDA</option>
+                <option value="OpenGL">OpenGL</option>
+                <option value="CPU">CPU</option>
+              </select>
+            </div>
+            <div class="input-group checkbox-row">
+              <input type="checkbox" id="chk-hybrid" checked>
+              <label for="chk-hybrid">Enable Hybrid Mode (Hybrid)</label>
+            </div>
+            <div class="input-group">
+              <label>Taichi GPU Device</label>
+              <select id="taichi-device-select" class="cyber-select">
+                <option value="0">(0) Default</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Advanced overrides -->
+          <div class="input-group checkbox-row">
+            <input type="checkbox" id="chk-override">
+            <label for="chk-override">Enable Advanced Sample Override</label>
+          </div>
+          <div id="override-settings-panel" class="hidden-settings hidden">
+            <div class="input-group">
+              <label>Candidates (Samples)</label>
+              <input type="number" id="candidates-input" class="cyber-input" value="20000" min="1000" max="200000">
+            </div>
+            <div class="input-group">
+              <label>Hill-climb Steps</label>
+              <input type="number" id="steps-input" class="cyber-input" value="200" min="10" max="2000">
+            </div>
+          </div>
+        </section>
+
+        <!-- Advanced Optimizations -->
+        <section class="glass-card" id="optimizations-card">
+          <div class="card-header">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="icon"><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+            <h2>Advanced Optimizations</h2>
+          </div>
+          <div class="opt-toggles-grid">
+            <div class="opt-toggle" title="【漸進式像素採樣】&#10;在生成前期（形狀較大時）跳過部分像素以大幅提速，隨進度逐漸恢復全像素精細評估。">
+              <input type="checkbox" id="opt-pyramid" checked>
+              <label for="opt-pyramid">Progressive Sampling</label>
+            </div>
+            <div class="opt-toggle" title="【動態凍結遮罩】&#10;自動鎖定已經完美匹配的像素區域，避開重複評估以大幅減少運算負擔。">
+              <input type="checkbox" id="opt-freeze">
+              <label for="opt-freeze">Dynamic Freeze</label>
+            </div>
+            <div class="opt-toggle" title="【錯誤驅動重點採樣】&#10;依據殘餘誤差圖進行重點採樣，將隨機橢圓生成優先配置於高誤差區域。">
+              <input type="checkbox" id="opt-importance">
+              <label for="opt-importance">Importance Sampling</label>
+            </div>
+            <div class="opt-toggle" title="【區域誤差加權】&#10;根據像素的空間特徵（如前景或邊緣）對誤差進行加權，提升邊緣清晰度。">
+              <input type="checkbox" id="opt-weight">
+              <label for="opt-weight">Error Weighting</label>
+            </div>
+            <div class="opt-toggle" title="【解析解最佳色彩】&#10;在評估幾何時利用解析解直接算出最優顏色，使爬山收斂速度倍增，無需隨機模擬退火。">
+              <input type="checkbox" id="opt-annealing" checked>
+              <label for="opt-annealing">Analytical Color</label>
+            </div>
+            <div class="opt-toggle" title="【衰減式形狀限縮】&#10;隨著貼圖數量增加，動態縮小橢圓最大半徑以避免破壞已有的微小細節。">
+              <input type="checkbox" id="opt-decay" checked>
+              <label for="opt-decay">Decaying Shape</label>
+            </div>
+          </div>
+          <div class="input-group checkbox-row" style="margin-top: 12px; border-top: 1px solid var(--glass-border); padding-top: 12px;">
+            <input type="checkbox" id="chk-early-conv" checked>
+            <label for="chk-early-conv">Enable Early Convergence (提早收斂)</label>
+          </div>
+        </section>
+
+        <!-- Region Painting (Canvas ROI) -->
+        <section class="glass-card" id="roi-card">
+          <div class="card-header">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="icon"><path d="M3 3h18v18H3zM9 9h6v6H9z"/></svg>
+            <h2>Region Painting</h2>
+          </div>
+          <div class="input-group checkbox-row">
+            <input type="checkbox" id="roi-enabled">
+            <label for="roi-enabled">Enable Region Selection</label>
+          </div>
+          <div id="roi-controls" class="hidden-settings hidden">
+            <div class="input-group">
+              <label>Selection Shape</label>
+              <div class="radio-row">
+                <input type="radio" id="roi-shape-rect" name="roi-shape" value="rectangle" checked>
+                <label for="roi-shape-rect">Rectangle</label>
+                <input type="radio" id="roi-shape-ellipse" name="roi-shape" value="ellipse">
+                <label for="roi-shape-ellipse">Ellipse</label>
+              </div>
+            </div>
+            <div class="input-group">
+              <label>Minimal Require Layers</label>
+              <input type="number" id="roi-min-layers" class="cyber-input" value="500" title="Ignored if total generated layers is less than this.">
+            </div>
+            <div class="roi-display-box">
+              <span class="display-label">Selected Bounds:</span>
+              <span id="roi-bounds-display" class="display-value">None</span>
+              <span class="display-hint">Drag/resize on canvas. Right click to clear.</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- History Rewind -->
+        <section class="glass-card" id="rewind-card">
+          <div class="card-header">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="icon"><path d="M12 8v4l3 3m6-3a9 9 0 1 1-9-9 9 9 0 0 1 9 9z"/></svg>
+            <h2>History Rewind</h2>
+          </div>
+          <div class="rewind-box">
+            <label>Rewind / Resume Layer</label>
+            <div class="rewind-row">
+              <input type="number" id="rewind-layer-input" class="cyber-input" style="width: 100px;" placeholder="Layer">
+              <button id="btn-rewind" class="btn secondary select-btn">Rewind</button>
+            </div>
+            <span id="rewind-hint" class="desc-text"></span>
+          </div>
+        </section>
+
+      </aside>
+
+      <!-- Right Panel: Preview & Actions -->
+      <section class="panel right-panel">
+        
+        <!-- Live Preview Workbench -->
+        <div class="workbench glass-card">
+          <div class="canvas-container" id="canvas-container">
+            <canvas id="preview-canvas" width="600" height="600"></canvas>
+            
+            <div id="connection-overlay" class="overlay-state">
+              <h3>CONNECTING TO ENGINE...</h3>
+            </div>
+            <div id="preview-disabled-overlay" class="overlay-state hidden">
+              <h3>PREVIEW DISABLED</h3>
+              <p>Click 'Enable Preview' to restore visual fitting</p>
+            </div>
+          </div>
+          
+          <div class="timeline-panel" id="timeline-panel">
+            <div class="timeline-row">
+              <span class="timeline-lbl">TIMELINE</span>
+              <div class="slider-container">
+                <input type="range" id="timeline-slider" class="cyber-slider" value="0" min="0" max="100" disabled>
+                <div id="checkpoints-container" class="checkpoints-container"></div>
+              </div>
+              <span class="timeline-val" id="timeline-val">0%</span>
+            </div>
+          </div>
+
+          <div class="metrics-hud">
+            <div class="metric-box">
+              <span class="label">LAYERS</span>
+              <span class="value" id="val-layers">0 / 0</span>
+            </div>
+            <div class="metric-box">
+              <span class="label">SPEED</span>
+              <span class="value" id="val-speed">0 L/s</span>
+            </div>
+            <div class="metric-box">
+              <span class="label">ETA</span>
+              <span class="value" id="val-eta">0s</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Action Bar -->
+        <div class="action-bar">
+          <button id="btn-generate" class="btn primary disabled">START GENERATION</button>
+          <button id="btn-inject" class="btn secondary disabled">INJECT TO GAME</button>
+        </div>
+
+      </section>
+    </main>
+
+    <!-- Modals -->
+    <!-- Text Vinyl Modal -->
+    <div id="modal-text-vinyl" class="modal-overlay hidden">
+      <div class="modal-window">
+        <div class="modal-header">
+          <h3>Text Vinyl Generator</h3>
+          <button class="btn-close-modal" data-target="modal-text-vinyl">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="input-group">
+            <label>Enter text for vinyl:</label>
+            <input type="text" id="text-vinyl-input" class="cyber-input" placeholder="Type here...">
+          </div>
+          <div class="input-group">
+            <label>Font Size</label>
+            <input type="number" id="text-vinyl-size" class="cyber-input" value="72" min="10" max="500">
+          </div>
+          <button id="btn-generate-text" class="btn primary" style="width: 100%; margin-top: 15px; padding: 12px; flex: none;">Generate JSON</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Diagnostic Log Console Modal -->
+    <div id="modal-logs" class="modal-overlay hidden">
+      <div class="modal-window large">
+        <div class="modal-header">
+          <h3>系統即時診斷主控台 / Real-time Diagnostic Log Console</h3>
+          <button class="btn-close-modal" data-target="modal-logs">&times;</button>
+        </div>
+        <div class="modal-body">
+          <pre id="console-logs" class="console-output"></pre>
+          <button id="btn-clear-logs" class="btn secondary" style="width: 100%; margin-top: 10px; padding: 10px; flex: none;">清除日誌 / Clear Logs</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Benchmark Console Modal -->
+    <div id="modal-benchmark" class="modal-overlay hidden">
+      <div class="modal-window large">
+        <div class="modal-header">
+          <h3>🏆 性能基準測試主控台 / Performance Benchmark Console</h3>
+          <button class="btn-close-modal" data-target="modal-benchmark">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+            <button id="btn-start-benchmark" class="btn primary" style="padding: 10px 20px; flex: none;">Start Benchmark</button>
+            <span id="benchmark-status" style="font-weight: bold; color: #888;">READY</span>
+          </div>
+          <pre id="console-benchmark" class="console-output"></pre>
+        </div>
+      </div>
+    </div>
+
+  </body>
+</html>

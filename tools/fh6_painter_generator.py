@@ -14,6 +14,12 @@ os.environ["DISABLE_OBS_CAPTURE"] = "1"
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
+def get_output_base_dir():
+    if getattr(sys, "frozen", False):
+        return os.path.dirname(sys.executable)
+    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
 HAS_DEPENDENCIES = True
 try:
     import numpy as np
@@ -156,7 +162,7 @@ def run_generator(
         img_base = os.path.splitext(os.path.basename(image_path))[0]
         script_dir = os.path.dirname(os.path.abspath(__file__))
         project_root = os.path.dirname(script_dir)  # parent of 'tools'
-        output_dir = os.path.join(project_root, "output", img_base)
+        output_dir = os.path.join(get_output_base_dir(), "output", img_base)
         output_path = os.path.join(output_dir, f"{img_base}.json")
 
     # Load settings from profile
@@ -272,7 +278,7 @@ def run_generator(
     if resume_shapes:
         header = resume_shapes[0]
         if header.get("type") == 1 and len(header.get("color", [])) >= 4:
-            has_alpha = header["color"][3] <= 0
+            has_alpha = has_alpha or (header["color"][3] <= 0)
     if has_alpha:
         img = img_raw.convert("RGBA")
         print("Detected transparent background. Enabling Alpha-guided Ambient Padding.")
@@ -481,7 +487,9 @@ def run_generator(
 
     attempts = 0
     max_attempts = layers * 3
-    total_generated_so_far = 0
+
+    starting_layer_count = len(shapes_list) - 1
+    total_generated_so_far = starting_layer_count
 
     recent_deltas = []
     stage_1_4_limit = pyramid_layers_threshold
@@ -492,11 +500,10 @@ def run_generator(
 
     # 提早收斂優化追蹤變數
     original_layers = layers
-    prev_valid_layers = 0
+    prev_valid_layers = starting_layer_count
     early_triggered = False
+    roi_restart_triggered = False
     progressive_sample_step_limit = 4
-
-    starting_layer_count = len(shapes_list) - 1
 
     try:
         while (len(shapes_list) - 1 < layers) and (attempts < max_attempts):
@@ -820,6 +827,13 @@ def run_generator(
                                     f"[Early Convergence] 偵測到細節已飽和，但由於啟用漸進式像素採樣，先提升像素採樣精度 (將限制最大 sample_step 為 {next_limit})，本次不收斂圖層數量。"
                                 )
                             else:
+                                if opt_settings.get("roi_enabled", False):
+                                    print(
+                                        "\n[Early Convergence] 由於啟用了區域繪製，觸發提早收斂時將自動清除選取範圍並繼續生成..."
+                                    )
+                                    roi_restart_triggered = True
+                                    break
+
                                 # 收斂層數則以 early_step 為步進向上取整，且不得超過原定最大層數 original_layers
                                 best_t = min(
                                     int(math.ceil(current_layer / float(early_step)))
@@ -850,7 +864,7 @@ def run_generator(
                 base_dir = os.path.dirname(output_path) or "."
                 file_base, file_ext = os.path.splitext(os.path.basename(output_path))
                 inter_path = os.path.join(
-                    base_dir, f"{file_base}_{current_layer}{file_ext}"
+                    base_dir, f"{file_base}.{current_layer}{file_ext}"
                 )
                 try:
                     with open(inter_path, "w", encoding="utf-8") as f:
@@ -873,11 +887,11 @@ def run_generator(
                     canvas_rgba[:, :, :3] = canvas
                     canvas_rgba[:, :, 3] = alpha_mask
                     cb_res = progress_callback(
-                        current_layer, layers, speed, eta, canvas_rgba
+                        current_layer, layers, speed, eta, canvas_rgba, shapes_list
                     )
                 else:
                     cb_res = progress_callback(
-                        current_layer, layers, speed, eta, canvas
+                        current_layer, layers, speed, eta, canvas, shapes_list
                     )
 
                 if cb_res is False or cb_res == "ABORT":
@@ -943,6 +957,10 @@ def run_generator(
             json.dump({"shapes": shapes_list}, f, indent=2)
 
         print(f"JSON geometry successfully written to: {output_path}")
+
+        if roi_restart_triggered:
+            raise Exception("EARLY_CONVERGENCE_WITH_ROI")
+
         return 0
 
     finally:
