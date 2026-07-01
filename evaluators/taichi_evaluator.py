@@ -94,6 +94,7 @@ def evaluate_candidate_ti(
         is_valid = 0
 
     count = 0.0
+    count_transparent = 0.0
     sum_t_r = 0.0
     sum_t_g = 0.0
     sum_t_b = 0.0
@@ -129,11 +130,14 @@ def evaluate_candidate_ti(
 
         # Validation Pass (Scalar constraints check)
         if check_contour == 1 or use_freeze == 1:
+            dy = ti.cast(min_y, ti.f32) - y_c
+            b_val = dy * b_coeff
+            discriminant = a - dy * dy * inv_rx2_ry2
+            disc_step_1 = -2.0 * dy * inv_rx2_ry2
+            disc_step_2 = -inv_rx2_ry2
+
             y = min_y
             while y <= max_y and is_valid == 1:
-                dy = ti.cast(y, ti.f32) - y_c
-                b_val = dy * b_coeff
-                discriminant = a - dy * dy * inv_rx2_ry2
                 if discriminant >= 0.0:
                     sqrt_d = ti.math.sqrt(discriminant)
                     dx_min = (-b_val - sqrt_d) * inv_a
@@ -144,20 +148,27 @@ def evaluate_candidate_ti(
                     x = x_start
                     while x <= x_end and is_valid == 1:
                         if check_contour == 1 and alpha_mask[y, x] <= 10.0:
-                            is_valid = 0
+                            count_transparent += 1.0
                         if use_freeze == 1 and freeze_mask[y, x] == 1:
                             is_valid = 0
                         x += 1
+
+                b_val += b_coeff
+                discriminant += disc_step_1 + disc_step_2
+                disc_step_1 -= 2.0 * inv_rx2_ry2
                 y += 1
 
         # Accumulation Pass (Perfect for coalesced parallel loads)
         if is_valid == 1:
             if use_weight == 0 and use_uncovered == 0:
+                dy = ti.cast(min_y, ti.f32) - y_c
+                b_val = dy * b_coeff
+                discriminant = a - dy * dy * inv_rx2_ry2
+                disc_step_1 = -2.0 * dy * inv_rx2_ry2
+                disc_step_2 = -inv_rx2_ry2
+
                 y = min_y
                 while y <= max_y:
-                    dy = ti.cast(y, ti.f32) - y_c
-                    b_val = dy * b_coeff
-                    discriminant = a - dy * dy * inv_rx2_ry2
                     if discriminant >= 0.0:
                         sqrt_d = ti.math.sqrt(discriminant)
                         dx_min = (-b_val - sqrt_d) * inv_a
@@ -196,13 +207,20 @@ def evaluate_candidate_ti(
                             sum_ct_g += c_g * t_g
                             sum_ct_b += c_b * t_b
                             x += 1
+
+                    b_val += b_coeff
+                    discriminant += disc_step_1 + disc_step_2
+                    disc_step_1 -= 2.0 * inv_rx2_ry2
                     y += 1
             else:
+                dy = ti.cast(min_y, ti.f32) - y_c
+                b_val = dy * b_coeff
+                discriminant = a - dy * dy * inv_rx2_ry2
+                disc_step_1 = -2.0 * dy * inv_rx2_ry2
+                disc_step_2 = -inv_rx2_ry2
+
                 y = min_y
                 while y <= max_y:
-                    dy = ti.cast(y, ti.f32) - y_c
-                    b_val = dy * b_coeff
-                    discriminant = a - dy * dy * inv_rx2_ry2
                     if discriminant >= 0.0:
                         sqrt_d = ti.math.sqrt(discriminant)
                         dx_min = (-b_val - sqrt_d) * inv_a
@@ -235,18 +253,26 @@ def evaluate_candidate_ti(
                             sum_t_g += t_g * w
                             sum_t_b += t_b * w
 
-                            sum_c_r += c_r * w
-                            sum_c_g += c_g * w
-                            sum_c_b += c_b * w
+                            c_r_w = c_r * w
+                            c_g_w = c_g * w
+                            c_b_w = c_b * w
 
-                            sum_c2_r += (c_r * c_r) * w
-                            sum_c2_g += (c_g * c_g) * w
-                            sum_c2_b += (c_b * c_b) * w
+                            sum_c_r += c_r_w
+                            sum_c_g += c_g_w
+                            sum_c_b += c_b_w
 
-                            sum_ct_r += (c_r * t_r) * w
-                            sum_ct_g += (c_g * t_g) * w
-                            sum_ct_b += (c_b * t_b) * w
+                            sum_c2_r += c_r * c_r_w
+                            sum_c2_g += c_g * c_g_w
+                            sum_c2_b += c_b * c_b_w
+
+                            sum_ct_r += t_r * c_r_w
+                            sum_ct_g += t_g * c_g_w
+                            sum_ct_b += t_b * c_b_w
                             x += 1
+
+                    b_val += b_coeff
+                    discriminant += disc_step_1 + disc_step_2
+                    disc_step_1 -= 2.0 * inv_rx2_ry2
                     y += 1
 
     avg_r = 0.0
@@ -255,6 +281,8 @@ def evaluate_candidate_ti(
     total_delta_mse = 99999999.0
 
     if is_valid == 1 and count > 0.0:
+        if check_contour == 1 and (count_transparent * 100.0 > count):
+            is_valid = 0
         inv_count = 1.0 / count
         avg_r = sum_t_r * inv_count
         avg_g = sum_t_g * inv_count
@@ -285,6 +313,8 @@ def evaluate_candidate_ti(
         )
 
         total_delta_mse = delta_r + delta_g + delta_b
+
+        pass
 
     return avg_r, avg_g, avg_b, total_delta_mse
 
@@ -481,10 +511,13 @@ def update_uncovered_mask_gpu(
     # Also hoists inverse division outside the loop for performance
     inv_a = 1.0 / a if a > 0.0 else 0.0
 
+    dy = ti.cast(min_y, ti.f32) - y_c
+    b_val = dy * b_coeff
+    discriminant = a - dy * dy * inv_rx2_ry2
+    disc_step_1 = -2.0 * dy * inv_rx2_ry2
+    disc_step_2 = -inv_rx2_ry2
+
     for y in range(min_y, max_y + 1):
-        dy = ti.cast(y, ti.f32) - y_c
-        b_val = dy * b_coeff
-        discriminant = a - dy * dy * inv_rx2_ry2
         if discriminant >= 0.0:
             sqrt_d = ti.math.sqrt(discriminant)
             dx_min = (-b_val - sqrt_d) * inv_a
@@ -493,6 +526,10 @@ def update_uncovered_mask_gpu(
             x_end = ti.min(max_x, ti.cast(ti.math.floor(x_c + dx_max), ti.i32))
             for x in range(x_start, x_end + 1):
                 uncovered_map[y, x] = 1.0
+
+        b_val += b_coeff
+        discriminant += disc_step_1 + disc_step_2
+        disc_step_1 -= 2.0 * inv_rx2_ry2
 
 
 @ti.kernel
@@ -597,10 +634,13 @@ def draw_ellipse_gpu(
 
     inv_a = 1.0 / a if a > 0.0 else 0.0
 
+    dy = ti.cast(min_y, ti.f32) - y_c
+    b_val = dy * b_coeff
+    discriminant = a - dy * dy * inv_rx2_ry2
+    disc_step_1 = -2.0 * dy * inv_rx2_ry2
+    disc_step_2 = -inv_rx2_ry2
+
     for y in range(min_y, max_y + 1):
-        dy = ti.cast(y, ti.f32) - y_c
-        b_val = dy * b_coeff
-        discriminant = a - dy * dy * inv_rx2_ry2
         if discriminant >= 0.0:
             sqrt_d = ti.math.sqrt(discriminant)
             dx_min = (-b_val - sqrt_d) * inv_a
@@ -612,6 +652,10 @@ def draw_ellipse_gpu(
                 canvas[y, x, 0] = canvas[y, x, 0] * one_minus_a + r * a_f
                 canvas[y, x, 1] = canvas[y, x, 1] * one_minus_a + g * a_f
                 canvas[y, x, 2] = canvas[y, x, 2] * one_minus_a + b * a_f
+
+        b_val += b_coeff
+        discriminant += disc_step_1 + disc_step_2
+        disc_step_1 -= 2.0 * inv_rx2_ry2
 
 
 @ti.kernel

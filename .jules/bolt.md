@@ -27,3 +27,11 @@
 ## 2026-06-05 - Array Shape Check Hoisting
 **Learning:** In highly intensive per-pixel accumulation loops (like those drawing millions of ellipses), executing `canvas.shape[2] == 4` inside the innermost loop forces the JIT compiler to repeatedly evaluate a conditional branch and perform a redundant dimension lookup. Compilers (like LLVM via Numba) often fail to automatically unswitch these bounds checks if they involve structural lookups.
 **Action:** Manually unswitch the loop by hoisting constant shape evaluations `has_alpha = canvas.shape[2] == 4` outside the spatial Y/X loops and create dedicated loop structures for the RGBA and RGB paths. This significantly enhances branch predictability and vectorization for performance-critical kernels.
+
+## 2026-07-01 - Avoid synchronous blocking sleeps in Backend WebSocket callbacks
+**Learning:** Adding synchronous `time.sleep()` calls inside tight callback loops like `generator_cb` in `backend/server.py` creates massive bottlenecks. Even a 1ms sleep per generated shape halves the performance of fast kernels like Numba or Taichi.
+**Action:** Remove or avoid any unnecessary `time.sleep` calls inside callback functions connected to JIT evaluators or WebSockets. Ensure concurrent loops remain unblocked.
+
+## 2026-07-01 - Utilize Forward Differencing for scanline boundaries
+**Learning:** Expanding `(y - y_c)^2` dynamically in `for y` loops using standard quadratic discriminant `a - dy^2 * inv_rx2` creates a heavy multiplication load. Replacing this with forward differencing (`discriminant += disc_step_1 + disc_step_2`, `disc_step_1 -= 2 * inv_rx2`) eliminates inner-loop multiplications, boosting bounds computation performance.
+**Action:** When implementing mathematical bound checks incrementally per pixel or line, consider forward differencing to step variables via addition instead of naive mathematical reconstruction using powers or multiple multiplications.

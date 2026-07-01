@@ -807,11 +807,6 @@ class PainterServer:
             )
             self._sync_broadcast(loop, msg)
 
-            # Yield JIT execution response if Numba/Taichi is running, matching legacy workers.py release timing
-            if engine_code == "TAICHI":
-                time.sleep(0.002)
-            elif engine_code == "NUMBA":
-                time.sleep(0.001)
             return True
 
         # Read optimization settings
