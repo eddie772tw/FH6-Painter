@@ -807,7 +807,6 @@ class PainterServer:
             )
             self._sync_broadcast(loop, msg)
 
-
             return True
 
         # Read optimization settings
