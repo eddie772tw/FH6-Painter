@@ -164,7 +164,7 @@ def run_benchmarks():
     gpu_model = gpu_models[0] if gpu_models else "Unknown GPU"
     
     print("======================================================================")
-    print("        FH6 PAINTER STUDIO - HIGH PERFORMANCE BENCHMARK SUITE")
+    print("        FH6-PAINTER - HIGH PERFORMANCE BENCHMARK SUITE")
     print("======================================================================")
     print(f"  [OS / PLATFORM] : {platform.system()} {platform.release()} ({platform.machine()})")
     print(f"  [PROCESSOR]     : {cpu_model}")

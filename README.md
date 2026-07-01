@@ -5,7 +5,7 @@
 [![Language](https://img.shields.io/badge/Language-Python%203.13%20%2F%203.14%20(CPU)--blue.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Acceleration](https://img.shields.io/badge/Acceleration-Go--OpenCL%20%26%20Taichi%20%26%20Numba-orange.svg)](https://numba.pydata.org/)
-[![Package](https://img.shields.io/badge/Distribution-Standalone%20EXE-red.svg)](dist/FH6_Painter_Studio)
+[![Package](https://img.shields.io/badge/Distribution-Standalone%20EXE-red.svg)](dist/FH6-Painter)
 
 ---
 
@@ -66,16 +66,16 @@ Support Go-OpenCL, Taichi, and Numba acceleration across CPU and GPU, provide GU
 ## 安裝與執行說明 / Prerequisites & Execution
 
 *   **方法 A：獨立免安裝版本（推薦 / Recommended）**：
-    1. 前往 Release 頁面下載最新獨立發行版 `FH6_Painter_Studio` ZIP 包。
-    2. 解壓縮後直接雙擊執行 **`FH6_Painter_Studio.exe`** 即可。您可以直接修改同目錄下的 `settings/` 預設配置與 `optimization_settings.json`。
+    1. 前往 Release 頁面下載最新獨立發行版 `FH6-Painter` ZIP 包。
+    2. 解壓縮後直接雙擊執行 **`FH6-Painter.exe`** 即可。您可以直接修改同目錄下的 `settings/` 預設配置與 `optimization_settings.json`。
 *   **方法 B：開發原始碼版（需要 Python 環境）**：
     專案原生支援 **Python 3.13**（支援全部 CPU/GPU 引擎），並相容 **Python 3.14**（僅支援 Go-OpenCL 與 Numba 加速，Taichi 將自動停用）。
     1. 複製儲存庫：`git clone https://github.com/eddie772tw/FH6-Painter.git`
     2. 直接雙擊啟動 **`forza-painter-py.bat`**。該腳本會全自動偵測、建立 Python 3.13 虛擬環境 (`.venv`) 並安裝所有依賴，隨後啟動程式。也可以手動安裝依賴：`pip install -r requirements.txt`。
 
 *   **Method A: Standalone Portable Version (Recommended)**:
-    1. Download the latest standalone release `FH6_Painter_Studio` ZIP package from the Release page.
-    2. Unzip and double-click **`FH6_Painter_Studio.exe`** to run. You can directly edit the `settings/` presets and `optimization_settings.json` located beside the executable.
+    1. Download the latest standalone release `FH6-Painter` ZIP package from the Release page.
+    2. Unzip and double-click **`FH6-Painter.exe`** to run. You can directly edit the `settings/` presets and `optimization_settings.json` located beside the executable.
 *   **Method B: Source Code Version (Requires Python)**:
     Native support for **Python 3.13** (Full CPU/GPU engines) and compatible with **Python 3.14** (Go-OpenCL and Numba JIT only; Taichi automatically disabled).
     1. Clone the repository: `git clone https://github.com/eddie772tw/FH6-Painter.git`
@@ -88,7 +88,7 @@ Support Go-OpenCL, Taichi, and Numba acceleration across CPU and GPU, provide GU
 ### 第一步：產生車貼幾何資料 / Step 1: Generate Livery Geometry JSON
 
 *   **🟢 方法 A：使用專業版 GUI 介面（推薦 / Recommended）**：
-    1. 雙擊執行發行版中 **`FH6_Painter_Studio.exe`** 或開發版中的 **`forza-painter-py.bat`**。
+    1. 雙擊執行發行版中 **`FH6-Painter.exe`** 或開發版中的 **`forza-painter-py.bat`**。
     2. 將要轉換的圖片拖曳至左側 **「1. INPUT SOURCE」** 的輸入框中。
     3. 點選 **「開始生成 (Start Generation)」**。您可以在右側看見即時畫布生成預覽與實時指標 HUD！
 *   **🔵 方法 B：拖曳至啟動器（CLI 快速模式 / CLI Fast Mode）**：
@@ -96,7 +96,7 @@ Support Go-OpenCL, Taichi, and Numba acceleration across CPU and GPU, provide GU
     2. 依提示選擇層數限制與設定檔，即會於背景自動執行生成。
 
 *   **🟢 Method A: Using Premium Studio GUI (Recommended)**:
-    1. Double-click **`FH6_Painter_Studio.exe`** in the release bundle or **`forza-painter-py.bat`** in the source folder.
+    1. Double-click **`FH6-Painter.exe`** in the release bundle or **`forza-painter-py.bat`** in the source folder.
     2. Drag and drop the target image into the **"1. INPUT SOURCE"** input field on the left.
     3. Click **"Start Generation"** to view real-time canvas fitting and live HUD metrics.
 *   **🔵 Method B: Drag to Launcher (CLI Fast Mode)**:
