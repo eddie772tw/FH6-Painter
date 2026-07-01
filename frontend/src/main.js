@@ -6,6 +6,7 @@ let currentShapes = [];
 let currentCheckpoints = [];
 let totalLayersLimit = 1000;
 let isGenerating = false;
+let currentLangDict = {};
 
 // ROI Selection State
 let roiEnabled = false;
@@ -31,6 +32,14 @@ const btnMarket = document.getElementById("btn-market");
 const btnOutput = document.getElementById("btn-output");
 const btnBenchmark = document.getElementById("btn-benchmark");
 const btnShowLogs = document.getElementById("btn-show-logs");
+const langSelect = document.getElementById("lang-select");
+if (langSelect) {
+  langSelect.addEventListener("change", (e) => {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ action: "get_lang", lang: e.target.value }));
+    }
+  });
+}
 
 // Modals
 const modalTextVinyl = document.getElementById("modal-text-vinyl");
@@ -131,6 +140,7 @@ function connectWebSocket() {
     ws.send(JSON.stringify({ action: "get_engines" }));
     ws.send(JSON.stringify({ action: "get_profiles" }));
     ws.send(JSON.stringify({ action: "get_gpus" }));
+    ws.send(JSON.stringify({ action: "get_lang", lang: langSelect ? langSelect.value : "en-us" }));
   };
 
   ws.onclose = () => {
@@ -174,6 +184,34 @@ function updateCanvasSize(newWidth, newHeight) {
 
 function handleBackendMessage(msg) {
   switch (msg.action) {
+    case "lang_data":
+      currentLangDict = msg.data;
+      document.querySelectorAll("[data-i18n]").forEach(el => {
+        const key = el.getAttribute("data-i18n");
+        if (currentLangDict[key]) {
+          if (el.children.length === 0) {
+            el.textContent = currentLangDict[key];
+          } else {
+            Array.from(el.childNodes).forEach(node => {
+              if (node.nodeType === Node.TEXT_NODE && node.textContent.trim().length > 0) {
+                node.textContent = currentLangDict[key];
+              }
+            });
+          }
+        }
+      });
+      if (isPreviewEnabled) {
+        btnTogglePreview.textContent = currentLangDict["header.disable_preview"] || "Disable Preview";
+      } else {
+        btnTogglePreview.textContent = currentLangDict["header.enable_preview"] || "Enable Preview";
+      }
+      if (isGenerating) {
+        btnGenerate.textContent = currentLangDict["action.stop_generation"] || "STOP GENERATION";
+      } else {
+        btnGenerate.textContent = currentLangDict["action.start_generation"] || "START GENERATION";
+      }
+      break;
+
     case "engines_list":
       engineSelect.innerHTML = "";
       msg.data.forEach(engine => {
@@ -436,7 +474,7 @@ function handleBackendMessage(msg) {
     case "generation_status":
       if (msg.status === "started") {
         isGenerating = true;
-        btnGenerate.textContent = "STOP GENERATION";
+        btnGenerate.textContent = currentLangDict["action.stop_generation"] || "STOP GENERATION";
         btnGenerate.style.background = "#D32F2F";
         btnGenerate.style.boxShadow = "0 0 15px rgba(211, 47, 47, 0.4)";
         timelineSlider.disabled = true;
@@ -446,7 +484,7 @@ function handleBackendMessage(msg) {
         if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
       } else {
         isGenerating = false;
-        btnGenerate.textContent = "START GENERATION";
+        btnGenerate.textContent = currentLangDict["action.start_generation"] || "START GENERATION";
         btnGenerate.style.background = "var(--primary-color)";
         btnGenerate.style.boxShadow = "0 0 15px var(--glow-primary)";
         timelineSlider.disabled = false;
@@ -502,10 +540,10 @@ function handleBackendMessage(msg) {
 
     case "injection_status":
       if (msg.status === "started") {
-        btnInject.textContent = "INJECTING...";
+        btnInject.textContent = currentLangDict["action.injecting"] || "INJECTING...";
         btnInject.classList.add("disabled");
       } else {
-        btnInject.textContent = "INJECT TO GAME";
+        btnInject.textContent = currentLangDict["action.inject"] || "INJECT TO GAME";
         btnInject.classList.remove("disabled");
         if (msg.status === "failed") {
           alert("Injection failed: " + msg.error);
@@ -1009,11 +1047,11 @@ btnOutput.addEventListener("click", () => {
 btnTogglePreview.addEventListener("click", () => {
   isPreviewEnabled = !isPreviewEnabled;
   if (isPreviewEnabled) {
-    btnTogglePreview.textContent = "關閉預覽 / Disable Preview";
+    btnTogglePreview.textContent = currentLangDict["header.disable_preview"] || "Disable Preview";
     btnTogglePreview.classList.add("text-green");
     previewDisabledOverlay.classList.add("hidden");
   } else {
-    btnTogglePreview.textContent = "開啟預覽 / Enable Preview";
+    btnTogglePreview.textContent = currentLangDict["header.enable_preview"] || "Enable Preview";
     btnTogglePreview.classList.remove("text-green");
     previewDisabledOverlay.classList.remove("hidden");
   }

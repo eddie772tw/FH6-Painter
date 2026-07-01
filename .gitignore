@@ -78,3 +78,4 @@ test_out_utf8.txt
 *.log
 frontend/src-tauri/bin/*.exe
 frontend/src-tauri/bin/*.pdb
+!lang/*.json

@@ -22,11 +22,12 @@
         <span class="badge">STUDIO</span>
       </div>
       <div class="header-actions" data-tauri-drag-region>
-        <button id="btn-toggle-preview" class="btn-header text-green">關閉預覽 / Disable Preview</button>
-        <button id="btn-output" class="btn-header text-blue">開啟輸出 / Open Output</button>
-        <button id="btn-market" class="btn-header text-orange">前往市場 / Open Market</button>
-        <button id="btn-benchmark" class="btn-header text-blue">效能測試 / Benchmark</button>
-        <button id="btn-show-logs" class="btn-header text-blue">診斷主控台 / Show Logs</button>
+        <select id="lang-select" class="btn-header"><option value="en-us">English</option><option value="zh-tw">繁體中文</option><option value="ja-jp">日本語</option></select>
+        <button id="btn-toggle-preview" class="btn-header text-green" data-i18n="header.disable_preview">關閉預覽 / Disable Preview</button>
+        <button id="btn-output" class="btn-header text-blue" data-i18n="action.open_output">開啟輸出 / Open Output</button>
+        <button id="btn-market" class="btn-header text-orange" data-i18n="action.open_market">前往市場 / Open Market</button>
+        <button id="btn-benchmark" class="btn-header text-blue" data-i18n="action.benchmark">效能測試 / Benchmark</button>
+        <button id="btn-show-logs" class="btn-header text-blue" data-i18n="action.show_logs">診斷主控台 / Show Logs</button>
       </div>
     </header>
 
