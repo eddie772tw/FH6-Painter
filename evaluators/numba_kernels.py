@@ -72,10 +72,20 @@ def evaluate_candidate(
 
     # Validation Pass: Check freeze mask first (contour check is integrated into main loop for overhang tolerance)
     if use_freeze:
+        dy = np.float32(min_y - y_c)
+        dy_step = np.float32(sample_step)
+        dy_sq = dy * dy
+        dy_sq_step = dy_step * dy_step
+        two_dy_step = np.float32(2.0) * dy * dy_step
+
+        b_quad = dy * b_coeff
+        b_quad_step = dy_step * b_coeff
+
+        discriminant = a - dy_sq * inv_rx2_ry2
+        disc_step_1 = -two_dy_step * inv_rx2_ry2
+        disc_step_2 = -dy_sq_step * inv_rx2_ry2
+
         for y in range(min_y, max_y + 1, sample_step):
-            dy = np.float32(y - y_c)
-            b_quad = dy * b_coeff
-            discriminant = a - dy * dy * inv_rx2_ry2
             if discriminant >= 0.0:
                 sqrt_d = math.sqrt(discriminant)
                 dx_min = (-b_quad - sqrt_d) * inv_a
@@ -91,6 +101,9 @@ def evaluate_candidate(
                             np.float32(0.0),
                             np.float32(99999999.0),
                         )
+            b_quad += b_quad_step
+            discriminant += disc_step_1 + disc_step_2
+            disc_step_1 -= np.float32(2.0) * dy_sq_step * inv_rx2_ry2
 
     # Accumulation Pass variables
     count = 0.0
@@ -114,10 +127,20 @@ def evaluate_candidate(
     # Heavy Accumulation Loop: Contiguous memory access, zero branching, highly vectorizable (AVX2/FMA3)
     if not use_weight and not use_uncovered:
         # Fast Path (No weights)
+        dy = np.float32(min_y - y_c)
+        dy_step = np.float32(sample_step)
+        dy_sq = dy * dy
+        dy_sq_step = dy_step * dy_step
+        two_dy_step = np.float32(2.0) * dy * dy_step
+
+        b_quad = dy * b_coeff
+        b_quad_step = dy_step * b_coeff
+
+        discriminant = a - dy_sq * inv_rx2_ry2
+        disc_step_1 = -two_dy_step * inv_rx2_ry2
+        disc_step_2 = -dy_sq_step * inv_rx2_ry2
+
         for y in range(min_y, max_y + 1, sample_step):
-            dy = np.float32(y - y_c)
-            b_quad = dy * b_coeff
-            discriminant = a - dy * dy * inv_rx2_ry2
             if discriminant >= 0.0:
                 sqrt_d = math.sqrt(discriminant)
                 dx_min = (-b_quad - sqrt_d) * inv_a
@@ -155,12 +178,26 @@ def evaluate_candidate(
                     sum_ct_r += c_r * t_r
                     sum_ct_g += c_g * t_g
                     sum_ct_b += c_b * t_b
+
+            b_quad += b_quad_step
+            discriminant += disc_step_1 + disc_step_2
+            disc_step_1 -= np.float32(2.0) * dy_sq_step * inv_rx2_ry2
     else:
         # Slow Path (With weights)
+        dy = np.float32(min_y - y_c)
+        dy_step = np.float32(sample_step)
+        dy_sq = dy * dy
+        dy_sq_step = dy_step * dy_step
+        two_dy_step = np.float32(2.0) * dy * dy_step
+
+        b_quad = dy * b_coeff
+        b_quad_step = dy_step * b_coeff
+
+        discriminant = a - dy_sq * inv_rx2_ry2
+        disc_step_1 = -two_dy_step * inv_rx2_ry2
+        disc_step_2 = -dy_sq_step * inv_rx2_ry2
+
         for y in range(min_y, max_y + 1, sample_step):
-            dy = np.float32(y - y_c)
-            b_quad = dy * b_coeff
-            discriminant = a - dy * dy * inv_rx2_ry2
             if discriminant >= 0.0:
                 sqrt_d = math.sqrt(discriminant)
                 dx_min = (-b_quad - sqrt_d) * inv_a
@@ -193,20 +230,28 @@ def evaluate_candidate(
                     sum_t_g += t_g * w
                     sum_t_b += t_b * w
 
-                    sum_c_r += c_r * w
-                    sum_c_g += c_g * w
-                    sum_c_b += c_b * w
+                    c_r_w = c_r * w
+                    c_g_w = c_g * w
+                    c_b_w = c_b * w
 
-                    sum_c2_r += (c_r * c_r) * w
-                    sum_c2_g += (c_g * c_g) * w
-                    sum_c2_b += (c_b * c_b) * w
+                    sum_c_r += c_r_w
+                    sum_c_g += c_g_w
+                    sum_c_b += c_b_w
 
-                    sum_ct_r += (c_r * t_r) * w
-                    sum_ct_g += (c_g * t_g) * w
-                    sum_ct_b += (c_b * t_b) * w
+                    sum_c2_r += c_r * c_r_w
+                    sum_c2_g += c_g * c_g_w
+                    sum_c2_b += c_b * c_b_w
 
-    # Overhang Tolerance Check: reject if shape has ANY transparent overhang or no opaque pixels
-    if count == 0.0 or (check_contour and (count_transparent > 0.0)):
+                    sum_ct_r += t_r * c_r_w
+                    sum_ct_g += t_g * c_g_w
+                    sum_ct_b += t_b * c_b_w
+
+            b_quad += b_quad_step
+            discriminant += disc_step_1 + disc_step_2
+            disc_step_1 -= np.float32(2.0) * dy_sq_step * inv_rx2_ry2
+
+    # Overhang Tolerance Check: reject if shape has >1% transparent overhang or no opaque pixels
+    if count == 0.0 or (check_contour and (count_transparent * 100.0 > count)):
         return np.float32(0.0), np.float32(0.0), np.float32(0.0), np.float32(99999999.0)
 
     inv_count = np.float32(1.0) / count
@@ -325,10 +370,17 @@ def draw_ellipse(canvas, x_c, y_c, r_x, r_y, theta, r, g, b, alpha):
     has_alpha = canvas.shape[2] == 4
 
     if has_alpha:
+        dy = np.float32(min_y - y_c)
+        dy_sq = dy * dy
+        two_dy = np.float32(2.0) * dy
+
+        b_quad = dy * b_coeff
+
+        discriminant = a - dy_sq * inv_rx2_ry2
+        disc_step_1 = -two_dy * inv_rx2_ry2
+        disc_step_2 = -inv_rx2_ry2
+
         for y in range(min_y, max_y + 1):
-            dy = np.float32(y - y_c)
-            b_quad = dy * b_coeff
-            discriminant = a - dy * dy * inv_rx2_ry2
             if discriminant >= 0.0:
                 sqrt_d = math.sqrt(discriminant)
                 dx_min = (-b_quad - sqrt_d) * inv_a
@@ -341,11 +393,22 @@ def draw_ellipse(canvas, x_c, y_c, r_x, r_y, theta, r, g, b, alpha):
                     canvas[y, x, 1] = canvas[y, x, 1] * one_minus_a + g_val * a_f
                     canvas[y, x, 2] = canvas[y, x, 2] * one_minus_a + b_val * a_f
                     canvas[y, x, 3] = canvas[y, x, 3] * one_minus_a + np.float32(alpha)
+
+            b_quad += b_coeff
+            discriminant += disc_step_1 + disc_step_2
+            disc_step_1 -= np.float32(2.0) * inv_rx2_ry2
     else:
+        dy = np.float32(min_y - y_c)
+        dy_sq = dy * dy
+        two_dy = np.float32(2.0) * dy
+
+        b_quad = dy * b_coeff
+
+        discriminant = a - dy_sq * inv_rx2_ry2
+        disc_step_1 = -two_dy * inv_rx2_ry2
+        disc_step_2 = -inv_rx2_ry2
+
         for y in range(min_y, max_y + 1):
-            dy = np.float32(y - y_c)
-            b_quad = dy * b_coeff
-            discriminant = a - dy * dy * inv_rx2_ry2
             if discriminant >= 0.0:
                 sqrt_d = math.sqrt(discriminant)
                 dx_min = (-b_quad - sqrt_d) * inv_a
@@ -357,6 +420,10 @@ def draw_ellipse(canvas, x_c, y_c, r_x, r_y, theta, r, g, b, alpha):
                     canvas[y, x, 0] = canvas[y, x, 0] * one_minus_a + r_val * a_f
                     canvas[y, x, 1] = canvas[y, x, 1] * one_minus_a + g_val * a_f
                     canvas[y, x, 2] = canvas[y, x, 2] * one_minus_a + b_val * a_f
+
+            b_quad += b_coeff
+            discriminant += disc_step_1 + disc_step_2
+            disc_step_1 -= np.float32(2.0) * inv_rx2_ry2
 
 
 @numba.jit(nopython=True, fastmath=True, cache=True)
