@@ -1,4 +1,26 @@
 // @ts-check
+/* global __GIT_BRANCH__, __GIT_COMMIT__ */
+
+// Dynamic Title based on Git Info
+if (typeof __GIT_BRANCH__ !== 'undefined' && typeof __GIT_COMMIT__ !== 'undefined') {
+  document.title = `FH6 Painter Studio - ${__GIT_BRANCH__} (${__GIT_COMMIT__})`;
+
+  // Also add it visually to the custom Tauri titlebar if present
+  document.addEventListener('DOMContentLoaded', () => {
+    const logoArea = document.querySelector('.logo-area');
+    if (logoArea) {
+      const gitBadge = document.createElement('span');
+      gitBadge.className = 'badge git-badge';
+      gitBadge.style.opacity = '0.7';
+      gitBadge.style.fontSize = '0.7em';
+      gitBadge.style.marginLeft = '8px';
+      gitBadge.style.backgroundColor = 'var(--bg-glass)';
+      gitBadge.style.border = '1px solid var(--glass-border)';
+      gitBadge.textContent = `${__GIT_BRANCH__} (${__GIT_COMMIT__})`;
+      logoArea.appendChild(gitBadge);
+    }
+  });
+}
 
 const wsUrl = "ws://localhost:8765";
 let ws = null;
