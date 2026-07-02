@@ -68,7 +68,7 @@ if not exist "%~dp0dist" mkdir "%~dp0dist"
     --noupx ^
     --icon="%~dp0app_icon.ico" ^
     --distpath "%~dp0dist" ^
-    --name "FH6_Painter_Studio" ^
+    --name "FH6-Painter" ^
     --paths "%~dp0." ^
     --add-data "%~dp0frontend\src-tauri\target\release\frontend.exe;." ^
     --collect-all "taichi" ^
@@ -108,7 +108,7 @@ echo ====================================================================
 echo      FH6 Painter standalone bundle created successfully
 echo ====================================================================
 echo  Distribution Executable Path:
-echo  %~dp0dist\FH6_Painter_Studio.exe
+echo  %~dp0dist\FH6-Painter.exe
 echo.
 if not "%GITHUB_ACTIONS%" == "true" pause
 exit /b 0

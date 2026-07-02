@@ -100,11 +100,11 @@ jobs:
       shell: cmd
       run: |
         mkdir PortableRelease
-        copy dist\FH6_Painter_Studio.exe PortableRelease\
+        copy dist\FH6-Painter.exe PortableRelease\
 
     - name: Upload build artifact preview
       uses: actions/upload-artifact@v4
       with:
-        name: FH6_Painter_Studio_Windows_Portable
+        name: FH6-Painter_Windows_Portable
         path: PortableRelease/
         retention-days: 7

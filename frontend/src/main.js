@@ -3,7 +3,7 @@
 
 // Dynamic Title based on Git Info
 if (typeof __GIT_BRANCH__ !== 'undefined' && typeof __GIT_COMMIT__ !== 'undefined') {
-  document.title = `FH6 Painter Studio - ${__GIT_BRANCH__} (${__GIT_COMMIT__})`;
+  document.title = `FH6-Painter - ${__GIT_BRANCH__} (${__GIT_COMMIT__})`;
 
   // Also add it visually to the custom Tauri titlebar if present
   document.addEventListener('DOMContentLoaded', () => {

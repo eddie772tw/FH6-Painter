@@ -7,8 +7,12 @@ let gitCommit = "unknown";
 let gitBranch = "unknown";
 
 try {
-  gitCommit = execSync("git rev-parse --short HEAD").toString().trim();
   gitBranch = execSync("git rev-parse --abbrev-ref HEAD").toString().trim();
+  try {
+    gitCommit = execSync("git describe --tags --exact-match HEAD", { stdio: 'pipe' }).toString().trim();
+  } catch (e) {
+    gitCommit = execSync("git rev-parse --short HEAD").toString().trim();
+  }
 } catch (e) {
   console.warn("Could not retrieve git information.");
 }
