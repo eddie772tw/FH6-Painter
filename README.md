@@ -38,7 +38,9 @@ Support Go-OpenCL, Taichi, and Numba acceleration across CPU and GPU, provide GU
 ```text
 ├── build_release.bat          # 一鍵編譯獨立 Windows 執行檔腳本 / One-click EXE Bundler
 ├── forza-painter-py.bat       # 啟動與自動依賴部署腳本 / Auto-venv Setup & Startup batch
-├── fh6_painter_studio_gui.py  # 專業版圖形控制面板 / Professional Tkinter Studio GUI
+├── backend/                   # Python WebSocket 後端 / Python WebSocket Backend
+├── frontend/                  # Tauri 現代化圖形前端 / Tauri Modern GUI Frontend
+├── optimization_settings.json # 全局效能與排程配置 / Global Performance & Scheduling Settings
 ├── fh6_painter_launcher.py    # 控制台拖曳啟動器 / Drag-and-drop CLI launcher
 ├── requirements.txt           # 專案 Python 依賴清單 / Python dependencies list
 ├── settings/                  # 各種生成速率與品質預設配置 / Generation presets
@@ -68,18 +70,18 @@ Support Go-OpenCL, Taichi, and Numba acceleration across CPU and GPU, provide GU
 *   **方法 A：獨立免安裝版本（推薦 / Recommended）**：
     1. 前往 Release 頁面下載最新獨立發行版 `FH6-Painter` ZIP 包。
     2. 解壓縮後直接雙擊執行 **`FH6-Painter.exe`** 即可。您可以直接修改同目錄下的 `settings/` 預設配置與 `optimization_settings.json`。
-*   **方法 B：開發原始碼版（需要 Python 環境）**：
-    專案原生支援 **Python 3.13**（支援全部 CPU/GPU 引擎），並相容 **Python 3.14**（僅支援 Go-OpenCL 與 Numba 加速，Taichi 將自動停用）。
+*   **方法 B：開發原始碼版（需要 Python 環境與 Node.js）**：
+    專案原生支援 **Python 3.13**（支援全部 CPU/GPU 引擎），並相容 **Python 3.14**（僅支援 Go-OpenCL 與 Numba 加速，Taichi 將自動停用）。需安裝 **Node.js** 以編譯與執行前端環境。選裝 **Rust (cargo)** 可用於原生 Tauri 應用編譯。
     1. 複製儲存庫：`git clone https://github.com/eddie772tw/FH6-Painter.git`
-    2. 直接雙擊啟動 **`forza-painter-py.bat`**。該腳本會全自動偵測、建立 Python 3.13 虛擬環境 (`.venv`) 並安裝所有依賴，隨後啟動程式。也可以手動安裝依賴：`pip install -r requirements.txt`。
+    2. 直接雙擊啟動 **`forza-painter-py.bat`**。該腳本會全自動偵測、建立 Python 3.13 虛擬環境 (`.venv`) 並安裝所有依賴，同時也會透過 npm 安裝前端套件，隨後啟動程式。也可以手動安裝依賴：`pip install -r requirements.txt`。
 
 *   **Method A: Standalone Portable Version (Recommended)**:
     1. Download the latest standalone release `FH6-Painter` ZIP package from the Release page.
     2. Unzip and double-click **`FH6-Painter.exe`** to run. You can directly edit the `settings/` presets and `optimization_settings.json` located beside the executable.
-*   **Method B: Source Code Version (Requires Python)**:
-    Native support for **Python 3.13** (Full CPU/GPU engines) and compatible with **Python 3.14** (Go-OpenCL and Numba JIT only; Taichi automatically disabled).
+*   **Method B: Source Code Version (Requires Python & Node.js)**:
+    Native support for **Python 3.13** (Full CPU/GPU engines) and compatible with **Python 3.14** (Go-OpenCL and Numba JIT only; Taichi automatically disabled). **Node.js** is required to compile and run the frontend environment. **Rust (cargo)** is optional but recommended for native Tauri app compilation.
     1. Clone the repository: `git clone https://github.com/eddie772tw/FH6-Painter.git`
-    2. Double-click **`forza-painter-py.bat`** to start. The script will automatically detect Python, create a Python 3.13 virtual environment (`.venv`), install requirements, and run the app. You can also install requirements manually: `pip install -r requirements.txt`.
+    2. Double-click **`forza-painter-py.bat`** to start. The script will automatically detect Python, create a Python 3.13 virtual environment (`.venv`), install Python requirements, install npm dependencies, and run the app. You can also install requirements manually: `pip install -r requirements.txt`.
 
 ---
 
