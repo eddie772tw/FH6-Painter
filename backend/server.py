@@ -153,7 +153,9 @@ class PainterServer:
             try:
                 with open(lang_path, "r", encoding="utf-8") as f:
                     lang_data = json.load(f)
-                await websocket.send(json.dumps({"action": "lang_data", "data": lang_data}))
+                await websocket.send(
+                    json.dumps({"action": "lang_data", "data": lang_data})
+                )
             except Exception as e:
                 print(f"Error loading lang {lang_code}: {e}")
         elif action == "get_profile_settings":
@@ -1048,7 +1050,7 @@ async def main():
         else:
             print("Frontend executable not found in bundle!")
     else:
-        pass # Disabling check_parent_alive for local script environments if stdin is non-interactive but not launched from bundle
+        pass  # Disabling check_parent_alive for local script environments if stdin is non-interactive but not launched from bundle
 
     server = PainterServer()
     loop = asyncio.get_running_loop()

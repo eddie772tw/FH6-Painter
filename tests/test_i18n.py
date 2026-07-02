@@ -10,6 +10,7 @@ from backend.server import PainterServer
 def get_project_root():
     return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
+
 def test_language_files_exist():
     lang_dir = os.path.join(get_project_root(), "lang")
     for lang in ["en-us", "zh-tw", "ja-jp"]:
@@ -19,12 +20,15 @@ def test_language_files_exist():
             data = json.load(f)
             assert "header.disable_preview" in data
 
+
 @pytest.mark.asyncio
 async def test_get_lang_websocket():
     server = PainterServer()
     mock_ws = AsyncMock()
 
-    await server.handle_message(mock_ws, json.dumps({"action": "get_lang", "lang": "zh-tw"}))
+    await server.handle_message(
+        mock_ws, json.dumps({"action": "get_lang", "lang": "zh-tw"})
+    )
 
     mock_ws.send.assert_called_once()
     call_arg = mock_ws.send.call_args[0][0]
