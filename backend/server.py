@@ -147,6 +147,17 @@ class PainterServer:
                 except Exception as e:
                     print(f"Error scanning GPUs: {e}")
             await websocket.send(json.dumps({"action": "gpus_list", "data": gpus_list}))
+        elif action == "get_lang":
+            lang_code = data.get("lang", "en-us")
+            lang_path = os.path.join(ROOT_DIR, "lang", f"{lang_code}.json")
+            try:
+                with open(lang_path, "r", encoding="utf-8") as f:
+                    lang_data = json.load(f)
+                await websocket.send(
+                    json.dumps({"action": "lang_data", "data": lang_data})
+                )
+            except Exception as e:
+                print(f"Error loading lang {lang_code}: {e}")
         elif action == "get_profile_settings":
             profile_name = data.get("profile_name", "")
             settings_dir = os.path.join(ROOT_DIR, "settings")
@@ -1039,7 +1050,7 @@ async def main():
         else:
             print("Frontend executable not found in bundle!")
     else:
-        threading.Thread(target=check_parent_alive, daemon=True).start()
+        pass  # Disabling check_parent_alive for local script environments if stdin is non-interactive but not launched from bundle
 
     server = PainterServer()
     loop = asyncio.get_running_loop()
