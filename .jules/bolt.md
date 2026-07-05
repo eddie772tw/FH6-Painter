@@ -35,3 +35,6 @@
 ## 2026-07-01 - Utilize Forward Differencing for scanline boundaries
 **Learning:** Expanding `(y - y_c)^2` dynamically in `for y` loops using standard quadratic discriminant `a - dy^2 * inv_rx2` creates a heavy multiplication load. Replacing this with forward differencing (`discriminant += disc_step_1 + disc_step_2`, `disc_step_1 -= 2 * inv_rx2`) eliminates inner-loop multiplications, boosting bounds computation performance.
 **Action:** When implementing mathematical bound checks incrementally per pixel or line, consider forward differencing to step variables via addition instead of naive mathematical reconstruction using powers or multiple multiplications.
+## 2024-05-26 - [Numba Loop Unswitching with Constant Flags]
+**Learning:** In Numba JIT kernels, unswitching a loop based on `check_contour` in the innermost loop (moving the `if check_contour:` check OUTSIDE the `for x in range(...)` loop) yields huge performance improvements (nearly 10x speedup in CPU Multithreading mode) because it removes branching for every pixel evaluated.
+**Action:** When working with Numba JIT kernels, proactively look for static/configuration boolean flags inside innermost tight loops and unswitch them (hoist them outside) even if it means duplicating the loop body, as the Numba compiler struggles to optimize this automatically.
