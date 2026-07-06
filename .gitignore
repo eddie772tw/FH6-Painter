@@ -69,11 +69,11 @@ dist/
 !frontend/package-lock.json
 !tauri.conf.json
 !frontend/src-tauri/tauri.conf.json
-tools/benchmark/
 optimization_settings.json
 /tools/benchmark/benchmark_history.json
 /tools/benchmark/benchmark_result.json
 /tools/benchmark/benchmark_report.html
+/tools/benchmark/__pycache__/
 /nuitka_dist
 
 optimization_settings.json
