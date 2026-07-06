@@ -133,6 +133,48 @@ Support Go-OpenCL, Taichi, and Numba acceleration across CPU and GPU, provide GU
 
 ---
 
+## 新增自訂語系支援 / Adding New Translations
+
+本專案支援完全動態加載的多語言框架，貢獻者無需修改任何程式碼即可新增新語系：
+The project supports a fully dynamic multi-language framework. Contributors can add new languages without changing any code:
+
+1. **建立語系檔 / Create Localized JSON**:
+   在 `lang/` 目錄下建立一個符合 ISO 639 與 locale 定義的 JSON 檔案（例如 `fr-fr.json`）。可以直接複製 `lang/en-us.json` 作為範本進行翻譯。
+   Create a JSON file named after the ISO 639 locale code (e.g. `fr-fr.json`) inside the `lang/` directory. You can copy `lang/en-us.json` as a starting template.
+
+2. **註冊語言名稱 / Register Locale Name**:
+   編輯 `lang/iso639.json`，在字典中加入該語系代碼與對應的人性化易讀名稱。例如：
+   Edit `lang/iso639.json` and append your locale code mapping to its readable language name. For example:
+   ```json
+   {
+     "fr-fr": "Français (French)"
+   }
+   ```
+   *註：若未在此註冊，下拉選單中將直接顯示其原始檔名（Fallback）。*
+   *Note: If not registered, the select dropdown will display the raw filename code as a fallback.*
+
+3. **語系 PR 提交規範 / Pull Request Guidelines for Translations**:
+   當提交新的語系支援 PR 時，請遵循以下標準化格式：
+   When submitting a Pull Request for new language support, please follow these standardized formatting rules:
+   
+   - **PR 標題格式 / PR Title**: `feat(i18n): add <locale-name> language support` (例如 `feat(i18n): add French (fr-fr) language support`)。
+   - **PR 說明內容 / PR Description Template**:
+     ```markdown
+     ## 語系新增說明 / Translation Details
+     - 新增語系代碼 / Added Locale Code: `fr-fr`
+     - 語系顯示名稱 / Display Language Name: `Français (French)`
+
+     ## 檢查清單 / Checklist
+     - [ ] 已在 `lang/` 目錄建立對應的 `<locale-code>.json` 檔案
+     - [ ] 已在 `lang/iso639.json` 中註冊此語系代碼與對照名稱
+     - [ ] 翻譯 JSON 中的所有翻譯鍵（Keys）皆已完整對齊 `en-us.json`
+     - [ ] 確認翻譯內容中無殘留的中文字元或錯位
+     - [ ] 已在本地測試過，選單能正常加載並正確切換該語系
+     - [ ] 已在本地手動執行並通過 i18n 單元測試 (Run and passed: `pytest tests/test_i18n.py`)
+     ```
+
+---
+
 ## 開發者規範與程式碼格式化 / Developer Guide & Formatting
 
 專案採用 **[Ruff](https://github.com/astral-sh/ruff)** 作為標準的程式碼格式化與風格檢查工具。為確保代碼風格一致，並能順利通過 GitHub Actions 的 CI 檢查，請在提交代碼前遵循以下程序進行格式化：
