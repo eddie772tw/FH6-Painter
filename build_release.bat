@@ -90,6 +90,7 @@ if not exist "%~dp0dist" mkdir "%~dp0dist"
     --add-data "tools\bin\*;tools\bin" ^
     --add-data "tools\fh6-heuristics.json;tools" ^
     --add-data "settings\*;settings" ^
+    --add-data "lang\*;lang" ^
     "%~dp0backend\server.py"
 
 echo --------------------------------------------------------------------
