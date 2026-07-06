@@ -56,6 +56,8 @@ README_FH6_READY.md
 build/
 dist/
 *.spec
+!server-sidecar-x86_64-pc-windows-msvc.spec
+!FH6-Painter.spec
 .ref/
 
 # Keep key configuration JSONs tracked
