@@ -130,6 +130,14 @@ Support Go-OpenCL, Taichi, and Numba acceleration across CPU and GPU, provide GU
 *   **Compiling Standalone Release**:
     *   If you modified the source code and want to compile your own standalone release, double-click **`build_release.bat`** in the project root.
     *   It will clean temporary files, gather Taichi source code, package DLLs, and copy external presets to compile a standalone Release ZIP.
+*   **排除非發行資源目錄 / Exclude Non-release Directories (.pkgdirignore)**：
+    *   專案根目錄下的 **`.pkgdirignore`** 檔案用於定義不需要打包進 `.exe` 中的目錄（例如：環境變數 `.venv`、開發暫存目錄 `build`、測試程式 `tests` 等）。
+    *   當執行 `build_release.bat` 時，腳本會自動掃描根目錄。若發現有新增的資料夾既不在 `.pkgdirignore` 中、也未在打包指令中進行 `--add-data` 配置，將會主動彈出互動提示：
+        *   **輸入 Y**：自動將該資料夾新增至 `.pkgdirignore` 以在未來忽略它。
+        *   **輸入 N**（超時 10 秒亦為 N）：警示開發者需要手動將其加入打包設定，並中止建置流程。
+    *   The **`.pkgdirignore`** file in the root directory manages folders excluded from the standalone bundle. If a folder is unregistered (not listed in `.pkgdirignore` and not included in `--add-data` options), `build_release.bat` will prompt you:
+        *   **Press Y**: Automatically append the folder to `.pkgdirignore`.
+        *   **Press N** (default after 10s timeout): Cancel the build and warn you to manually configure the packaging settings.
 
 ---
 

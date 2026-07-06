@@ -39,6 +39,51 @@ if not exist "%PYINSTALLER_EXE%" (
     )
 )
 
+:: 1.5. Scan for unregistered directories (not ignored and not packaged)
+echo [INFO] Scanning for unregistered resource directories...
+echo --------------------------------------------------------------------
+set "HAS_UNREGISTERED=false"
+
+for /d %%D in ("%~dp0*") do (
+    set "DIR_NAME=%%~nxD"
+    set "IS_IGNORED=false"
+    
+    :: Check if directory is listed in .pkgdirignore
+    if exist "%~dp0.pkgdirignore" (
+        for /f "usebackq tokens=* eol=#" %%I in ("%~dp0.pkgdirignore") do (
+            if /i "%%~nxD" == "%%I" set "IS_IGNORED=true"
+        )
+    )
+    
+    if "!IS_IGNORED!" == "false" (
+        :: Check if it's already packaged in this script by searching for its name
+        findstr /I /C:"%%~nxD" "%~dp0build_release.bat" >nul
+        if errorlevel 1 (
+            echo.
+            echo [WARNING] Found directory '%%~nxD' that is neither ignored nor packaged.
+            if "%GITHUB_ACTIONS%" == "true" (
+                echo [ERROR] Unregistered directory '%%~nxD' found in CI. Terminating.
+                exit /b 1
+            )
+            choice /C YN /T 10 /D N /M "Would you like to add '%%~nxD' to .pkgdirignore?"
+            if !errorlevel! equ 1 (
+                echo [INFO] Adding '%%~nxD' to .pkgdirignore...
+                echo.>> "%~dp0.pkgdirignore"
+                echo %%~nxD>> "%~dp0.pkgdirignore"
+                echo [SUCCESS] Added '%%~nxD' to .pkgdirignore.
+            ) else (
+                echo.
+                echo [IMPORTANT] Please add '%%~nxD' to build_release.bat packaging options or .pkgdirignore.
+                echo [INFO] Building process will now terminate.
+                pause
+                exit /b 1
+            )
+        )
+    )
+)
+echo [SUCCESS] No unregistered resource directories found.
+echo.
+
 :: 2. Run Tauri Build
 echo [INFO] Running Tauri Build...
 echo --------------------------------------------------------------------
