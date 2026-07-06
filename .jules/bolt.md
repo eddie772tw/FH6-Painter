@@ -42,3 +42,6 @@
 ## 2024-05-26 - [Numba Loop Unswitching with Constant Flags]
 **Learning:** In Numba JIT kernels, unswitching a loop based on `check_contour` in the innermost loop (moving the `if check_contour:` check OUTSIDE the `for x in range(...)` loop) yields huge performance improvements (nearly 10x speedup in CPU Multithreading mode) because it removes branching for every pixel evaluated.
 **Action:** When working with Numba JIT kernels, proactively look for static/configuration boolean flags inside innermost tight loops and unswitch them (hoist them outside) even if it means duplicating the loop body, as the Numba compiler struggles to optimize this automatically.
+## 2026-07-06 - Numba 3D Slice Assignment Regressions
+**Learning:** In Numba JIT kernels, attempting to do 3D slice assignments like `canvas[:, :, 0] = r_val` fails to vectorize effectively and executes substantially slower than explicitly writing out the nested 2D loops `for y in range(height): for x in range(width): canvas[y, x, 0] = r_val`. This causes measurable performance regressions (e.g., ~3x slowdown for `rebuild_canvas_jit`).
+**Action:** When filling or rebuilding large multi-dimensional arrays (like a 3D canvas) in Numba, avoid using 3D slice syntax and prefer explicitly looping through the dimensions and performing point assignments.
