@@ -3,17 +3,19 @@
 
 // Dynamic Title based on Git Info
 if (typeof __GIT_BRANCH__ !== 'undefined' && typeof __GIT_COMMIT__ !== 'undefined') {
-  const updateTitle = (title) => {
-    document.title = title;
-    if (window.__TAURI__ && window.__TAURI__.window && window.__TAURI__.window.getCurrentWindow) {
-      window.__TAURI__.window.getCurrentWindow().setTitle(title).catch(() => {});
-    } else if (window.__TAURI__ && window.__TAURI__.window && window.__TAURI__.window.appWindow) {
-      window.__TAURI__.window.appWindow.setTitle(title).catch(() => {});
-    }
-  };
+  document.title = "FH6-Painter";
+  
+  let gitBadgeEl = null;
 
-  const baseTitle = `FH6-Painter - ${__GIT_BRANCH__} (${__GIT_COMMIT__})`;
-  updateTitle(baseTitle);
+  document.addEventListener('DOMContentLoaded', () => {
+    const logoArea = document.querySelector('.logo-area');
+    if (logoArea) {
+      gitBadgeEl = document.createElement('span');
+      gitBadgeEl.className = 'git-info-badge';
+      gitBadgeEl.textContent = `${__GIT_BRANCH__} (${__GIT_COMMIT__})`;
+      logoArea.appendChild(gitBadgeEl);
+    }
+  });
 
   if (__GIT_BRANCH__ === 'main') {
     const checkReleaseStatus = async () => {
@@ -38,17 +40,22 @@ if (typeof __GIT_BRANCH__ !== 'undefined' && typeof __GIT_COMMIT__ !== 'undefine
           statusStr = ` (behind ${latestTag})`;
         } else if (compareData.status === "identical") {
           if (!__GIT_COMMIT__.startsWith('post-')) {
-            updateTitle(`FH6-Painter - main (${latestTag})`);
+            const updateText = `${__GIT_BRANCH__} (${latestTag})`;
+            if (gitBadgeEl) gitBadgeEl.textContent = updateText;
             return;
           }
         }
         
-        updateTitle(`${baseTitle}${statusStr}`);
+        const updateText = `${__GIT_BRANCH__} (${__GIT_COMMIT__})${statusStr}`;
+        if (gitBadgeEl) gitBadgeEl.textContent = updateText;
       } catch (e) {
         console.warn("Failed to check release status", e);
       }
     };
-    checkReleaseStatus();
+    
+    document.addEventListener('DOMContentLoaded', () => {
+      checkReleaseStatus();
+    });
   }
 }
 
