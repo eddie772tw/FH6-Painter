@@ -601,7 +601,7 @@ class PainterServer:
             )
 
     async def run_benchmark(self):
-        script_path = os.path.join(ROOT_DIR, "tools", "benchmark_taichi.py")
+        script_path = os.path.join(ROOT_DIR, "tools", "benchmark", "__main__.py")
         try:
             process = await asyncio.create_subprocess_exec(
                 sys.executable,
