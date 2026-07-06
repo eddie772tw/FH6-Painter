@@ -63,7 +63,9 @@ const langSelect = document.getElementById("lang-select");
 if (langSelect) {
   langSelect.addEventListener("change", (e) => {
     if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ action: "get_lang", lang: e.target.value }));
+      const selectedLang = e.target.value;
+      localStorage.setItem("preferred_lang", selectedLang);
+      ws.send(JSON.stringify({ action: "get_lang", lang: selectedLang }));
     }
   });
 }
@@ -167,7 +169,7 @@ function connectWebSocket() {
     ws.send(JSON.stringify({ action: "get_engines" }));
     ws.send(JSON.stringify({ action: "get_profiles" }));
     ws.send(JSON.stringify({ action: "get_gpus" }));
-    ws.send(JSON.stringify({ action: "get_lang", lang: langSelect ? langSelect.value : "en-us" }));
+    ws.send(JSON.stringify({ action: "get_languages" }));
   };
 
   ws.onclose = () => {
@@ -370,6 +372,34 @@ function translateUI() {
 
 function handleBackendMessage(msg) {
   switch (msg.action) {
+    case "languages_list":
+      if (langSelect && msg.data) {
+        langSelect.innerHTML = "";
+        msg.data.forEach(lang => {
+          const option = document.createElement("option");
+          option.value = lang.code;
+          option.textContent = lang.name;
+          langSelect.appendChild(option);
+        });
+        
+        const preferred = localStorage.getItem("preferred_lang");
+        const listCodes = msg.data.map(l => l.code);
+        let targetLang = "en-us";
+        
+        if (preferred && listCodes.includes(preferred)) {
+          targetLang = preferred;
+        } else if (listCodes.includes("en-us")) {
+          targetLang = "en-us";
+        } else if (msg.data.length > 0) {
+          targetLang = msg.data[0].code;
+        }
+        
+        langSelect.value = targetLang;
+        localStorage.setItem("preferred_lang", targetLang);
+        ws.send(JSON.stringify({ action: "get_lang", lang: targetLang }));
+      }
+      break;
+
     case "lang_data":
       currentLangDict = msg.data;
       translateUI();
