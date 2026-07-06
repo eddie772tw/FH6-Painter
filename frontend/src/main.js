@@ -3,15 +3,60 @@
 
 // Dynamic Title based on Git Info
 if (typeof __GIT_BRANCH__ !== 'undefined' && typeof __GIT_COMMIT__ !== 'undefined') {
-  document.title = `FH6-Painter - ${__GIT_BRANCH__} (${__GIT_COMMIT__})`;
+  document.title = "FH6-Painter";
+  
+  let gitBadgeEl = null;
 
-  // Also add it visually to the custom Tauri titlebar if present
   document.addEventListener('DOMContentLoaded', () => {
-    const titleElement = document.querySelector('.logo-area h1');
-    if (titleElement) {
-      titleElement.textContent = `FH6-Painter - ${__GIT_BRANCH__} (${__GIT_COMMIT__})`;
+    const logoArea = document.querySelector('.logo-area');
+    if (logoArea) {
+      gitBadgeEl = document.createElement('span');
+      gitBadgeEl.className = 'git-info-badge';
+      gitBadgeEl.textContent = `${__GIT_BRANCH__} (${__GIT_COMMIT__})`;
+      logoArea.appendChild(gitBadgeEl);
     }
   });
+
+  if (__GIT_BRANCH__ === 'main') {
+    const checkReleaseStatus = async () => {
+      try {
+        const repo = "eddie772tw/FH6-Painter";
+        const releasesRes = await fetch(`https://api.github.com/repos/${repo}/releases`);
+        if (!releasesRes.ok) return;
+        const releases = await releasesRes.json();
+        if (releases.length === 0) return;
+        
+        const latestTag = releases[0].tag_name;
+        const pureCommit = __GIT_COMMIT__.replace(/^post-/, '');
+        
+        const compareRes = await fetch(`https://api.github.com/repos/${repo}/compare/${latestTag}...${pureCommit}`);
+        if (!compareRes.ok) return;
+        
+        const compareData = await compareRes.json();
+        let statusStr = "";
+        if (compareData.status === "ahead") {
+          statusStr = ` (ahead of ${latestTag} by ${compareData.ahead_by} commits)`;
+        } else if (compareData.status === "behind") {
+          statusStr = ` (behind ${latestTag})`;
+        } else if (compareData.status === "identical") {
+          if (!__GIT_COMMIT__.startsWith('post-')) {
+            const updateText = `${__GIT_BRANCH__} (${latestTag})`;
+            if (gitBadgeEl) gitBadgeEl.textContent = updateText;
+            return;
+          }
+        }
+        
+        const updateText = `${__GIT_BRANCH__} (${__GIT_COMMIT__})${statusStr}`;
+        if (gitBadgeEl) gitBadgeEl.textContent = updateText;
+      } catch (e) {
+        console.warn("Failed to check release status", e);
+      }
+    };
+    
+    document.addEventListener('DOMContentLoaded', () => {
+      checkReleaseStatus();
+    });
+  }
 }
 
 const wsUrl = "ws://localhost:8765";

@@ -685,3 +685,17 @@ canvas {
 .btn-header.text-green { color: var(--primary-color); }
 .btn-header.text-orange { color: #F4A261; }
 .btn-header.text-blue { color: var(--secondary-color); }
+
+/* Git Info Badge */
+.git-info-badge {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-muted);
+  opacity: 0.85;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--glass-border);
+  padding: 3px 8px;
+  border-radius: 4px;
+  margin-left: 10px;
+}

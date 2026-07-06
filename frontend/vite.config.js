@@ -13,6 +13,22 @@ try {
   } catch (e) {
     gitCommit = execSync("git rev-parse --short HEAD").toString().trim();
   }
+  
+  try {
+    const status = execSync("git status --porcelain -uno").toString().trim();
+    if (status.length > 0) {
+      const changedFiles = status.split("\n").map(line => line.trim());
+      const hasRealChanges = changedFiles.some(line => {
+        const filePath = line.substring(2).trim();
+        return !filePath.endsWith("Cargo.lock") && !filePath.endsWith("package-lock.json");
+      });
+      if (hasRealChanges) {
+        gitCommit = "post-" + gitCommit;
+      }
+    }
+  } catch (e) {
+    // Ignore error checking status
+  }
 } catch (e) {
   console.warn("Could not retrieve git information.");
 }
