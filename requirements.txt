@@ -17,3 +17,5 @@ websockets>=11.0.0
 ruff
 pytest
 pytest-asyncio
+psutil
+

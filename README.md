@@ -58,7 +58,7 @@ Support Go-OpenCL, Taichi, and Numba acceleration across CPU and GPU, provide GU
 │   ├── bin/                   # 外部二進位工具目錄 / External Binaries
 │   ├── fh6_import_layer_table.py # 記憶體掃描與寫入核心 / Win32 RAM scanner & injector
 │   ├── fh6_painter_generator.py # JIT 幾何生成器 / JIT shape generator tool
-│   ├── benchmark_taichi.py      # 效能對決分析腳本 / Cross-res JIT Profiler
+│   ├── benchmark/                # 效能跑分套件 / Benchmark Suite Package
 │   ├── fh6-heuristics.json      # 記憶體掃描快取 / Memory scan heuristics
 │   └── verify_boundary.py       # 邊界驗證工具 / Boundary validation tool
 ```
