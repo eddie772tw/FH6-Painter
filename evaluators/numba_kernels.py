@@ -515,10 +515,17 @@ def update_uncovered_mask(uncovered_map, x_c, y_c, r_x, r_y, theta):
 
     inv_a = np.float32(1.0 / a) if a > 0 else np.float32(0.0)
 
+    dy = np.float32(min_y - y_c)
+    dy_sq = dy * dy
+    two_dy = np.float32(2.0) * dy
+
+    b_quad = dy * b_coeff
+
+    discriminant = a - dy_sq * inv_rx2_ry2
+    disc_step_1 = -two_dy * inv_rx2_ry2
+    disc_step_2 = -inv_rx2_ry2
+
     for y in range(min_y, max_y + 1):
-        dy = np.float32(y - y_c)
-        b_quad = dy * b_coeff
-        discriminant = a - dy * dy * inv_rx2_ry2
         if discriminant >= 0.0:
             sqrt_d = math.sqrt(discriminant)
             dx_min = (-b_quad - sqrt_d) * inv_a
@@ -526,8 +533,12 @@ def update_uncovered_mask(uncovered_map, x_c, y_c, r_x, r_y, theta):
             x_start = max(min_x, int(math.ceil(x_c + dx_min)))
             x_end = min(max_x, int(math.floor(x_c + dx_max)))
 
-            for x in range(x_start, x_end + 1):
-                uncovered_map[y, x] = np.float32(1.0)
+            if x_start <= x_end:
+                uncovered_map[y, x_start : x_end + 1] = np.float32(1.0)
+
+        b_quad += b_coeff
+        discriminant += disc_step_1 + disc_step_2
+        disc_step_1 -= np.float32(2.0) * inv_rx2_ry2
 
 
 @numba.jit(nopython=True, parallel=True, fastmath=True, cache=True)
@@ -835,10 +846,17 @@ def run_redundancy_check_jit(shapes_data, shapes_color, shapes_type, width, heig
 
         has_contribution = False
 
+        dy = np.float32(min_y - y_c)
+        dy_sq = dy * dy
+        two_dy = np.float32(2.0) * dy
+
+        b_quad = dy * b_coeff
+
+        discriminant = a - dy_sq * inv_rx2_ry2
+        disc_step_1 = -two_dy * inv_rx2_ry2
+        disc_step_2 = -inv_rx2_ry2
+
         for y in range(min_y, max_y + 1):
-            dy = np.float32(y - y_c)
-            b_quad = dy * b_coeff
-            discriminant = a - dy * dy * inv_rx2_ry2
             if discriminant >= 0.0:
                 sqrt_d = math.sqrt(discriminant)
                 dx_min = (-b_quad - sqrt_d) * inv_a
@@ -847,9 +865,14 @@ def run_redundancy_check_jit(shapes_data, shapes_color, shapes_type, width, heig
                 x_end = min(max_x, int(math.floor(x_c + dx_max)))
 
                 for x in range(x_start, x_end + 1):
-                    if occlusion[y, x] < 0.999:
+                    val = occlusion[y, x]
+                    if val < 0.999:
                         has_contribution = True
-                        occlusion[y, x] += (1.0 - occlusion[y, x]) * a_f
+                        occlusion[y, x] = val + (1.0 - val) * a_f
+
+            b_quad += b_coeff
+            discriminant += disc_step_1 + disc_step_2
+            disc_step_1 -= np.float32(2.0) * inv_rx2_ry2
 
         if not has_contribution:
             visible_mask[i] = False
