@@ -2,7 +2,7 @@
 > **Forza Horizon 6 Triple Heterogeneous Accelerated Image-to-Livery Painter & Memory Importer**
 > **基於三重異質加速的極速《極限競速：地平線 6》車貼生成與記憶體匯入工具**
 
-[![Language](https://img.shields.io/badge/Language-Python%203.13%20%2F%203.14%20(CPU)--blue.svg)](https://www.python.org/)
+[![Language](https://img.shields.io/badge/python-3.13%2B-blue.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Acceleration](https://img.shields.io/badge/Acceleration-Go--OpenCL%20%26%20Taichi%20%26%20Numba-orange.svg)](https://numba.pydata.org/)
 [![Package](https://img.shields.io/badge/Distribution-Standalone%20EXE-red.svg)](dist/FH6-Painter)
