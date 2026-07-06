@@ -865,6 +865,324 @@ def select_final_best_gpu(
         best_candidate[0, 9] = climb_results[best_idx, 3]
 
 
+@ti.func
+def lcg_step(seed: ti.uint32) -> ti.uint32:
+    return seed * ti.cast(1664525, ti.uint32) + ti.cast(1013904223, ti.uint32)
+
+
+@ti.kernel
+def copy_pbest_gpu(
+    src_x: ti.types.ndarray(dtype=ti.f32, ndim=2),
+    dst_x: ti.types.ndarray(dtype=ti.f32, ndim=2),
+    src_fit: ti.types.ndarray(dtype=ti.f32, ndim=1),
+    dst_fit: ti.types.ndarray(dtype=ti.f32, ndim=1),
+):
+    for i in range(128):
+        dst_fit[i] = src_fit[i]
+        for j in ti.static(range(6)):
+            dst_x[i, j] = src_x[i, j]
+
+
+@ti.kernel
+def taichi_pso_epoch_gpu(
+    particles_x: ti.types.ndarray(dtype=ti.f32, ndim=2),
+    particles_v: ti.types.ndarray(dtype=ti.f32, ndim=2),
+    pbest_x: ti.types.ndarray(dtype=ti.f32, ndim=2),
+    pbest_fit: ti.types.ndarray(dtype=ti.f32, ndim=1),
+    pbest_x_old: ti.types.ndarray(dtype=ti.f32, ndim=2),
+    pbest_fit_old: ti.types.ndarray(dtype=ti.f32, ndim=1),
+    seeds: ti.types.ndarray(dtype=ti.uint32, ndim=1),
+    target_r: ti.types.ndarray(dtype=ti.f32, ndim=2),
+    target_g: ti.types.ndarray(dtype=ti.f32, ndim=2),
+    target_b: ti.types.ndarray(dtype=ti.f32, ndim=2),
+    canvas_r: ti.types.ndarray(dtype=ti.f32, ndim=2),
+    canvas_g: ti.types.ndarray(dtype=ti.f32, ndim=2),
+    canvas_b: ti.types.ndarray(dtype=ti.f32, ndim=2),
+    alpha_mask: ti.types.ndarray(dtype=ti.f32, ndim=2),
+    check_contour: ti.i32,
+    use_freeze: ti.i32,
+    freeze_mask: ti.types.ndarray(dtype=ti.uint8, ndim=2),
+    use_weight: ti.i32,
+    weight_map: ti.types.ndarray(dtype=ti.f32, ndim=2),
+    use_uncovered: ti.i32,
+    uncovered_map: ti.types.ndarray(dtype=ti.f32, ndim=2),
+    height: ti.i32,
+    width: ti.i32,
+    max_r: ti.f32,
+    step_offset: ti.i32,
+    total_steps: ti.i32,
+):
+    ti.loop_config(block_dim=128)
+    for i in range(128):
+        # Force access to prevent JIT compiler from optimizing out unused ndarray arguments
+        if i == -1:
+            pbest_fit[0] = (
+                alpha_mask[0, 0]
+                + ti.cast(freeze_mask[0, 0], ti.f32)
+                + weight_map[0, 0]
+                + uncovered_map[0, 0]
+                + target_r[0, 0]
+                + target_g[0, 0]
+                + target_b[0, 0]
+                + canvas_r[0, 0]
+                + canvas_g[0, 0]
+                + canvas_b[0, 0]
+                + particles_x[0, 0]
+                + particles_v[0, 0]
+                + pbest_x[0, 0]
+            )
+
+        x_c = particles_x[i, 0]
+        y_c = particles_x[i, 1]
+        r_x = particles_x[i, 2]
+        r_y = particles_x[i, 3]
+        theta = particles_x[i, 4]
+        alpha = particles_x[i, 5]
+
+        vx = particles_v[i, 0]
+        vy = particles_v[i, 1]
+        vrx = particles_v[i, 2]
+        vry = particles_v[i, 3]
+        vtheta = particles_v[i, 4]
+
+        seed = seeds[i]
+
+        # 每個 epoch 內部跑 5 步
+        for local_step in range(5):
+            t = step_offset + local_step
+            scale = 1.0 - (ti.cast(t, ti.f32) / ti.cast(total_steps, ti.f32))
+
+            # 動態參數調整
+            w = 0.5 * scale + 0.1
+            c1 = 2.0
+            c2 = 0.1
+            is_collapsing = 0
+            if t >= total_steps - 5:
+                w = 0.0
+                c1 = 0.0
+                c2 = 1.0
+                is_collapsing = 1
+            elif t >= ti.cast(total_steps, ti.f32) * 0.7:
+                c1 = 0.0
+                c2 = 3.0
+
+            l_x = pbest_x_old[i, 0]
+            l_y = pbest_x_old[i, 1]
+            l_rx = pbest_x_old[i, 2]
+            l_ry = pbest_x_old[i, 3]
+            l_theta = pbest_x_old[i, 4]
+
+            if t < ti.cast(total_steps, ti.f32) * 0.7:
+                # Ring Topology 尋找左右鄰居中最優的
+                idx_prev = (i - 1 + 128) % 128
+                idx_next = (i + 1) % 128
+                min_f = pbest_fit_old[i]
+                best_idx = i
+                if pbest_fit_old[idx_prev] < min_f:
+                    min_f = pbest_fit_old[idx_prev]
+                    best_idx = idx_prev
+                if pbest_fit_old[idx_next] < min_f:
+                    min_f = pbest_fit_old[idx_next]
+                    best_idx = idx_next
+
+                l_x = pbest_x_old[best_idx, 0]
+                l_y = pbest_x_old[best_idx, 1]
+                l_rx = pbest_x_old[best_idx, 2]
+                l_ry = pbest_x_old[best_idx, 3]
+                l_theta = pbest_x_old[best_idx, 4]
+            else:
+                # Collapse to Global Best (位於索引 0)
+                l_x = pbest_x_old[0, 0]
+                l_y = pbest_x_old[0, 1]
+                l_rx = pbest_x_old[0, 2]
+                l_ry = pbest_x_old[0, 3]
+                l_theta = pbest_x_old[0, 4]
+
+            # 產生 LCG 決定性隨機數
+            seed = lcg_step(seed)
+            r1 = ti.cast(seed, ti.f32) / 4294967296.0
+            seed = lcg_step(seed)
+            r2 = ti.cast(seed, ti.f32) / 4294967296.0
+            if is_collapsing == 1:
+                r2 = 1.0
+
+            # 速度更新
+            vx = w * vx + c1 * r1 * (pbest_x[i, 0] - x_c) + c2 * r2 * (l_x - x_c)
+            vy = w * vy + c1 * r1 * (pbest_x[i, 1] - y_c) + c2 * r2 * (l_y - y_c)
+            vrx = w * vrx + c1 * r1 * (pbest_x[i, 2] - r_x) + c2 * r2 * (l_rx - r_x)
+            vry = w * vry + c1 * r1 * (pbest_x[i, 3] - r_y) + c2 * r2 * (l_ry - r_y)
+            vtheta = (
+                w * vtheta
+                + c1 * r1 * (pbest_x[i, 4] - theta)
+                + c2 * r2 * (l_theta - theta)
+            )
+
+            # 限制速度大小防止粒子飛太遠
+            max_v_pos = 8.0 * scale
+            max_v_size = 6.0 * scale
+            max_v_ang = 0.25 * scale
+            vx = ti.max(-max_v_pos, ti.min(max_v_pos, vx))
+            vy = ti.max(-max_v_pos, ti.min(max_v_pos, vy))
+            vrx = ti.max(-max_v_size, ti.min(max_v_size, vrx))
+            vry = ti.max(-max_v_size, ti.min(max_v_size, vry))
+            vtheta = ti.max(-max_v_ang, ti.min(max_v_ang, vtheta))
+
+            # 位置更新
+            x_c += vx
+            y_c += vy
+            r_x += vrx
+            r_y += vry
+            theta += vtheta
+
+            # 邊界約束與反彈
+            if x_c < 0.0:
+                x_c = 0.0
+                vx = -vx * 0.5
+            elif x_c > ti.cast(width, ti.f32):
+                x_c = ti.cast(width, ti.f32)
+                vx = -vx * 0.5
+
+            if y_c < 0.0:
+                y_c = 0.0
+                vy = -vy * 0.5
+            elif y_c > ti.cast(height, ti.f32):
+                y_c = ti.cast(height, ti.f32)
+                vy = -vy * 0.5
+
+            if r_x < 2.0:
+                r_x = 2.0
+                vrx = -vrx * 0.5
+            elif r_x > max_r:
+                r_x = max_r
+                vrx = -vrx * 0.5
+
+            if r_y < 2.0:
+                r_y = 2.0
+                vry = -vry * 0.5
+            elif r_y > max_r:
+                r_y = max_r
+                vry = -vry * 0.5
+
+            # 計算當前適應度
+            _, _, _, delta = evaluate_candidate_ti(
+                target_r,
+                target_g,
+                target_b,
+                canvas_r,
+                canvas_g,
+                canvas_b,
+                x_c,
+                y_c,
+                r_x,
+                r_y,
+                theta,
+                alpha,
+                alpha_mask,
+                check_contour,
+                use_freeze,
+                freeze_mask,
+                use_weight,
+                weight_map,
+                use_uncovered,
+                uncovered_map,
+                height,
+                width,
+            )
+
+            # 更新個體歷史最佳
+            if delta < pbest_fit[i]:
+                pbest_fit[i] = delta
+                pbest_x[i, 0] = x_c
+                pbest_x[i, 1] = y_c
+                pbest_x[i, 2] = r_x
+                pbest_x[i, 3] = r_y
+                pbest_x[i, 4] = theta
+                pbest_x[i, 5] = alpha
+
+        # 將狀態寫回
+        particles_x[i, 0] = x_c
+        particles_x[i, 1] = y_c
+        particles_x[i, 2] = r_x
+        particles_x[i, 3] = r_y
+        particles_x[i, 4] = theta
+        particles_x[i, 5] = alpha
+
+        particles_v[i, 0] = vx
+        particles_v[i, 1] = vy
+        particles_v[i, 2] = vrx
+        particles_v[i, 3] = vry
+        particles_v[i, 4] = vtheta
+
+        seeds[i] = seed
+
+
+@ti.kernel
+def finalize_pso_result_gpu(
+    pbest_x: ti.types.ndarray(dtype=ti.f32, ndim=2),
+    pbest_fit: ti.types.ndarray(dtype=ti.f32, ndim=1),
+    best_candidate: ti.types.ndarray(dtype=ti.f32, ndim=2),
+    target_r: ti.types.ndarray(dtype=ti.f32, ndim=2),
+    target_g: ti.types.ndarray(dtype=ti.f32, ndim=2),
+    target_b: ti.types.ndarray(dtype=ti.f32, ndim=2),
+    canvas_r: ti.types.ndarray(dtype=ti.f32, ndim=2),
+    canvas_g: ti.types.ndarray(dtype=ti.f32, ndim=2),
+    canvas_b: ti.types.ndarray(dtype=ti.f32, ndim=2),
+    alpha_mask: ti.types.ndarray(dtype=ti.f32, ndim=2),
+    check_contour: ti.i32,
+    use_freeze: ti.i32,
+    freeze_mask: ti.types.ndarray(dtype=ti.uint8, ndim=2),
+    use_weight: ti.i32,
+    weight_map: ti.types.ndarray(dtype=ti.f32, ndim=2),
+    use_uncovered: ti.i32,
+    uncovered_map: ti.types.ndarray(dtype=ti.f32, ndim=2),
+    height: ti.i32,
+    width: ti.i32,
+):
+    for _ in range(1):
+        x_c = pbest_x[0, 0]
+        y_c = pbest_x[0, 1]
+        r_x = pbest_x[0, 2]
+        r_y = pbest_x[0, 3]
+        theta = pbest_x[0, 4]
+        alpha = pbest_x[0, 5]
+
+        r, g, b, delta = evaluate_candidate_ti(
+            target_r,
+            target_g,
+            target_b,
+            canvas_r,
+            canvas_g,
+            canvas_b,
+            x_c,
+            y_c,
+            r_x,
+            r_y,
+            theta,
+            alpha,
+            alpha_mask,
+            check_contour,
+            use_freeze,
+            freeze_mask,
+            use_weight,
+            weight_map,
+            use_uncovered,
+            uncovered_map,
+            height,
+            width,
+        )
+
+        best_candidate[0, 0] = x_c
+        best_candidate[0, 1] = y_c
+        best_candidate[0, 2] = r_x
+        best_candidate[0, 3] = r_y
+        best_candidate[0, 4] = theta
+        best_candidate[0, 5] = alpha
+        best_candidate[0, 6] = r
+        best_candidate[0, 7] = g
+        best_candidate[0, 8] = b
+        best_candidate[0, 9] = delta
+
+
 class TaichiEvaluator(BaseEvaluator):
     _is_taichi_initialized = False
     _taichi_arch_name = "N/A"
@@ -1000,6 +1318,21 @@ class TaichiEvaluator(BaseEvaluator):
                     self.ti_best_candidate = ti.ndarray(dtype=ti.f32, shape=(1, 10))
                     self.ti_climb_candidates = ti.ndarray(dtype=ti.f32, shape=(128, 6))
                     self.ti_climb_results = ti.ndarray(dtype=ti.f32, shape=(128, 4))
+
+                    # GPU PSO buffers
+                    self.ti_particles_x = ti.ndarray(dtype=ti.f32, shape=(128, 6))
+                    self.ti_particles_v = ti.ndarray(dtype=ti.f32, shape=(128, 5))
+                    self.ti_pbest_x = ti.ndarray(dtype=ti.f32, shape=(128, 6))
+                    self.ti_pbest_fit = ti.ndarray(dtype=ti.f32, shape=(128,))
+                    self.ti_pbest_x_old = ti.ndarray(dtype=ti.f32, shape=(128, 6))
+                    self.ti_pbest_fit_old = ti.ndarray(dtype=ti.f32, shape=(128,))
+                    self.ti_seeds = ti.ndarray(dtype=ti.uint32, shape=(128,))
+
+                    # 初始化 seeds
+                    seeds_np = (
+                        np.arange(128, dtype=np.uint32) * 1664525 + 1013904223
+                    ).astype(np.uint32)
+                    self.ti_seeds.from_numpy(seeds_np)
                 except Exception as e:
                     print(f"[Taichi JIT VRAM Allocation Error] {e}")
                     self.initialized = False
@@ -1170,10 +1503,111 @@ class TaichiEvaluator(BaseEvaluator):
         optimization_steps = params.get("optimization_steps", 50)
 
         if use_pure_gpu:
-            parallel_hill_climb_gpu(
+            # 準備 PSO 初始狀態
+            best_candidate_np = self.ti_best_candidate.to_numpy()
+            best_x = best_candidate_np[0, 0:6]
+            best_delta = best_candidate_np[0, 9]
+
+            # 決定性粒子位置初始化 ( NumPy 隨機生成器配合固定 seed )
+            rng = np.random.default_rng(seed=42)
+            particles_x_np = np.zeros((128, 6), dtype=np.float32)
+            particles_x_np[0] = best_x
+
+            for k in range(1, 128):
+                particles_x_np[k, 0] = np.clip(
+                    best_x[0] + rng.normal(0, 8.0), 0.0, width
+                )
+                particles_x_np[k, 1] = np.clip(
+                    best_x[1] + rng.normal(0, 8.0), 0.0, height
+                )
+                particles_x_np[k, 2] = np.clip(
+                    best_x[2] + rng.normal(0, 6.0), 2.0, max_r
+                )
+                particles_x_np[k, 3] = np.clip(
+                    best_x[3] + rng.normal(0, 6.0), 2.0, max_r
+                )
+                particles_x_np[k, 4] = best_x[4] + rng.normal(0, 0.25)
+                particles_x_np[k, 5] = 255.0
+
+            # 寫入 VRAM
+            self.ti_particles_x.from_numpy(particles_x_np)
+            self.ti_pbest_x.from_numpy(particles_x_np)
+
+            # 初始化速度與 fit
+            particles_v_np = np.zeros((128, 5), dtype=np.float32)
+            self.ti_particles_v.from_numpy(particles_v_np)
+
+            pbest_fit_np = np.full((128,), 999999999.0, dtype=np.float32)
+            pbest_fit_np[0] = best_delta
+            self.ti_pbest_fit.from_numpy(pbest_fit_np)
+
+            # 重設 seeds 確保多次執行的隨機序列 100% 相同
+            seeds_np = (np.arange(128, dtype=np.uint32) * 1664525 + 1013904223).astype(
+                np.uint32
+            )
+            self.ti_seeds.from_numpy(seeds_np)
+
+            # 執行 PSO Epoch 同步調度
+            total_steps = optimization_steps
+            steps_per_epoch = 5
+            num_epochs = max(1, total_steps // steps_per_epoch)
+
+            for epoch in range(num_epochs):
+                step_offset = epoch * steps_per_epoch
+                # 拷貝當前 pbest 到 old buffers
+                copy_pbest_gpu(
+                    self.ti_pbest_x,
+                    self.ti_pbest_x_old,
+                    self.ti_pbest_fit,
+                    self.ti_pbest_fit_old,
+                )
+                taichi_pso_epoch_gpu(
+                    self.ti_particles_x,
+                    self.ti_particles_v,
+                    self.ti_pbest_x,
+                    self.ti_pbest_fit,
+                    self.ti_pbest_x_old,
+                    self.ti_pbest_fit_old,
+                    self.ti_seeds,
+                    self.ti_target_r,
+                    self.ti_target_g,
+                    self.ti_target_b,
+                    self.ti_canvas_r,
+                    self.ti_canvas_g,
+                    self.ti_canvas_b,
+                    self.ti_alpha,
+                    check_contour_jit,
+                    use_freeze,
+                    ti_freeze_ref,
+                    use_weight,
+                    ti_weight_ref,
+                    use_uncovered,
+                    ti_uncovered_ref,
+                    height,
+                    width,
+                    float(max_r),
+                    step_offset,
+                    total_steps,
+                )
+
+                # 在 Python 端做排序，以確保當前全域最佳解位於索引 0
+                pbest_fit_np = self.ti_pbest_fit.to_numpy()
+                best_idx = np.argmin(pbest_fit_np)
+                if best_idx != 0:
+                    pbest_x_np = self.ti_pbest_x.to_numpy()
+
+                    # 交換
+                    pbest_x_np[[0, best_idx]] = pbest_x_np[[best_idx, 0]]
+                    pbest_fit_np[[0, best_idx]] = pbest_fit_np[[best_idx, 0]]
+
+                    self.ti_pbest_x.from_numpy(pbest_x_np)
+                    self.ti_pbest_fit.from_numpy(pbest_fit_np)
+
+            # 執行 finalize kernel 來重新獲得正確的 r, g, b 並寫入 ti_best_candidate
+            finalize_pso_result_gpu(
+                self.ti_pbest_x,
+                self.ti_pbest_fit,
                 self.ti_best_candidate,
-                self.ti_climb_candidates,
-                self.ti_climb_results,
                 self.ti_target_r,
                 self.ti_target_g,
                 self.ti_target_b,
@@ -1190,15 +1624,6 @@ class TaichiEvaluator(BaseEvaluator):
                 ti_uncovered_ref,
                 height,
                 width,
-                float(max_r),
-                sa_enabled,
-                sa_initial_temp,
-                sa_cooling_rate,
-                optimization_steps,
-            )
-
-            select_final_best_gpu(
-                self.ti_climb_candidates, self.ti_climb_results, self.ti_best_candidate
             )
 
             best_candidate_np = self.ti_best_candidate.to_numpy()
