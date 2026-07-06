@@ -276,10 +276,10 @@ function translateUI() {
     });
   }
 
-  // 4. Profile translation
+  // 4. Profile translation - Directly use raw value without translation
   if (profileSelect) {
     Array.from(profileSelect.options).forEach(option => {
-      option.textContent = currentLangDict["profile." + option.value] || option.getAttribute("data-raw-name") || option.textContent;
+      option.textContent = option.getAttribute("data-raw-name") || option.textContent;
     });
   }
 
@@ -423,7 +423,7 @@ function handleBackendMessage(msg) {
         const option = document.createElement("option");
         option.value = p.name;
         option.setAttribute("data-raw-name", p.name);
-        option.textContent = currentLangDict["profile." + p.name] || p.name;
+        option.textContent = p.name;
         profileSelect.appendChild(option);
       });
       // Select first profile and load settings
