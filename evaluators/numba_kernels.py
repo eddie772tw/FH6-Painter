@@ -202,6 +202,15 @@ def evaluate_candidate(
             disc_step_1 -= np.float32(2.0) * dy_sq_step * inv_rx2_ry2
     else:
         # Slow Path (With weights)
+        if use_weight and not use_uncovered:
+            w_arr = weight_map
+        elif use_uncovered and not use_weight:
+            w_arr = uncovered_map
+        else:
+            w_arr = weight_map
+
+        both_weights = use_weight and use_uncovered
+
         dy = np.float32(min_y - y_c)
         dy_step = np.float32(sample_step)
         dy_sq = dy * dy
@@ -223,76 +232,117 @@ def evaluate_candidate(
                 x_start = max(min_x, int(math.ceil(x_c + dx_min)))
                 x_end = min(max_x, int(math.floor(x_c + dx_max)))
 
-                # ⚡ Bolt Optimization: Loop unswitching for check_contour boolean flag.
+                # ⚡ Bolt Optimization: Loop unswitching for check_contour and weight configuration flags.
                 # By pulling the configuration flag outside the inner pixel-loop, we remove per-pixel branching
                 # and allow the LLVM compiler to better vectorize the heavy accumulation arrays.
-                if check_contour:
-                    for x in range(x_start, x_end + 1, sample_step):
-                        if alpha_mask[y, x] <= 10.0:
-                            count_transparent += 1.0
-                            continue
-                        t_r = target_r[y, x]
-                        t_g = target_g[y, x]
-                        t_b = target_b[y, x]
-                        c_r = canvas_r[y, x]
-                        c_g = canvas_g[y, x]
-                        c_b = canvas_b[y, x]
-                        if use_weight and use_uncovered:
+                if both_weights:
+                    if check_contour:
+                        for x in range(x_start, x_end + 1, sample_step):
+                            if alpha_mask[y, x] <= 10.0:
+                                count_transparent += 1.0
+                                continue
+                            t_r = target_r[y, x]
+                            t_g = target_g[y, x]
+                            t_b = target_b[y, x]
+                            c_r = canvas_r[y, x]
+                            c_g = canvas_g[y, x]
+                            c_b = canvas_b[y, x]
                             w = weight_map[y, x] * uncovered_map[y, x]
-                        elif use_weight:
-                            w = weight_map[y, x]
-                        elif use_uncovered:
-                            w = uncovered_map[y, x]
-                        else:
-                            w = np.float32(1.0)
-                        count += w
-                        sum_t_r += t_r * w
-                        sum_t_g += t_g * w
-                        sum_t_b += t_b * w
-                        c_r_w = c_r * w
-                        c_g_w = c_g * w
-                        c_b_w = c_b * w
-                        sum_c_r += c_r_w
-                        sum_c_g += c_g_w
-                        sum_c_b += c_b_w
-                        sum_c2_r += c_r * c_r_w
-                        sum_c2_g += c_g * c_g_w
-                        sum_c2_b += c_b * c_b_w
-                        sum_ct_r += t_r * c_r_w
-                        sum_ct_g += t_g * c_g_w
-                        sum_ct_b += t_b * c_b_w
+                            count += w
+                            sum_t_r += t_r * w
+                            sum_t_g += t_g * w
+                            sum_t_b += t_b * w
+                            c_r_w = c_r * w
+                            c_g_w = c_g * w
+                            c_b_w = c_b * w
+                            sum_c_r += c_r_w
+                            sum_c_g += c_g_w
+                            sum_c_b += c_b_w
+                            sum_c2_r += c_r * c_r_w
+                            sum_c2_g += c_g * c_g_w
+                            sum_c2_b += c_b * c_b_w
+                            sum_ct_r += t_r * c_r_w
+                            sum_ct_g += t_g * c_g_w
+                            sum_ct_b += t_b * c_b_w
+                    else:
+                        for x in range(x_start, x_end + 1, sample_step):
+                            t_r = target_r[y, x]
+                            t_g = target_g[y, x]
+                            t_b = target_b[y, x]
+                            c_r = canvas_r[y, x]
+                            c_g = canvas_g[y, x]
+                            c_b = canvas_b[y, x]
+                            w = weight_map[y, x] * uncovered_map[y, x]
+                            count += w
+                            sum_t_r += t_r * w
+                            sum_t_g += t_g * w
+                            sum_t_b += t_b * w
+                            c_r_w = c_r * w
+                            c_g_w = c_g * w
+                            c_b_w = c_b * w
+                            sum_c_r += c_r_w
+                            sum_c_g += c_g_w
+                            sum_c_b += c_b_w
+                            sum_c2_r += c_r * c_r_w
+                            sum_c2_g += c_g * c_g_w
+                            sum_c2_b += c_b * c_b_w
+                            sum_ct_r += t_r * c_r_w
+                            sum_ct_g += t_g * c_g_w
+                            sum_ct_b += t_b * c_b_w
                 else:
-                    for x in range(x_start, x_end + 1, sample_step):
-                        t_r = target_r[y, x]
-                        t_g = target_g[y, x]
-                        t_b = target_b[y, x]
-                        c_r = canvas_r[y, x]
-                        c_g = canvas_g[y, x]
-                        c_b = canvas_b[y, x]
-                        if use_weight and use_uncovered:
-                            w = weight_map[y, x] * uncovered_map[y, x]
-                        elif use_weight:
-                            w = weight_map[y, x]
-                        elif use_uncovered:
-                            w = uncovered_map[y, x]
-                        else:
-                            w = np.float32(1.0)
-                        count += w
-                        sum_t_r += t_r * w
-                        sum_t_g += t_g * w
-                        sum_t_b += t_b * w
-                        c_r_w = c_r * w
-                        c_g_w = c_g * w
-                        c_b_w = c_b * w
-                        sum_c_r += c_r_w
-                        sum_c_g += c_g_w
-                        sum_c_b += c_b_w
-                        sum_c2_r += c_r * c_r_w
-                        sum_c2_g += c_g * c_g_w
-                        sum_c2_b += c_b * c_b_w
-                        sum_ct_r += t_r * c_r_w
-                        sum_ct_g += t_g * c_g_w
-                        sum_ct_b += t_b * c_b_w
+                    if check_contour:
+                        for x in range(x_start, x_end + 1, sample_step):
+                            if alpha_mask[y, x] <= 10.0:
+                                count_transparent += 1.0
+                                continue
+                            t_r = target_r[y, x]
+                            t_g = target_g[y, x]
+                            t_b = target_b[y, x]
+                            c_r = canvas_r[y, x]
+                            c_g = canvas_g[y, x]
+                            c_b = canvas_b[y, x]
+                            w = w_arr[y, x]
+                            count += w
+                            sum_t_r += t_r * w
+                            sum_t_g += t_g * w
+                            sum_t_b += t_b * w
+                            c_r_w = c_r * w
+                            c_g_w = c_g * w
+                            c_b_w = c_b * w
+                            sum_c_r += c_r_w
+                            sum_c_g += c_g_w
+                            sum_c_b += c_b_w
+                            sum_c2_r += c_r * c_r_w
+                            sum_c2_g += c_g * c_g_w
+                            sum_c2_b += c_b * c_b_w
+                            sum_ct_r += t_r * c_r_w
+                            sum_ct_g += t_g * c_g_w
+                            sum_ct_b += t_b * c_b_w
+                    else:
+                        for x in range(x_start, x_end + 1, sample_step):
+                            t_r = target_r[y, x]
+                            t_g = target_g[y, x]
+                            t_b = target_b[y, x]
+                            c_r = canvas_r[y, x]
+                            c_g = canvas_g[y, x]
+                            c_b = canvas_b[y, x]
+                            w = w_arr[y, x]
+                            count += w
+                            sum_t_r += t_r * w
+                            sum_t_g += t_g * w
+                            sum_t_b += t_b * w
+                            c_r_w = c_r * w
+                            c_g_w = c_g * w
+                            c_b_w = c_b * w
+                            sum_c_r += c_r_w
+                            sum_c_g += c_g_w
+                            sum_c_b += c_b_w
+                            sum_c2_r += c_r * c_r_w
+                            sum_c2_g += c_g * c_g_w
+                            sum_c2_b += c_b * c_b_w
+                            sum_ct_r += t_r * c_r_w
+                            sum_ct_g += t_g * c_g_w
+                            sum_ct_b += t_b * c_b_w
 
             b_quad += b_quad_step
             discriminant += disc_step_1 + disc_step_2
