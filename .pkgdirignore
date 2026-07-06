@@ -1,0 +1,18 @@
+# FH6-Painter Packaging Directory Ignore List
+# Directories listed here will be ignored by the packaging tests (tests/test_packaging.py).
+# Lines starting with '#' and empty lines are ignored.
+
+.git
+.github
+.jules
+.pytest_cache
+.ruff_cache
+.venv
+__pycache__
+backend
+evaluators
+tests
+build
+dist
+output
+frontend
