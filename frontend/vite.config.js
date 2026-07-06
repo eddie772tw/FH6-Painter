@@ -13,6 +13,15 @@ try {
   } catch (e) {
     gitCommit = execSync("git rev-parse --short HEAD").toString().trim();
   }
+  
+  try {
+    const status = execSync("git status --porcelain").toString().trim();
+    if (status.length > 0) {
+      gitCommit = "post-" + gitCommit;
+    }
+  } catch (e) {
+    // Ignore error checking status
+  }
 } catch (e) {
   console.warn("Could not retrieve git information.");
 }

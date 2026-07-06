@@ -3,15 +3,53 @@
 
 // Dynamic Title based on Git Info
 if (typeof __GIT_BRANCH__ !== 'undefined' && typeof __GIT_COMMIT__ !== 'undefined') {
-  document.title = `FH6-Painter - ${__GIT_BRANCH__} (${__GIT_COMMIT__})`;
-
-  // Also add it visually to the custom Tauri titlebar if present
-  document.addEventListener('DOMContentLoaded', () => {
-    const titleElement = document.querySelector('.logo-area h1');
-    if (titleElement) {
-      titleElement.textContent = `FH6-Painter - ${__GIT_BRANCH__} (${__GIT_COMMIT__})`;
+  const updateTitle = (title) => {
+    document.title = title;
+    if (window.__TAURI__ && window.__TAURI__.window && window.__TAURI__.window.getCurrentWindow) {
+      window.__TAURI__.window.getCurrentWindow().setTitle(title).catch(() => {});
+    } else if (window.__TAURI__ && window.__TAURI__.window && window.__TAURI__.window.appWindow) {
+      window.__TAURI__.window.appWindow.setTitle(title).catch(() => {});
     }
-  });
+  };
+
+  const baseTitle = `FH6-Painter - ${__GIT_BRANCH__} (${__GIT_COMMIT__})`;
+  updateTitle(baseTitle);
+
+  if (__GIT_BRANCH__ === 'main') {
+    const checkReleaseStatus = async () => {
+      try {
+        const repo = "eddie772tw/FH6-Painter";
+        const releasesRes = await fetch(`https://api.github.com/repos/${repo}/releases`);
+        if (!releasesRes.ok) return;
+        const releases = await releasesRes.json();
+        if (releases.length === 0) return;
+        
+        const latestTag = releases[0].tag_name;
+        const pureCommit = __GIT_COMMIT__.replace(/^post-/, '');
+        
+        const compareRes = await fetch(`https://api.github.com/repos/${repo}/compare/${latestTag}...${pureCommit}`);
+        if (!compareRes.ok) return;
+        
+        const compareData = await compareRes.json();
+        let statusStr = "";
+        if (compareData.status === "ahead") {
+          statusStr = ` (ahead of ${latestTag} by ${compareData.ahead_by} commits)`;
+        } else if (compareData.status === "behind") {
+          statusStr = ` (behind ${latestTag})`;
+        } else if (compareData.status === "identical") {
+          if (!__GIT_COMMIT__.startsWith('post-')) {
+            updateTitle(`FH6-Painter - main (${latestTag})`);
+            return;
+          }
+        }
+        
+        updateTitle(`${baseTitle}${statusStr}`);
+      } catch (e) {
+        console.warn("Failed to check release status", e);
+      }
+    };
+    checkReleaseStatus();
+  }
 }
 
 const wsUrl = "ws://localhost:8765";
