@@ -158,7 +158,7 @@ class PainterServer:
                         iso639_dict = json.load(f)
                 except Exception as e:
                     print(f"Error loading iso639.json: {e}")
-            
+
             if os.path.exists(lang_dir) and os.path.isdir(lang_dir):
                 try:
                     for filename in os.listdir(lang_dir):
@@ -168,7 +168,7 @@ class PainterServer:
                             languages.append({"code": code, "name": name})
                 except Exception as e:
                     print(f"Error scanning lang directory: {e}")
-            
+
             languages.sort(key=lambda x: x["code"])
             await websocket.send(
                 json.dumps({"action": "languages_list", "data": languages})
