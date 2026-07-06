@@ -75,6 +75,8 @@ def evaluate_candidate_ti(
     uncovered_map: ti.types.ndarray(),
     height: ti.i32,
     width: ti.i32,
+    sample_step: ti.i32,
+    analytical_color_enabled: ti.i32,
 ):
     """Evaluates a single ellipse candidate on GPU using planar Target/Canvas channels and scanline solvers."""
     cos_t = ti.math.cos(theta)
@@ -147,8 +149,8 @@ def evaluate_candidate_ti(
                             is_valid = 0
                         if use_freeze == 1 and freeze_mask[y, x] == 1:
                             is_valid = 0
-                        x += 1
-                y += 1
+                        x += sample_step
+                y += sample_step
 
         # Accumulation Pass (Perfect for coalesced parallel loads)
         if is_valid == 1:
@@ -195,8 +197,8 @@ def evaluate_candidate_ti(
                             sum_ct_r += c_r * t_r
                             sum_ct_g += c_g * t_g
                             sum_ct_b += c_b * t_b
-                            x += 1
-                    y += 1
+                            x += sample_step
+                    y += sample_step
             else:
                 y = min_y
                 while y <= max_y:
@@ -246,8 +248,8 @@ def evaluate_candidate_ti(
                             sum_ct_r += (c_r * t_r) * w
                             sum_ct_g += (c_g * t_g) * w
                             sum_ct_b += (c_b * t_b) * w
-                            x += 1
-                    y += 1
+                            x += sample_step
+                    y += sample_step
 
     avg_r = 0.0
     avg_g = 0.0
@@ -256,35 +258,67 @@ def evaluate_candidate_ti(
 
     if is_valid == 1 and count > 0.0:
         inv_count = 1.0 / count
-        avg_r = sum_t_r * inv_count
-        avg_g = sum_t_g * inv_count
-        avg_b = sum_t_b * inv_count
-
         a_f = alpha * 0.00392156862745098
-        a2_minus_2a = a_f * a_f - 2.0 * a_f
-        two_a = 2.0 * a_f
-        two_a_one_minus_a = 2.0 * a_f * (1.0 - a_f)
+        if a_f < 1e-3:
+            a_f = 1e-3
 
-        delta_r = (
-            a2_minus_2a * sum_c2_r
-            + two_a * sum_ct_r
-            + two_a_one_minus_a * avg_r * sum_c_r
-            + a2_minus_2a * avg_r * sum_t_r
-        )
-        delta_g = (
-            a2_minus_2a * sum_c2_g
-            + two_a * sum_ct_g
-            + two_a_one_minus_a * avg_g * sum_c_g
-            + a2_minus_2a * avg_g * sum_t_g
-        )
-        delta_b = (
-            a2_minus_2a * sum_c2_b
-            + two_a * sum_ct_b
-            + two_a_one_minus_a * avg_b * sum_c_b
-            + a2_minus_2a * avg_b * sum_t_b
-        )
+        if analytical_color_enabled == 1:
+            inv_a = 1.0 - a_f
+            inv_a_f = 1.0 / a_f
+            avg_r = (sum_t_r * inv_count - (sum_c_r * inv_count) * inv_a) * inv_a_f
+            avg_g = (sum_t_g * inv_count - (sum_c_g * inv_count) * inv_a) * inv_a_f
+            avg_b = (sum_t_b * inv_count - (sum_c_b * inv_count) * inv_a) * inv_a_f
 
-        total_delta_mse = delta_r + delta_g + delta_b
+            avg_r = ti.max(0.0, ti.min(255.0, avg_r))
+            avg_g = ti.max(0.0, ti.min(255.0, avg_g))
+            avg_b = ti.max(0.0, ti.min(255.0, avg_b))
+
+            a2 = a_f * a_f
+            two_a = 2.0 * a_f
+
+            delta_r = a2 * (
+                count * avg_r * avg_r - 2.0 * avg_r * sum_c_r + sum_c2_r
+            ) - two_a * (avg_r * sum_t_r - avg_r * sum_c_r - sum_ct_r + sum_c2_r)
+            delta_g = a2 * (
+                count * avg_g * avg_g - 2.0 * avg_g * sum_c_g + sum_c2_g
+            ) - two_a * (avg_g * sum_t_g - avg_g * sum_c_g - sum_ct_g + sum_c2_g)
+            delta_b = a2 * (
+                count * avg_b * avg_b - 2.0 * avg_b * sum_c_b + sum_c2_b
+            ) - two_a * (avg_b * sum_t_b - avg_b * sum_c_b - sum_ct_b + sum_c2_b)
+
+            total_delta_mse = delta_r + delta_g + delta_b
+        else:
+            avg_r = sum_t_r * inv_count
+            avg_g = sum_t_g * inv_count
+            avg_b = sum_t_b * inv_count
+
+            a2_minus_2a = a_f * a_f - 2.0 * a_f
+            two_a = 2.0 * a_f
+            two_a_one_minus_a = 2.0 * a_f * (1.0 - a_f)
+
+            delta_r = (
+                a2_minus_2a * sum_c2_r
+                + two_a * sum_ct_r
+                + two_a_one_minus_a * avg_r * sum_c_r
+                + a2_minus_2a * avg_r * sum_t_r
+            )
+            delta_g = (
+                a2_minus_2a * sum_c2_g
+                + two_a * sum_ct_g
+                + two_a_one_minus_a * avg_g * sum_c_g
+                + a2_minus_2a * avg_g * sum_t_g
+            )
+            delta_b = (
+                a2_minus_2a * sum_c2_b
+                + two_a * sum_ct_b
+                + two_a_one_minus_a * avg_b * sum_c_b
+                + a2_minus_2a * avg_b * sum_t_b
+            )
+
+            total_delta_mse = delta_r + delta_g + delta_b
+
+        if sample_step > 1:
+            total_delta_mse *= ti.cast(sample_step * sample_step, ti.f32)
 
     return avg_r, avg_g, avg_b, total_delta_mse
 
@@ -314,6 +348,8 @@ def taichi_parallel_search(
     height: ti.i32,
     width: ti.i32,
     batch_size: ti.i32,
+    sample_step: ti.i32,
+    analytical_color_enabled: ti.i32,
 ):
     ti.loop_config(block_dim=256)
     for i in range(batch_size):
@@ -362,6 +398,8 @@ def taichi_parallel_search(
             uncovered_map,
             height,
             width,
+            sample_step,
+            analytical_color_enabled,
         )
 
         results[i, 0] = r
@@ -504,6 +542,7 @@ def generate_candidates_gpu(
     use_importance: ti.i32,
     error_prob: ti.types.ndarray(dtype=ti.f32, ndim=2),
     batch_size: ti.i32,
+    force_opaque: ti.i32,
 ):
     ti.loop_config(block_dim=256)
     for i in range(batch_size):
@@ -542,6 +581,8 @@ def generate_candidates_gpu(
         r_y = 2.0 + ti.random() * (max_r - 2.0)
         theta = ti.random() * 2.0 * ti.math.pi
         alpha = 255.0
+        if force_opaque == 0:
+            alpha = 76.0 + ti.random() * (255.0 - 76.0)
 
         candidates[i, 0] = x
         candidates[i, 1] = y
@@ -668,6 +709,9 @@ def parallel_hill_climb_gpu(
     sa_initial_temp: ti.f32,
     sa_cooling_rate: ti.f32,
     optimization_steps: ti.i32,
+    force_opaque: ti.i32,
+    sample_step: ti.i32,
+    analytical_color_enabled: ti.i32,
 ):
     for i in range(128):
         # Force access to prevent JIT compiler from optimizing out unused ndarray arguments on some Vulkan drivers
@@ -730,7 +774,16 @@ def parallel_hill_climb_gpu(
             nr_x = ti.max(2.0, ti.min(max_r, curr_r_x + z2 * 6.0 * scale))
             nr_y = ti.max(2.0, ti.min(max_r, curr_r_y + z3 * 6.0 * scale))
             ntheta = curr_theta + z1 * 0.25 * scale
-            nalpha = 255.0
+            nalpha = curr_alpha
+            if force_opaque == 0:
+                u5 = ti.random()
+                u6 = ti.random()
+                if u5 < 1e-6:
+                    u5 = 1e-6
+                z4 = ti.math.sqrt(-2.0 * ti.math.log(u5)) * ti.math.cos(
+                    2.0 * ti.math.pi * u6
+                )
+                nalpha = ti.max(76.0, ti.min(255.0, curr_alpha + z4 * 15.0 * scale))
 
             nr, ng, nb, delta = evaluate_candidate_ti(
                 target_r,
@@ -755,6 +808,8 @@ def parallel_hill_climb_gpu(
                 uncovered_map,
                 height,
                 width,
+                sample_step,
+                analytical_color_enabled,
             )
 
             diff = delta - curr_delta
@@ -1076,6 +1131,12 @@ class TaichiEvaluator(BaseEvaluator):
             self.ti_candidates = ti.ndarray(dtype=ti.f32, shape=(alloc_capacity, 6))
             self.ti_results = ti.ndarray(dtype=ti.f32, shape=(alloc_capacity, 4))
 
+        sample_step = params.get("sample_step", 1)
+        analytical_color_enabled = (
+            1 if params.get("analytical_color_enabled", True) else 0
+        )
+        force_opaque = 1 if params.get("force_opaque", True) else 0
+
         generate_candidates_gpu(
             self.ti_candidates,
             float(width),
@@ -1084,6 +1145,7 @@ class TaichiEvaluator(BaseEvaluator):
             1 if (use_importance and error_prob_np is not None) else 0,
             self.ti_error_prob,
             batch_size,
+            force_opaque,
         )
 
         # Disable contour check if alpha_mask is a placeholder
@@ -1112,6 +1174,8 @@ class TaichiEvaluator(BaseEvaluator):
             height,
             width,
             batch_size,
+            sample_step,
+            analytical_color_enabled,
         )
 
         find_best_candidate_gpu(
@@ -1151,6 +1215,9 @@ class TaichiEvaluator(BaseEvaluator):
                 sa_initial_temp,
                 sa_cooling_rate,
                 optimization_steps,
+                force_opaque,
+                sample_step,
+                analytical_color_enabled,
             )
 
             select_final_best_gpu(

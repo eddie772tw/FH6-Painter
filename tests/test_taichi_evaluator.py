@@ -239,6 +239,8 @@ def test_taichi_numba_contour_check_consistency():
             32,
             32,
             1,
+            1,  # sample_step=1
+            0,  # analytical_color_enabled=False
         )
         ti_res_np = ti_res.to_numpy()[0]
 
