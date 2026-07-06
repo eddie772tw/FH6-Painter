@@ -1,46 +1,48 @@
 #!/usr/bin/env python3
 """主跑分控制流程。"""
-import sys
-import os
-import time
-import json
-import platform
+
 import argparse
-import random
 import gc
+import json
+import os
+import platform
+import random
+import sys
+import time
 
 import numpy as np
 
 try:
     import taichi as ti
+
     HAS_TAICHI = True
 except ImportError:
     HAS_TAICHI = False
 
 try:
     import numba
+
     HAS_NUMBA = True
 except ImportError:
     HAS_NUMBA = False
 
-from evaluators import EvaluatorFactory
-
 from benchmark.config import (
-    REFERENCE_MSE,
     BASELINE_REFERENCE,
+    REFERENCE_MSE,
     TARGET_SHAPES_COUNT,
     load_profile_params,
 )
-from benchmark.workloads import WORKLOADS
+from benchmark.engines import run_go_engine_benchmark, run_python_engine_benchmark
+from benchmark.report import generate_html_report, generate_json_result
 from benchmark.sysinfo import (
     get_cpu_model,
-    get_gpu_list,
-    get_gpu_driver_version,
-    get_ram_size,
     get_git_info,
+    get_gpu_driver_version,
+    get_gpu_list,
+    get_ram_size,
 )
-from benchmark.engines import run_python_engine_benchmark, run_go_engine_benchmark
-from benchmark.report import generate_html_report, generate_json_result
+from benchmark.workloads import WORKLOADS
+from evaluators import EvaluatorFactory
 
 # ----------------------------------------------------------------------
 # 鎖死全域隨機種子
@@ -50,16 +52,38 @@ np.random.seed(42)
 
 
 def run_benchmarks():
-    parser = argparse.ArgumentParser(description="FH6 Painter Engine Performance Benchmarking Suite")
-    parser.add_argument("--arch", type=str, default=None, choices=["Vulkan", "CUDA", "OpenGL", "CPU"], help="Force specific Taichi backend")
-    parser.add_argument("--device", type=int, default=None, help="Force specific Taichi GPU Device ID")
-    parser.add_argument("--no-history", action="store_true", help="Disable vertical historical saving")
-    parser.add_argument("--clear-history", action="store_true", help="Clear historical JSON records before running")
-    parser.add_argument("--duration", type=float, default=60.0, help="正式測試區間的秒數 (預設: 60.0)")
-    parser.add_argument("--warmup-time", type=float, default=5.0, help="預熱時間秒數 (預設: 5.0)")
+    parser = argparse.ArgumentParser(
+        description="FH6 Painter Engine Performance Benchmarking Suite"
+    )
+    parser.add_argument(
+        "--arch",
+        type=str,
+        default=None,
+        choices=["Vulkan", "CUDA", "OpenGL", "CPU"],
+        help="Force specific Taichi backend",
+    )
+    parser.add_argument(
+        "--device", type=int, default=None, help="Force specific Taichi GPU Device ID"
+    )
+    parser.add_argument(
+        "--no-history", action="store_true", help="Disable vertical historical saving"
+    )
+    parser.add_argument(
+        "--clear-history",
+        action="store_true",
+        help="Clear historical JSON records before running",
+    )
+    parser.add_argument(
+        "--duration", type=float, default=60.0, help="正式測試區間的秒數 (預設: 60.0)"
+    )
+    parser.add_argument(
+        "--warmup-time", type=float, default=5.0, help="預熱時間秒數 (預設: 5.0)"
+    )
     args = parser.parse_args()
 
-    project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    project_root = os.path.dirname(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    )
     benchmark_dir = os.path.dirname(os.path.abspath(__file__))
     history_file = os.path.join(benchmark_dir, "benchmark_history.json")
 
@@ -86,14 +110,17 @@ def run_benchmarks():
                 "Vulkan": ti.vulkan,
                 "CUDA": ti.cuda,
                 "OpenGL": ti.opengl,
-                "CPU": ti.cpu
+                "CPU": ti.cpu,
             }
             selected_arch = arch_map.get(args.arch) if args.arch else None
             if selected_arch:
                 ti.init(arch=selected_arch, random_seed=42, log_level=ti.WARN)
                 from evaluators.taichi_evaluator import TaichiEvaluator
+
                 TaichiEvaluator._is_taichi_initialized = True
-                TaichiEvaluator._taichi_arch_name = f"GPU - {args.arch}" if args.arch != "CPU" else "CPU"
+                TaichiEvaluator._taichi_arch_name = (
+                    f"GPU - {args.arch}" if args.arch != "CPU" else "CPU"
+                )
             else:
                 backends = [
                     (ti.vulkan, "GPU - Vulkan"),
@@ -107,6 +134,7 @@ def run_benchmarks():
                         test = ti.field(dtype=ti.f32, shape=1)
                         test[0] = 1.0
                         from evaluators.taichi_evaluator import TaichiEvaluator
+
                         TaichiEvaluator._is_taichi_initialized = True
                         TaichiEvaluator._taichi_arch_name = name
                         break
@@ -121,21 +149,29 @@ def run_benchmarks():
     print(f"  [CPU]           : {cpu_model}")
     print(f"  [GPU]           : {gpu_model} (Driver: {gpu_driver})")
     print(f"  [RAM]           : {ram_size}")
-    print(f"  [OS / PLATFORM] : {platform.system()} {platform.release()} ({platform.machine()})")
-    print(f"  [ENVIRONMENTS]  : Python {platform.python_version()} | Numba: {numba.__version__ if HAS_NUMBA else 'N/A'} | Taichi: {ti.__version__ if HAS_TAICHI else 'N/A'}")
+    print(
+        f"  [OS / PLATFORM] : {platform.system()} {platform.release()} ({platform.machine()})"
+    )
+    print(
+        f"  [ENVIRONMENTS]  : Python {platform.python_version()} | Numba: {numba.__version__ if HAS_NUMBA else 'N/A'} | Taichi: {ti.__version__ if HAS_TAICHI else 'N/A'}"
+    )
     print(f"  [GIT BRANCH]    : {git_info['branch']} (Commit: {git_info['commit']})")
     print("======================================================================")
 
     # 1. Parse Presets and Load Profiles
     settings_dir = os.path.join(project_root, "settings")
     fastest_ini = os.path.join(settings_dir, "a. keemstar fast - extremely fast.ini")
-    balanced_ini = os.path.join(settings_dir, "c. balanced - good quality and speed.ini")
-    slowest_ini = os.path.join(settings_dir, "g. i hate my pc - yeahboiiiiis dad quality.ini")
+    balanced_ini = os.path.join(
+        settings_dir, "c. balanced - good quality and speed.ini"
+    )
+    slowest_ini = os.path.join(
+        settings_dir, "g. i hate my pc - yeahboiiiiis dad quality.ini"
+    )
 
     presets = [
         {"name": "Tier_1", "profile_path": fastest_ini, "weight": 0.2},
         {"name": "Tier_2", "profile_path": balanced_ini, "weight": 0.6},
-        {"name": "Tier_3", "profile_path": slowest_ini, "weight": 0.2}
+        {"name": "Tier_3", "profile_path": slowest_ini, "weight": 0.2},
     ]
 
     # 2. Dynamic Discovery of available Evaluators
@@ -150,19 +186,23 @@ def run_benchmarks():
         if code == "TAICHI":
             for mode in [True, False]:
                 mode_str = "Pure GPU Mode" if mode else "Hybrid Mode"
-                active_test_configs.append({
-                    "id": f"TAICHI_{'PURE' if mode else 'HYBRID'}",
-                    "name": f"Taichi JIT ({mode_str})",
-                    "class_code": "TAICHI",
-                    "use_pure_gpu": mode
-                })
+                active_test_configs.append(
+                    {
+                        "id": f"TAICHI_{'PURE' if mode else 'HYBRID'}",
+                        "name": f"Taichi JIT ({mode_str})",
+                        "class_code": "TAICHI",
+                        "use_pure_gpu": mode,
+                    }
+                )
         else:
-            active_test_configs.append({
-                "id": code,
-                "name": e["name"],
-                "class_code": code,
-                "use_pure_gpu": False
-            })
+            active_test_configs.append(
+                {
+                    "id": code,
+                    "name": e["name"],
+                    "class_code": code,
+                    "use_pure_gpu": False,
+                }
+            )
 
     if not active_test_configs:
         print("ERROR: No active acceleration engines are available.")
@@ -184,11 +224,7 @@ def run_benchmarks():
         use_pure_gpu = config["use_pure_gpu"]
 
         print(f"\n> Testing [{cfg_name}]")
-        run_results[cfg_id] = {
-            "name": cfg_name,
-            "tiers": {},
-            "weighted_score": 0.0
-        }
+        run_results[cfg_id] = {"name": cfg_name, "tiers": {}, "weighted_score": 0.0}
 
         for p in presets:
             tier_name = p["name"]
@@ -210,15 +246,24 @@ def run_benchmarks():
                         target_img,
                         alpha_mask,
                         taichi_arch=args.arch,
-                        taichi_device_id=args.device
+                        taichi_device_id=args.device,
                     )
                 else:
-                    evaluator = EvaluatorFactory.create_evaluator(class_code, target_img, alpha_mask)
+                    evaluator = EvaluatorFactory.create_evaluator(
+                        class_code, target_img, alpha_mask
+                    )
 
                 # 預熱 (JIT compile)
                 try:
                     if class_code == "GO_OPENCL":
-                        run_go_engine_benchmark(evaluator, target_img, alpha_mask, profile_path, project_root, warmup=True)
+                        run_go_engine_benchmark(
+                            evaluator,
+                            target_img,
+                            alpha_mask,
+                            profile_path,
+                            project_root,
+                            warmup=True,
+                        )
                     else:
                         params_warm = {
                             "optimization_steps": 1,
@@ -228,9 +273,16 @@ def run_benchmarks():
                             "use_freeze": False,
                             "use_weight": False,
                             "use_uncovered": True,
-                            "use_pure_gpu": use_pure_gpu
+                            "use_pure_gpu": use_pure_gpu,
                         }
-                        run_python_engine_benchmark(evaluator, target_img, alpha_mask, batch_size, params_warm, warmup=True)
+                        run_python_engine_benchmark(
+                            evaluator,
+                            target_img,
+                            alpha_mask,
+                            batch_size,
+                            params_warm,
+                            warmup=True,
+                        )
                 except Exception as ex:
                     print(f"  [Warm-up Warning] {cfg_name} on {wl_name} failed: {ex}")
 
@@ -239,7 +291,13 @@ def run_benchmarks():
                 try:
                     if class_code == "GO_OPENCL":
                         t_shapes, t_sec, final_mse = run_go_engine_benchmark(
-                            evaluator, target_img, alpha_mask, profile_path, project_root, warmup=False, duration=args.duration
+                            evaluator,
+                            target_img,
+                            alpha_mask,
+                            profile_path,
+                            project_root,
+                            warmup=False,
+                            duration=args.duration,
                         )
                     else:
                         params_run = {
@@ -250,10 +308,16 @@ def run_benchmarks():
                             "use_freeze": False,
                             "use_weight": False,
                             "use_uncovered": True,
-                            "use_pure_gpu": use_pure_gpu
+                            "use_pure_gpu": use_pure_gpu,
                         }
                         t_shapes, t_sec, final_mse = run_python_engine_benchmark(
-                            evaluator, target_img, alpha_mask, batch_size, params_run, warmup=False, duration=args.duration
+                            evaluator,
+                            target_img,
+                            alpha_mask,
+                            batch_size,
+                            params_run,
+                            warmup=False,
+                            duration=args.duration,
                         )
                 except Exception as ex:
                     print(f"  [Execution Error] {cfg_name} on {wl_name} failed: {ex}")
@@ -267,7 +331,9 @@ def run_benchmarks():
 
                 # 運算正確性驗證 (防作弊)
                 is_valid = True
-                ref_limit = REFERENCE_MSE.get(wl_name, {}).get(tier_name, 999999.0) * 1.05
+                ref_limit = (
+                    REFERENCE_MSE.get(wl_name, {}).get(tier_name, 999999.0) * 1.05
+                )
 
                 if t_shapes >= TARGET_SHAPES_COUNT and final_mse > ref_limit:
                     is_valid = False
@@ -276,20 +342,28 @@ def run_benchmarks():
                 workload_throughputs.append(wl_throughput)
 
             # 計算該 Tier 的平均 Throughput 與得分
-            avg_throughput = np.mean(workload_throughputs) if workload_throughputs else 0.0
+            avg_throughput = (
+                np.mean(workload_throughputs) if workload_throughputs else 0.0
+            )
             baseline = BASELINE_REFERENCE.get(tier_name, 1.0)
-            score = (avg_throughput / baseline) * 1000.0
-
+            if is_valid:
+                score = (avg_throughput / baseline) * 1000.0
+            else:
+                score = 0
             run_results[cfg_id]["tiers"][tier_name] = {
                 "throughput": avg_throughput,
-                "score": score
+                "score": score,
             }
 
             run_results[cfg_id]["weighted_score"] += score * weight
 
-            print(f"  - {tier_name:18} : {avg_throughput:7.1f} shapes/sec  ... [Score: {int(score)}]")
+            print(
+                f"  - {tier_name:18} : {avg_throughput:7.1f} shapes/sec  ... [Score: {int(score)}]"
+            )
 
-        print(f"  > Engine Weighted Score: {int(run_results[cfg_id]['weighted_score'])} pts")
+        print(
+            f"  > Engine Weighted Score: {int(run_results[cfg_id]['weighted_score'])} pts"
+        )
 
     # 5. 排行榜
     print("\n======================================================================")
@@ -298,12 +372,14 @@ def run_benchmarks():
 
     leaderboard = []
     for cfg_id, info in run_results.items():
-        leaderboard.append({
-            "id": cfg_id,
-            "name": info["name"],
-            "weighted_score": info["weighted_score"],
-            "tiers": info["tiers"]
-        })
+        leaderboard.append(
+            {
+                "id": cfg_id,
+                "name": info["name"],
+                "weighted_score": info["weighted_score"],
+                "tiers": info["tiers"],
+            }
+        )
 
     leaderboard.sort(key=lambda x: x["weighted_score"], reverse=True)
 
@@ -333,12 +409,14 @@ def run_benchmarks():
 
     has_regression = False
     if previous_baseline:
-        print("\n======================================================================")
+        print(
+            "\n======================================================================"
+        )
         print("                  *** VERTICAL VERSION COMPATIBILITY COMPARISON")
         print("======================================================================")
         base_commit = previous_baseline.get("git_commit", "N/A")
         base_time = previous_baseline.get("timestamp", "N/A")
-        print(f"  Comparing against baseline version:")
+        print("  Comparing against baseline version:")
         print(f"  - Target Commit: {base_commit} | Timestamp: {base_time}")
         print("  --------------------------------------------------------------------")
 
@@ -348,7 +426,11 @@ def run_benchmarks():
             if cfg_id in base_engines:
                 base_score = base_engines[cfg_id]["weighted_score"]
                 curr_score = entry["weighted_score"]
-                diff_pct = ((curr_score - base_score) / base_score) * 100.0 if base_score > 0 else 0.0
+                diff_pct = (
+                    ((curr_score - base_score) / base_score) * 100.0
+                    if base_score > 0
+                    else 0.0
+                )
 
                 if diff_pct < -10.0:
                     has_regression = True
@@ -359,9 +441,13 @@ def run_benchmarks():
                     alert = "[STABLE]"
 
                 sign = "+" if diff_pct >= 0 else ""
-                print(f"  - {entry['name']:35} : {int(curr_score):5} pts vs baseline {int(base_score):5} pts ({sign}{diff_pct:+.1f}%) {alert}")
+                print(
+                    f"  - {entry['name']:35} : {int(curr_score):5} pts vs baseline {int(base_score):5} pts ({sign}{diff_pct:+.1f}%) {alert}"
+                )
             else:
-                print(f"  - {entry['name']:35} : {int(entry['weighted_score']):5} pts vs baseline (N/A, new method added)")
+                print(
+                    f"  - {entry['name']:35} : {int(entry['weighted_score']):5} pts vs baseline (N/A, new method added)"
+                )
         print("======================================================================")
 
     # 寫入當前紀錄到歷史資料庫 (上限 50 筆)
@@ -380,9 +466,10 @@ def run_benchmarks():
                 entry["id"]: {
                     "name": entry["name"],
                     "weighted_score": entry["weighted_score"],
-                    "tiers": entry["tiers"]
-                } for entry in leaderboard
-            }
+                    "tiers": entry["tiers"],
+                }
+                for entry in leaderboard
+            },
         }
         history_records.append(current_record)
         if len(history_records) > 50:
@@ -391,7 +478,9 @@ def run_benchmarks():
         try:
             with open(history_file, "w", encoding="utf-8") as f:
                 json.dump(history_records, f, indent=2)
-            print(f"\n[Storage] Current benchmark metrics successfully archived in history database.")
+            print(
+                "\n[Storage] Current benchmark metrics successfully archived in history database."
+            )
         except Exception as e:
             print(f"\n[Warning] Failed to archive benchmark metrics: {e}")
 
@@ -401,7 +490,7 @@ def run_benchmarks():
         "gpu": gpu_model,
         "gpu_driver": gpu_driver,
         "ram": ram_size,
-        "os": f"{platform.system()} {platform.release()} ({platform.machine()})"
+        "os": f"{platform.system()} {platform.release()} ({platform.machine()})",
     }
 
     result_json_path = os.path.join(benchmark_dir, "benchmark_result.json")
@@ -411,7 +500,9 @@ def run_benchmarks():
     generate_html_report(report_html_path, leaderboard, system_info)
 
     if has_regression:
-        print("\n[CI Alert] System execution performance regression detected. Verify latest commits.")
+        print(
+            "\n[CI Alert] System execution performance regression detected. Verify latest commits."
+        )
         sys.exit(1)
     else:
         sys.exit(0)

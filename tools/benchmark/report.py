@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """報表生成模組 — HTML 效能報表與 JSON 結果檔。"""
+
 import json
-import time
 import platform
+import time
 
 
 def generate_json_result(output_path, leaderboard, system_info):
@@ -20,11 +21,13 @@ def generate_json_result(output_path, leaderboard, system_info):
                     "tiers": {
                         t_name: {
                             "throughput": float(t_data["throughput"]),
-                            "score": int(t_data["score"])
-                        } for t_name, t_data in entry["tiers"].items()
-                    }
-                } for rank, entry in enumerate(leaderboard, 1)
-            ]
+                            "score": int(t_data["score"]),
+                        }
+                        for t_name, t_data in entry["tiers"].items()
+                    },
+                }
+                for rank, entry in enumerate(leaderboard, 1)
+            ],
         }
         with open(output_path, "w", encoding="utf-8") as f:
             json.dump(json_output, f, indent=2)
@@ -169,7 +172,7 @@ def generate_html_report(output_path, leaderboard, system_info):
             html_content += f"""
                 <tr>
                     <td class="{rank_class}">#{rank}</td>
-                    <td>{entry['name']}</td>
+                    <td>{entry["name"]}</td>
                     <td>{t1_s} pts</td>
                     <td>{t2_s} pts</td>
                     <td>{t3_s} pts</td>

@@ -5,11 +5,14 @@
     python tools/benchmark/__main__.py [OPTIONS]
     python -m benchmark [OPTIONS]  (從 tools/ 資料夾執行)
 """
-import sys
+
 import os
+import sys
 
 # 確保專案根目錄在 sys.path 中
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+sys.path.insert(
+    0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+)
 # 確保 tools/ 目錄在 sys.path 中 (以便 import benchmark 套件)
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 

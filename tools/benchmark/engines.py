@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """引擎端到端執行邏輯 — Python 引擎 (Numba/Taichi) 與 Go-OpenCL 引擎。"""
+
 import os
 import time
 
@@ -8,6 +9,7 @@ from PIL import Image
 
 try:
     import taichi as ti
+
     HAS_TAICHI = True
 except ImportError:
     HAS_TAICHI = False
@@ -15,7 +17,9 @@ except ImportError:
 from benchmark.config import TARGET_SHAPES_COUNT
 
 
-def run_python_engine_benchmark(evaluator, target_img, alpha_mask, batch_size, params, warmup=False, duration=60.0):
+def run_python_engine_benchmark(
+    evaluator, target_img, alpha_mask, batch_size, params, warmup=False, duration=60.0
+):
     """執行 Numba / Taichi 引擎的端到端效能測試。"""
     h, w, c = target_img.shape
 
@@ -53,7 +57,9 @@ def run_python_engine_benchmark(evaluator, target_img, alpha_mask, batch_size, p
         for _ in range(5):
             best_shape, _ = evaluator.search_best_shape(canvas, batch_size, params_run)
             x_c, y_c, r_x, r_y, theta, r, g, b, alpha = best_shape
-            evaluator.draw_shape_on_canvas(canvas, x_c, y_c, r_x, r_y, theta, r, g, b, alpha)
+            evaluator.draw_shape_on_canvas(
+                canvas, x_c, y_c, r_x, r_y, theta, r, g, b, alpha
+            )
             evaluator.update_uncovered_mask(uncovered_map, x_c, y_c, r_x, r_y, theta)
             if HAS_TAICHI:
                 ti.sync()
@@ -78,7 +84,9 @@ def run_python_engine_benchmark(evaluator, target_img, alpha_mask, batch_size, p
                 break
             best_shape, _ = evaluator.search_best_shape(canvas, batch_size, params_run)
             x_c, y_c, r_x, r_y, theta, r, g, b, alpha = best_shape
-            evaluator.draw_shape_on_canvas(canvas, x_c, y_c, r_x, r_y, theta, r, g, b, alpha)
+            evaluator.draw_shape_on_canvas(
+                canvas, x_c, y_c, r_x, r_y, theta, r, g, b, alpha
+            )
             evaluator.update_uncovered_mask(uncovered_map, x_c, y_c, r_x, r_y, theta)
             if HAS_TAICHI:
                 ti.sync()
@@ -91,7 +99,15 @@ def run_python_engine_benchmark(evaluator, target_img, alpha_mask, batch_size, p
     return shapes_processed, elapsed, final_mse
 
 
-def run_go_engine_benchmark(evaluator, target_img, alpha_mask, profile_path, project_root, warmup=False, duration=60.0):
+def run_go_engine_benchmark(
+    evaluator,
+    target_img,
+    alpha_mask,
+    profile_path,
+    project_root,
+    warmup=False,
+    duration=60.0,
+):
     """執行 Go-OpenCL 引擎的端到端效能測試。"""
     h, w, c = target_img.shape
 
@@ -122,7 +138,9 @@ def run_go_engine_benchmark(evaluator, target_img, alpha_mask, profile_path, pro
         rgba[:, :, 3] = alpha_mask
         pil_img = Image.fromarray(np.clip(rgba, 0.0, 255.0).astype(np.uint8), "RGBA")
     else:
-        pil_img = Image.fromarray(np.clip(target_img, 0.0, 255.0).astype(np.uint8), "RGB")
+        pil_img = Image.fromarray(
+            np.clip(target_img, 0.0, 255.0).astype(np.uint8), "RGB"
+        )
     pil_img.save(temp_img_path)
 
     t_start = time.perf_counter()
@@ -135,7 +153,7 @@ def run_go_engine_benchmark(evaluator, target_img, alpha_mask, profile_path, pro
             img_path=temp_img_path,
             output_json=temp_json_path,
             profile_path=temp_ini_path,
-            layers=TARGET_SHAPES_COUNT
+            layers=TARGET_SHAPES_COUNT,
         )
         return TARGET_SHAPES_COUNT, time.perf_counter() - t_start, 0.0
 
@@ -154,7 +172,7 @@ def run_go_engine_benchmark(evaluator, target_img, alpha_mask, profile_path, pro
             img_path=temp_img_path,
             output_json=temp_json_path,
             profile_path=temp_ini_path,
-            layers=TARGET_SHAPES_COUNT
+            layers=TARGET_SHAPES_COUNT,
         )
 
         shapes_processed += TARGET_SHAPES_COUNT
@@ -166,16 +184,23 @@ def run_go_engine_benchmark(evaluator, target_img, alpha_mask, profile_path, pro
                 with Image.open(preview_png) as pil_prev:
                     prev_arr = np.array(pil_prev.convert("RGB"), dtype=np.float32)
                     if prev_arr.shape[:2] != target_img.shape[:2]:
-                        pil_prev_resized = pil_prev.resize((w, h), Image.Resampling.LANCZOS)
-                        prev_arr = np.array(pil_prev_resized.convert("RGB"), dtype=np.float32)
+                        pil_prev_resized = pil_prev.resize(
+                            (w, h), Image.Resampling.LANCZOS
+                        )
+                        prev_arr = np.array(
+                            pil_prev_resized.convert("RGB"), dtype=np.float32
+                        )
                     final_mse = np.mean((prev_arr - target_img) ** 2)
             except Exception as e:
                 print(f"      [Warning] Failed to calculate Go-OpenCL final MSE: {e}")
 
     # 清除臨時檔案
-    for path in [temp_ini_path, temp_img_path,
-                 os.path.join(temp_dir, "temp_out.json"),
-                 os.path.join(temp_dir, "temp_out.json.json")]:
+    for path in [
+        temp_ini_path,
+        temp_img_path,
+        os.path.join(temp_dir, "temp_out.json"),
+        os.path.join(temp_dir, "temp_out.json.json"),
+    ]:
         if os.path.exists(path):
             try:
                 os.unlink(path)
