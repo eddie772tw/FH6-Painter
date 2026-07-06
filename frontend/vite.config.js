@@ -15,9 +15,16 @@ try {
   }
   
   try {
-    const status = execSync("git status --porcelain").toString().trim();
+    const status = execSync("git status --porcelain -uno").toString().trim();
     if (status.length > 0) {
-      gitCommit = "post-" + gitCommit;
+      const changedFiles = status.split("\n").map(line => line.trim());
+      const hasRealChanges = changedFiles.some(line => {
+        const filePath = line.substring(2).trim();
+        return !filePath.endsWith("Cargo.lock") && !filePath.endsWith("package-lock.json");
+      });
+      if (hasRealChanges) {
+        gitCommit = "post-" + gitCommit;
+      }
     }
   } catch (e) {
     // Ignore error checking status
