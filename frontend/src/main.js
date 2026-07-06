@@ -30,6 +30,11 @@ let totalLayersLimit = 1000;
 let isGenerating = false;
 let currentLangDict = {};
 
+// 全域狀態變數，用於支援多語言即時更新
+let currentFileStatus = { type: null, path: "" }; // { type: "json" | "image" | "selected", path: "..." }
+let currentRewindHint = { type: null, layer: 0 }; // { type: "loading" | "aligning" | "success" | "failed" | "scrubbing" | "rewinding", layer: 0 }
+let currentProfileSettings = null; // 存放當前 profile 的 settings 物件
+
 // ROI Selection State
 let roiEnabled = false;
 let roiSelection = null; // { x1, y1, x2, y2 } in original image pixels
@@ -58,7 +63,9 @@ const langSelect = document.getElementById("lang-select");
 if (langSelect) {
   langSelect.addEventListener("change", (e) => {
     if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ action: "get_lang", lang: e.target.value }));
+      const selectedLang = e.target.value;
+      localStorage.setItem("preferred_lang", selectedLang);
+      ws.send(JSON.stringify({ action: "get_lang", lang: selectedLang }));
     }
   });
 }
@@ -162,13 +169,13 @@ function connectWebSocket() {
     ws.send(JSON.stringify({ action: "get_engines" }));
     ws.send(JSON.stringify({ action: "get_profiles" }));
     ws.send(JSON.stringify({ action: "get_gpus" }));
-    ws.send(JSON.stringify({ action: "get_lang", lang: langSelect ? langSelect.value : "en-us" }));
+    ws.send(JSON.stringify({ action: "get_languages" }));
   };
 
   ws.onclose = () => {
     console.log("Disconnected from Python backend. Reconnecting...");
     overlay.classList.remove("hidden");
-    overlay.innerHTML = "<h3>CONNECTION LOST. RECONNECTING...</h3>";
+    overlay.innerHTML = `<h3>${currentLangDict["label.connection_lost"] || "CONNECTION LOST. RECONNECTING..."}</h3>`;
     updateButtonStates();
     setTimeout(connectWebSocket, 2000);
   };
@@ -204,34 +211,198 @@ function updateCanvasSize(newWidth, newHeight) {
   }
 }
 
+function translateUI() {
+  if (!currentLangDict) return;
+
+  // 1. Static i18n attributes
+  document.querySelectorAll("[data-i18n]").forEach(el => {
+    const key = el.getAttribute("data-i18n");
+    if (currentLangDict[key]) {
+      if (el.children.length === 0) {
+        el.textContent = currentLangDict[key];
+      } else {
+        Array.from(el.childNodes).forEach(node => {
+          if (node.nodeType === Node.TEXT_NODE && node.textContent.trim().length > 0) {
+            node.textContent = currentLangDict[key];
+          }
+        });
+      }
+    }
+  });
+
+  document.querySelectorAll("[data-i18n-title]").forEach(el => {
+    const key = el.getAttribute("data-i18n-title");
+    if (currentLangDict[key]) {
+      el.setAttribute("title", currentLangDict[key]);
+    }
+  });
+
+  document.querySelectorAll("[data-i18n-placeholder]").forEach(el => {
+    const key = el.getAttribute("data-i18n-placeholder");
+    if (currentLangDict[key]) {
+      el.setAttribute("placeholder", currentLangDict[key]);
+    }
+  });
+
+  // 2. Button states and dynamic controls
+  if (btnTogglePreview) {
+    if (isPreviewEnabled) {
+      btnTogglePreview.textContent = currentLangDict["header.disable_preview"] || "Disable Preview";
+    } else {
+      btnTogglePreview.textContent = currentLangDict["header.enable_preview"] || "Enable Preview";
+    }
+  }
+
+  if (btnGenerate) {
+    if (isGenerating) {
+      btnGenerate.textContent = currentLangDict["action.stop_generation"] || "STOP GENERATION";
+    } else {
+      btnGenerate.textContent = currentLangDict["action.start_generation"] || "START GENERATION";
+    }
+  }
+  
+  if (btnInject) {
+    if (btnInject.textContent.includes("INJECTING") || btnInject.textContent.includes("注入")) {
+      btnInject.textContent = currentLangDict["action.injecting"] || "INJECTING...";
+    } else {
+      btnInject.textContent = currentLangDict["action.inject"] || "INJECT TO GAME";
+    }
+  }
+
+  // 3. Engine translation
+  if (engineSelect) {
+    Array.from(engineSelect.options).forEach(option => {
+      option.textContent = currentLangDict["engine." + option.value] || option.getAttribute("data-raw-name") || option.textContent;
+    });
+  }
+
+  // 4. Profile translation - Directly use raw value without translation
+  if (profileSelect) {
+    Array.from(profileSelect.options).forEach(option => {
+      option.textContent = option.getAttribute("data-raw-name") || option.textContent;
+    });
+  }
+
+  // 5. Profile Description translation
+  if (profileDesc) {
+    if (currentProfileSettings && currentProfileSettings.description) {
+      profileDesc.textContent = currentLangDict["profile.desc." + currentProfileSettings.description] || currentProfileSettings.description;
+    } else {
+      profileDesc.textContent = currentLangDict["label.no_description"] || "No description available.";
+    }
+  }
+
+  // 6. Taichi Device Default Option Translation
+  if (taichiDeviceSelect) {
+    Array.from(taichiDeviceSelect.options).forEach(option => {
+      if (option.value === "0" && (option.textContent.includes("Default Device") || option.textContent.includes("預設裝置") || option.textContent.includes("デフォルトデバイス"))) {
+        option.textContent = currentLangDict["label.default_device"] || "(0) Default Device";
+      }
+    });
+  }
+
+  // 7. ROI display translation
+  if (roiBoundsDisplay) {
+    if (!roiSelection) {
+      roiBoundsDisplay.textContent = currentLangDict["label.none"] || "None";
+    } else {
+      const xMin = Math.min(roiSelection.x1, roiSelection.x2);
+      const xMax = Math.max(roiSelection.x1, roiSelection.x2);
+      const yMin = Math.min(roiSelection.y1, roiSelection.y2);
+      const yMax = Math.max(roiSelection.y1, roiSelection.y2);
+      roiBoundsDisplay.textContent = (currentLangDict["label.roi_bounds_format"] || "({xMin}, {yMin}) to ({xMax}, {yMax})")
+        .replace("{xMin}", xMin.toString())
+        .replace("{yMin}", yMin.toString())
+        .replace("{xMax}", xMax.toString())
+        .replace("{yMax}", yMax.toString());
+    }
+  }
+
+  // 8. Benchmark Status translation
+  if (benchmarkStatus) {
+    const rawStatus = benchmarkStatus.getAttribute("data-raw-status") || "READY";
+    const statusKey = "status." + rawStatus.toLowerCase().replace("...", "");
+    benchmarkStatus.textContent = currentLangDict[statusKey] || rawStatus;
+  }
+
+  // 9. File path status translation
+  if (filePathDisplay) {
+    if (currentFileStatus.type) {
+      const type = currentFileStatus.type;
+      const path = currentFileStatus.path;
+      if (type === "json") {
+        filePathDisplay.textContent = (currentLangDict["hint.loaded_json"] || "Loaded JSON: {path}").replace("{path}", path);
+      } else if (type === "image") {
+        filePathDisplay.textContent = (currentLangDict["hint.loaded_image"] || "Loaded Image: {path}").replace("{path}", path);
+      } else if (type === "selected") {
+        filePathDisplay.textContent = (currentLangDict["hint.selected_file"] || "Selected: {path}").replace("{path}", path);
+      }
+    }
+  }
+
+  // 10. Rewind hint translation
+  if (rewindHint) {
+    if (currentRewindHint.type) {
+      const { type, layer } = currentRewindHint;
+      if (type === "loading") {
+        rewindHint.textContent = (currentLangDict["hint.loading_resume_state"] || "Loading resume state at layer {layer}...").replace("{layer}", layer.toString());
+        rewindHint.style.color = "var(--secondary-color)";
+      } else if (type === "aligning") {
+        rewindHint.textContent = (currentLangDict["hint.aligning_resume_state"] || "Aligning resume state at layer {layer}...").replace("{layer}", layer.toString());
+        rewindHint.style.color = "var(--secondary-color)";
+      } else if (type === "success") {
+        rewindHint.textContent = (currentLangDict["hint.rewind_success"] || "Successfully rewound to layer {layer}").replace("{layer}", layer.toString());
+        rewindHint.style.color = "var(--primary-color)";
+      } else if (type === "failed") {
+        rewindHint.textContent = currentLangDict["hint.rewind_failed"] || "Rewind failed";
+        rewindHint.style.color = "#D32F2F";
+      } else if (type === "scrubbing") {
+        rewindHint.textContent = (currentLangDict["hint.scrubbing_layer"] || "Scrubbing to layer {layer}...").replace("{layer}", layer.toString());
+        rewindHint.style.color = "var(--secondary-color)";
+      } else if (type === "rewinding") {
+        rewindHint.textContent = (currentLangDict["hint.rewinding_layer"] || "Rewinding to layer {layer}...").replace("{layer}", layer.toString());
+        rewindHint.style.color = "var(--secondary-color)";
+      }
+    }
+  }
+
+  // 11. Checkpoint track marker titles (re-render checkpoints to update tooltip titles)
+  renderCheckpointsTrack();
+}
+
 function handleBackendMessage(msg) {
   switch (msg.action) {
+    case "languages_list":
+      if (langSelect && msg.data) {
+        langSelect.innerHTML = "";
+        msg.data.forEach(lang => {
+          const option = document.createElement("option");
+          option.value = lang.code;
+          option.textContent = lang.name;
+          langSelect.appendChild(option);
+        });
+        
+        const preferred = localStorage.getItem("preferred_lang");
+        const listCodes = msg.data.map(l => l.code);
+        let targetLang = "en-us";
+        
+        if (preferred && listCodes.includes(preferred)) {
+          targetLang = preferred;
+        } else if (listCodes.includes("en-us")) {
+          targetLang = "en-us";
+        } else if (msg.data.length > 0) {
+          targetLang = msg.data[0].code;
+        }
+        
+        langSelect.value = targetLang;
+        localStorage.setItem("preferred_lang", targetLang);
+        ws.send(JSON.stringify({ action: "get_lang", lang: targetLang }));
+      }
+      break;
+
     case "lang_data":
       currentLangDict = msg.data;
-      document.querySelectorAll("[data-i18n]").forEach(el => {
-        const key = el.getAttribute("data-i18n");
-        if (currentLangDict[key]) {
-          if (el.children.length === 0) {
-            el.textContent = currentLangDict[key];
-          } else {
-            Array.from(el.childNodes).forEach(node => {
-              if (node.nodeType === Node.TEXT_NODE && node.textContent.trim().length > 0) {
-                node.textContent = currentLangDict[key];
-              }
-            });
-          }
-        }
-      });
-      if (isPreviewEnabled) {
-        btnTogglePreview.textContent = currentLangDict["header.disable_preview"] || "Disable Preview";
-      } else {
-        btnTogglePreview.textContent = currentLangDict["header.enable_preview"] || "Enable Preview";
-      }
-      if (isGenerating) {
-        btnGenerate.textContent = currentLangDict["action.stop_generation"] || "STOP GENERATION";
-      } else {
-        btnGenerate.textContent = currentLangDict["action.start_generation"] || "START GENERATION";
-      }
+      translateUI();
       break;
 
     case "engines_list":
@@ -239,7 +410,8 @@ function handleBackendMessage(msg) {
       msg.data.forEach(engine => {
         const option = document.createElement("option");
         option.value = engine.code;
-        option.textContent = engine.name;
+        option.setAttribute("data-raw-name", engine.name);
+        option.textContent = currentLangDict["engine." + engine.code] || engine.name;
         if (!engine.available) option.disabled = true;
         engineSelect.appendChild(option);
       });
@@ -250,6 +422,7 @@ function handleBackendMessage(msg) {
       msg.data.forEach(p => {
         const option = document.createElement("option");
         option.value = p.name;
+        option.setAttribute("data-raw-name", p.name);
         option.textContent = p.name;
         profileSelect.appendChild(option);
       });
@@ -272,17 +445,18 @@ function handleBackendMessage(msg) {
       } else {
         const option = document.createElement("option");
         option.value = "0";
-        option.textContent = "(0) Default Device";
+        option.textContent = currentLangDict["label.default_device"] || "(0) Default Device";
         taichiDeviceSelect.appendChild(option);
       }
       break;
 
     case "profile_settings":
       if (msg.settings) {
+        currentProfileSettings = msg.settings;
         layersInput.value = msg.settings.stopAt;
         candidatesInput.value = msg.settings.randomSamples;
         stepsInput.value = msg.settings.mutatedSamples;
-        profileDesc.textContent = msg.settings.description || "No description available.";
+        translateUI();
       }
       break;
 
@@ -310,8 +484,8 @@ function handleBackendMessage(msg) {
           if (!selectedFilePath.toLowerCase().endsWith("_temp_resume.json") && 
               !selectedFilePath.toLowerCase().endsWith(".json")) {
             console.log(`Auto-resuming from the latest checkpoint at layer ${maxLayer}`);
-            rewindHint.textContent = `Loading resume state at layer ${maxLayer}...`;
-            rewindHint.style.color = "var(--secondary-color)";
+            currentRewindHint = { type: "loading", layer: maxLayer };
+            translateUI();
             ws.send(JSON.stringify({
               action: "rewind_checkpoint",
               path: maxPath,
@@ -342,8 +516,8 @@ function handleBackendMessage(msg) {
           
           if (bestCp) {
             console.log(`Auto-rewinding after stop to layer ${targetLayer} using checkpoint ${bestCp.path}`);
-            rewindHint.textContent = `Aligning resume state at layer ${targetLayer}...`;
-            rewindHint.style.color = "var(--secondary-color)";
+            currentRewindHint = { type: "aligning", layer: targetLayer };
+            translateUI();
             ws.send(JSON.stringify({
               action: "rewind_checkpoint",
               path: bestCp.path,
@@ -384,7 +558,8 @@ function handleBackendMessage(msg) {
       break;
 
     case "benchmark_done":
-      benchmarkStatus.textContent = msg.status || "DONE";
+      benchmarkStatus.setAttribute("data-raw-status", msg.status || "DONE");
+      translateUI();
       if (msg.status === "PASSED") {
         benchmarkStatus.style.color = "var(--primary-color)";
       } else {
@@ -413,20 +588,21 @@ function handleBackendMessage(msg) {
         currentShapes = msg.shapes;
         renderShapes();
       }
-      rewindHint.textContent = `Successfully rewound to layer ${msg.layer}`;
-      rewindHint.style.color = "var(--primary-color)";
+      currentRewindHint = { type: "success", layer: msg.layer };
+      translateUI();
       updateButtonStates();
       break;
 
     case "rewind_failed":
-      alert("Rewind failed: " + msg.error);
-      rewindHint.textContent = "Rewind failed";
-      rewindHint.style.color = "#D32F2F";
+      alert((currentLangDict["alert.rewind_failed"] || "Rewind failed: ") + msg.error);
+      currentRewindHint = { type: "failed", layer: 0 };
+      translateUI();
       break;
 
     case "load_json_success":
       selectedFilePath = msg.path;
-      filePathDisplay.textContent = `Loaded JSON: ${msg.path}`;
+      currentFileStatus = { type: "json", path: msg.path };
+      translateUI();
       if (msg.width && msg.height) {
         updateCanvasSize(msg.width, msg.height);
       }
@@ -452,12 +628,13 @@ function handleBackendMessage(msg) {
       break;
 
     case "load_json_failed":
-      alert("Failed to load JSON file: " + msg.error);
+      alert((currentLangDict["alert.load_json_failed"] || "Failed to load JSON file: ") + msg.error);
       break;
 
     case "load_image_success":
       selectedFilePath = msg.path;
-      filePathDisplay.textContent = `Loaded Image: ${msg.path}`;
+      currentFileStatus = { type: "image", path: msg.path };
+      translateUI();
       if (msg.width && msg.height) {
         updateCanvasSize(msg.width, msg.height);
       }
@@ -475,13 +652,14 @@ function handleBackendMessage(msg) {
       break;
 
     case "load_image_failed":
-      alert("Failed to load image file: " + msg.error);
+      alert((currentLangDict["alert.load_image_failed"] || "Failed to load image file: ") + msg.error);
       break;
 
     case "file_selected":
       if (msg.path) {
         selectedFilePath = msg.path;
-        filePathDisplay.textContent = `Selected: ${msg.path}`;
+        currentFileStatus = { type: "selected", path: msg.path };
+        translateUI();
         
         if (msg.path.toLowerCase().endsWith(".json")) {
           // Send request to load the JSON geometry file
@@ -568,9 +746,9 @@ function handleBackendMessage(msg) {
         btnInject.textContent = currentLangDict["action.inject"] || "INJECT TO GAME";
         btnInject.classList.remove("disabled");
         if (msg.status === "failed") {
-          alert("Injection failed: " + msg.error);
+          alert((currentLangDict["alert.inject_failed"] || "Injection failed: ") + msg.error);
         } else {
-          alert("Injection completed successfully!");
+          alert(currentLangDict["alert.inject_success"] || "Injection completed successfully!");
         }
       }
       break;
@@ -860,8 +1038,8 @@ timelineSlider.addEventListener("change", () => {
   }
   
   if (bestCp) {
-    rewindHint.textContent = `Scrubbing to layer ${targetLayer}...`;
-    rewindHint.style.color = "var(--secondary-color)";
+    currentRewindHint = { type: "scrubbing", layer: targetLayer };
+    translateUI();
     ws.send(JSON.stringify({
       action: "rewind_checkpoint",
       path: bestCp.path,
@@ -873,7 +1051,7 @@ timelineSlider.addEventListener("change", () => {
 btnRewind.addEventListener("click", () => {
   const targetLayer = parseInt(rewindLayerInput.value);
   if (isNaN(targetLayer) || targetLayer < 1) {
-    alert("Please enter a valid layer number");
+    alert(currentLangDict["alert.invalid_layer"] || "Please enter a valid layer number");
     return;
   }
   
@@ -891,15 +1069,15 @@ btnRewind.addEventListener("click", () => {
   }
   
   if (bestCp) {
-    rewindHint.textContent = `Rewinding to layer ${targetLayer}...`;
-    rewindHint.style.color = "var(--secondary-color)";
+    currentRewindHint = { type: "rewinding", layer: targetLayer };
+    translateUI();
     ws.send(JSON.stringify({
       action: "rewind_checkpoint",
       path: bestCp.path,
       layer: targetLayer
     }));
   } else {
-    alert("No checkpoints available to rewind");
+    alert(currentLangDict["alert.no_checkpoints"] || "No checkpoints available to rewind");
   }
 });
 
@@ -1023,8 +1201,8 @@ btnGenerateText.addEventListener("click", () => {
       text: text,
       font_size: size
     }));
-    btnGenerateText.textContent = "Generating...";
-    setTimeout(() => { btnGenerateText.textContent = "Generate JSON"; }, 1000);
+    btnGenerateText.textContent = currentLangDict["action.generating"] || "Generating...";
+    setTimeout(() => { btnGenerateText.textContent = currentLangDict["action.generate_json"] || "Generate JSON"; }, 1000);
   }
 });
 
@@ -1043,7 +1221,8 @@ btnBenchmark.addEventListener("click", () => {
 btnStartBenchmark.addEventListener("click", () => {
   if (ws && ws.readyState === WebSocket.OPEN) {
     consoleBenchmark.textContent = "";
-    benchmarkStatus.textContent = "RUNNING...";
+    benchmarkStatus.setAttribute("data-raw-status", "RUNNING...");
+    translateUI();
     benchmarkStatus.style.color = "var(--secondary-color)";
     btnStartBenchmark.disabled = true;
     ws.send(JSON.stringify({ action: "start_benchmark" }));

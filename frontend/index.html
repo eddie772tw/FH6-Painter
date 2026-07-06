@@ -21,12 +21,12 @@
         <h1>FH6-Painter</h1>
       </div>
       <div class="header-actions" data-tauri-drag-region>
-        <select id="lang-select" class="btn-header"><option value="en-us">English</option><option value="zh-tw">繁體中文</option><option value="ja-jp">日本語</option></select>
-        <button id="btn-toggle-preview" class="btn-header text-green" data-i18n="header.disable_preview">關閉預覽 / Disable Preview</button>
-        <button id="btn-output" class="btn-header text-blue" data-i18n="action.open_output">開啟輸出 / Open Output</button>
-        <button id="btn-market" class="btn-header text-orange" data-i18n="action.open_market">前往市場 / Open Market</button>
-        <button id="btn-benchmark" class="btn-header text-blue" data-i18n="action.benchmark">效能測試 / Benchmark</button>
-        <button id="btn-show-logs" class="btn-header text-blue" data-i18n="action.show_logs">診斷主控台 / Show Logs</button>
+        <select id="lang-select" class="btn-header"></select>
+        <button id="btn-toggle-preview" class="btn-header text-green" data-i18n="header.disable_preview">Disable Preview</button>
+        <button id="btn-output" class="btn-header text-blue" data-i18n="action.open_output">Open Output</button>
+        <button id="btn-market" class="btn-header text-orange" data-i18n="action.open_market">Open Market</button>
+        <button id="btn-benchmark" class="btn-header text-blue" data-i18n="action.benchmark">Benchmark</button>
+        <button id="btn-show-logs" class="btn-header text-blue" data-i18n="action.show_logs">Show Logs</button>
       </div>
     </header>
 
@@ -38,49 +38,48 @@
         <section class="glass-card">
           <div class="card-header">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="icon"><path d="M4 14v1a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-1M16 6l-4-4-4 4M12 2v13"/></svg>
-            <h2>Input Source</h2>
+            <h2 data-i18n="label.input_source">Input Source</h2>
           </div>
           <div class="button-row" style="margin-top: 10px; display: flex; gap: 10px;">
-            <button id="btn-browse-native" class="btn secondary select-btn" style="flex: 1; padding: 12px; font-weight: bold;">BROWSE FILE</button>
-            <button id="btn-text-vinyl" class="btn secondary select-btn" style="flex: 1; padding: 12px; font-weight: bold;">TEXT VINYL</button>
+            <button id="btn-browse-native" class="btn secondary select-btn" style="flex: 1; padding: 12px; font-weight: bold;" data-i18n="action.browse_file">BROWSE FILE</button>
+            <button id="btn-text-vinyl" class="btn secondary select-btn" style="flex: 1; padding: 12px; font-weight: bold;" data-i18n="action.text_vinyl">TEXT VINYL</button>
           </div>
           <p id="file-path-display" class="file-path" style="margin-top: 10px;"></p>
         </section>
 
-        <!-- Generation Settings -->
         <section class="glass-card">
           <div class="card-header">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="icon"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-            <h2>Engine Settings</h2>
+            <h2 data-i18n="label.engine_settings">Engine Settings</h2>
           </div>
           
           <div class="input-group">
-            <label>Speed/Quality Profile</label>
+            <label data-i18n="label.speed_profile">Speed/Quality Profile</label>
             <select id="profile-select" class="cyber-select">
-              <option value="">Loading profiles...</option>
+              <option value="" data-i18n="label.loading_profiles">Loading profiles...</option>
             </select>
-            <span id="profile-desc" class="desc-text">Select a speed/quality profile.</span>
+            <span id="profile-desc" class="desc-text" data-i18n="label.select_profile_desc">Select a speed/quality profile.</span>
           </div>
 
           <div class="input-group">
-            <label>Max Layers / Shapes</label>
+            <label data-i18n="label.max_layers">Max Layers / Shapes</label>
             <input type="number" id="layers-input" class="cyber-input" value="1000" min="500" max="3000">
-            <span class="desc-text-info">FH6 Limits: Bumper ~1000 | Left/Right/Top ~3000</span>
+            <span class="desc-text-info" data-i18n="label.max_layers_desc">FH6 Limits: Bumper ~1000 | Left/Right/Top ~3000</span>
           </div>
 
           <div class="input-group">
-            <label>Engine Core</label>
+            <label data-i18n="label.engine_core">Engine Core</label>
             <select id="engine-select" class="cyber-select">
-              <option value="NUMBA">Numba JIT (CPU)</option>
-              <option value="TAICHI">Taichi JIT (GPU)</option>
-              <option value="GO_OPENCL">Go-OpenCL (GPU, Fastest)</option>
+              <option value="NUMBA" data-i18n="engine.NUMBA">Numba JIT (CPU)</option>
+              <option value="TAICHI" data-i18n="engine.TAICHI">Taichi JIT (GPU)</option>
+              <option value="GO_OPENCL" data-i18n="engine.GO_OPENCL">Go-OpenCL (GPU, Fastest)</option>
             </select>
           </div>
 
           <!-- Taichi GPU settings (hidden by default) -->
           <div id="taichi-settings-panel" class="hidden-settings hidden">
             <div class="input-group">
-              <label>Taichi Arch GPU Mode</label>
+              <label data-i18n="label.taichi_arch">Taichi Arch GPU Mode</label>
               <select id="taichi-arch-select" class="cyber-select">
                 <option value="Vulkan">Vulkan</option>
                 <option value="CUDA">CUDA</option>
@@ -90,12 +89,12 @@
             </div>
             <div class="input-group checkbox-row">
               <input type="checkbox" id="chk-hybrid" checked>
-              <label for="chk-hybrid">Enable Hybrid Mode (Hybrid)</label>
+              <label for="chk-hybrid" data-i18n="label.hybrid">Enable Hybrid Mode (Hybrid)</label>
             </div>
             <div class="input-group">
-              <label>Taichi GPU Device</label>
+              <label data-i18n="label.taichi_device">Taichi GPU Device</label>
               <select id="taichi-device-select" class="cyber-select">
-                <option value="0">(0) Default</option>
+                <option value="0" data-i18n="label.default_device">(0) Default Device</option>
               </select>
             </div>
           </div>
@@ -103,15 +102,15 @@
           <!-- Advanced overrides -->
           <div class="input-group checkbox-row">
             <input type="checkbox" id="chk-override">
-            <label for="chk-override">Enable Advanced Sample Override</label>
+            <label for="chk-override" data-i18n="label.advanced_override">Enable Advanced Sample Override</label>
           </div>
           <div id="override-settings-panel" class="hidden-settings hidden">
             <div class="input-group">
-              <label>Candidates (Samples)</label>
+              <label data-i18n="label.candidates">Candidates (Samples)</label>
               <input type="number" id="candidates-input" class="cyber-input" value="20000" min="1000" max="200000">
             </div>
             <div class="input-group">
-              <label>Hill-climb Steps</label>
+              <label data-i18n="label.hill_climb_steps">Hill-climb Steps</label>
               <input type="number" id="steps-input" class="cyber-input" value="200" min="10" max="2000">
             </div>
           </div>
@@ -121,37 +120,37 @@
         <section class="glass-card" id="optimizations-card">
           <div class="card-header">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="icon"><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
-            <h2>Advanced Optimizations</h2>
+            <h2 data-i18n="label.advanced_optimizations">Advanced Optimizations</h2>
           </div>
           <div class="opt-toggles-grid">
-            <div class="opt-toggle" title="【漸進式像素採樣】&#10;在生成前期（形狀較大時）跳過部分像素以大幅提速，隨進度逐漸恢復全像素精細評估。">
+            <div class="opt-toggle" data-i18n-title="label.progressive_sampling.title" title="【Progressive Sampling】&#10;Skip pixels in the early stage to speed up, then restore full precision gradually.">
               <input type="checkbox" id="opt-pyramid" checked>
-              <label for="opt-pyramid">Progressive Sampling</label>
+              <label for="opt-pyramid" data-i18n="label.progressive_sampling">Progressive Sampling</label>
             </div>
-            <div class="opt-toggle" title="【動態凍結遮罩】&#10;自動鎖定已經完美匹配的像素區域，避開重複評估以大幅減少運算負擔。">
+            <div class="opt-toggle" data-i18n-title="label.dynamic_freeze.title" title="【Dynamic Freeze】&#10;Automatically lock matched pixel regions to avoid redundant calculations.">
               <input type="checkbox" id="opt-freeze">
-              <label for="opt-freeze">Dynamic Freeze</label>
+              <label for="opt-freeze" data-i18n="label.dynamic_freeze">Dynamic Freeze</label>
             </div>
-            <div class="opt-toggle" title="【錯誤驅動重點採樣】&#10;依據殘餘誤差圖進行重點採樣，將隨機橢圓生成優先配置於高誤差區域。">
+            <div class="opt-toggle" data-i18n-title="label.importance_sampling.title" title="【Importance Sampling】&#10;Focus shape candidates on high-error regions based on the residual error map.">
               <input type="checkbox" id="opt-importance">
-              <label for="opt-importance">Importance Sampling</label>
+              <label for="opt-importance" data-i18n="label.importance_sampling">Importance Sampling</label>
             </div>
-            <div class="opt-toggle" title="【區域誤差加權】&#10;根據像素的空間特徵（如前景或邊緣）對誤差進行加權，提升邊緣清晰度。">
+            <div class="opt-toggle" data-i18n-title="label.error_weighting.title" title="【Error Weighting】&#10;Weight error by spatial features to improve edge sharpness.">
               <input type="checkbox" id="opt-weight">
-              <label for="opt-weight">Error Weighting</label>
+              <label for="opt-weight" data-i18n="label.error_weighting">Error Weighting</label>
             </div>
-            <div class="opt-toggle" title="【解析解最佳色彩】&#10;在評估幾何時利用解析解直接算出最優顏色，使爬山收斂速度倍增，無需隨機模擬退火。">
+            <div class="opt-toggle" data-i18n-title="label.analytical_color.title" title="【Analytical Color】&#10;Directly compute optimal colors via analytical solutions for faster hill-climb convergence.">
               <input type="checkbox" id="opt-annealing" checked>
-              <label for="opt-annealing">Analytical Color</label>
+              <label for="opt-annealing" data-i18n="label.analytical_color">Analytical Color</label>
             </div>
-            <div class="opt-toggle" title="【衰減式形狀限縮】&#10;隨著貼圖數量增加，動態縮小橢圓最大半徑以避免破壞已有的微小細節。">
+            <div class="opt-toggle" data-i18n-title="label.decaying_shape.title" title="【Decaying Shape】&#10;Shrink maximum shape radius dynamically as layers increase.">
               <input type="checkbox" id="opt-decay" checked>
-              <label for="opt-decay">Decaying Shape</label>
+              <label for="opt-decay" data-i18n="label.decaying_shape">Decaying Shape</label>
             </div>
           </div>
           <div class="input-group checkbox-row" style="margin-top: 12px; border-top: 1px solid var(--glass-border); padding-top: 12px;">
             <input type="checkbox" id="chk-early-conv" checked>
-            <label for="chk-early-conv">Enable Early Convergence (提早收斂)</label>
+            <label for="chk-early-conv" data-i18n="label.early_convergence">Enable Early Convergence</label>
           </div>
         </section>
 
@@ -159,30 +158,30 @@
         <section class="glass-card" id="roi-card">
           <div class="card-header">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="icon"><path d="M3 3h18v18H3zM9 9h6v6H9z"/></svg>
-            <h2>Region Painting</h2>
+            <h2 data-i18n="label.region_painting">Region Painting</h2>
           </div>
           <div class="input-group checkbox-row">
             <input type="checkbox" id="roi-enabled">
-            <label for="roi-enabled">Enable Region Selection</label>
+            <label for="roi-enabled" data-i18n="label.enable_region">Enable Region Selection</label>
           </div>
           <div id="roi-controls" class="hidden-settings hidden">
             <div class="input-group">
-              <label>Selection Shape</label>
+              <label data-i18n="label.selection_shape">Selection Shape</label>
               <div class="radio-row">
                 <input type="radio" id="roi-shape-rect" name="roi-shape" value="rectangle" checked>
-                <label for="roi-shape-rect">Rectangle</label>
+                <label for="roi-shape-rect" data-i18n="label.shape_rect">Rectangle</label>
                 <input type="radio" id="roi-shape-ellipse" name="roi-shape" value="ellipse">
-                <label for="roi-shape-ellipse">Ellipse</label>
+                <label for="roi-shape-ellipse" data-i18n="label.shape_ellipse">Ellipse</label>
               </div>
             </div>
             <div class="input-group">
-              <label>Minimal Require Layers</label>
-              <input type="number" id="roi-min-layers" class="cyber-input" value="500" title="Ignored if total generated layers is less than this.">
+              <label data-i18n="label.min_require_layers">Minimal Require Layers</label>
+              <input type="number" id="roi-min-layers" class="cyber-input" value="500" data-i18n-title="label.min_require_layers.title" title="Ignored if total generated layers is less than this.">
             </div>
             <div class="roi-display-box">
-              <span class="display-label">Selected Bounds:</span>
-              <span id="roi-bounds-display" class="display-value">None</span>
-              <span class="display-hint">Drag/resize on canvas. Right click to clear.</span>
+              <span class="display-label" data-i18n="label.selected_bounds">Selected Bounds:</span>
+              <span id="roi-bounds-display" class="display-value" data-i18n="label.none">None</span>
+              <span class="display-hint" data-i18n="label.roi_hint">Drag/resize on canvas. Right click to clear.</span>
             </div>
           </div>
         </section>
@@ -191,13 +190,13 @@
         <section class="glass-card" id="rewind-card">
           <div class="card-header">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="icon"><path d="M12 8v4l3 3m6-3a9 9 0 1 1-9-9 9 9 0 0 1 9 9z"/></svg>
-            <h2>History Rewind</h2>
+            <h2 data-i18n="label.history_rewind">History Rewind</h2>
           </div>
           <div class="rewind-box">
-            <label>Rewind / Resume Layer</label>
+            <label data-i18n="label.rewind_layer">Rewind / Resume Layer</label>
             <div class="rewind-row">
               <input type="number" id="rewind-layer-input" class="cyber-input" style="width: 100px;" placeholder="Layer">
-              <button id="btn-rewind" class="btn secondary select-btn">Rewind</button>
+              <button id="btn-rewind" class="btn secondary select-btn" data-i18n="action.rewind">Rewind</button>
             </div>
             <span id="rewind-hint" class="desc-text"></span>
           </div>
@@ -214,17 +213,17 @@
             <canvas id="preview-canvas" width="600" height="600"></canvas>
             
             <div id="connection-overlay" class="overlay-state">
-              <h3>CONNECTING TO ENGINE...</h3>
+              <h3 data-i18n="label.connecting">CONNECTING TO ENGINE...</h3>
             </div>
             <div id="preview-disabled-overlay" class="overlay-state hidden">
-              <h3>PREVIEW DISABLED</h3>
-              <p>Click 'Enable Preview' to restore visual fitting</p>
+              <h3 data-i18n="label.preview_disabled">PREVIEW DISABLED</h3>
+              <p data-i18n="label.preview_disabled_desc">Click 'Enable Preview' to restore visual fitting</p>
             </div>
           </div>
           
           <div class="timeline-panel" id="timeline-panel">
             <div class="timeline-row">
-              <span class="timeline-lbl">TIMELINE</span>
+              <span class="timeline-lbl" data-i18n="label.timeline">TIMELINE</span>
               <div class="slider-container">
                 <input type="range" id="timeline-slider" class="cyber-slider" value="0" min="0" max="100" disabled>
                 <div id="checkpoints-container" class="checkpoints-container"></div>
@@ -235,15 +234,15 @@
 
           <div class="metrics-hud">
             <div class="metric-box">
-              <span class="label">LAYERS</span>
+              <span class="label" data-i18n="label.metrics_layers">LAYERS</span>
               <span class="value" id="val-layers">0 / 0</span>
             </div>
             <div class="metric-box">
-              <span class="label">SPEED</span>
+              <span class="label" data-i18n="label.metrics_speed">SPEED</span>
               <span class="value" id="val-speed">0 L/s</span>
             </div>
             <div class="metric-box">
-              <span class="label">ETA</span>
+              <span class="label" data-i18n="label.metrics_eta">ETA</span>
               <span class="value" id="val-eta">0s</span>
             </div>
           </div>
@@ -251,8 +250,8 @@
 
         <!-- Action Bar -->
         <div class="action-bar">
-          <button id="btn-generate" class="btn primary disabled">START GENERATION</button>
-          <button id="btn-inject" class="btn secondary disabled">INJECT TO GAME</button>
+          <button id="btn-generate" class="btn primary disabled" data-i18n="action.start_generation">START GENERATION</button>
+          <button id="btn-inject" class="btn secondary disabled" data-i18n="action.inject">INJECT TO GAME</button>
         </div>
 
       </section>
@@ -263,19 +262,19 @@
     <div id="modal-text-vinyl" class="modal-overlay hidden">
       <div class="modal-window">
         <div class="modal-header">
-          <h3>Text Vinyl Generator</h3>
+          <h3 data-i18n="modal.text_vinyl_title">Text Vinyl Generator</h3>
           <button class="btn-close-modal" data-target="modal-text-vinyl">&times;</button>
         </div>
         <div class="modal-body">
           <div class="input-group">
-            <label>Enter text for vinyl:</label>
-            <input type="text" id="text-vinyl-input" class="cyber-input" placeholder="Type here...">
+            <label data-i18n="modal.text_vinyl_input">Enter text for vinyl:</label>
+            <input type="text" id="text-vinyl-input" class="cyber-input" data-i18n-placeholder="modal.text_vinyl_placeholder" placeholder="Type here...">
           </div>
           <div class="input-group">
-            <label>Font Size</label>
+            <label data-i18n="modal.text_vinyl_font_size">Font Size</label>
             <input type="number" id="text-vinyl-size" class="cyber-input" value="72" min="10" max="500">
           </div>
-          <button id="btn-generate-text" class="btn primary" style="width: 100%; margin-top: 15px; padding: 12px; flex: none;">Generate JSON</button>
+          <button id="btn-generate-text" class="btn primary" style="width: 100%; margin-top: 15px; padding: 12px; flex: none;" data-i18n="action.generate_json">Generate JSON</button>
         </div>
       </div>
     </div>
@@ -284,12 +283,12 @@
     <div id="modal-logs" class="modal-overlay hidden">
       <div class="modal-window large">
         <div class="modal-header">
-          <h3>系統即時診斷主控台 / Real-time Diagnostic Log Console</h3>
+          <h3 data-i18n="modal.logs_title">Real-time Diagnostic Log Console</h3>
           <button class="btn-close-modal" data-target="modal-logs">&times;</button>
         </div>
         <div class="modal-body">
           <pre id="console-logs" class="console-output"></pre>
-          <button id="btn-clear-logs" class="btn secondary" style="width: 100%; margin-top: 10px; padding: 10px; flex: none;">清除日誌 / Clear Logs</button>
+          <button id="btn-clear-logs" class="btn secondary" style="width: 100%; margin-top: 10px; padding: 10px; flex: none;" data-i18n="action.clear_logs">Clear Logs</button>
         </div>
       </div>
     </div>
@@ -298,13 +297,13 @@
     <div id="modal-benchmark" class="modal-overlay hidden">
       <div class="modal-window large">
         <div class="modal-header">
-          <h3>🏆 性能基準測試主控台 / Performance Benchmark Console</h3>
+          <h3 data-i18n="modal.benchmark_title">Performance Benchmark Console</h3>
           <button class="btn-close-modal" data-target="modal-benchmark">&times;</button>
         </div>
         <div class="modal-body">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-            <button id="btn-start-benchmark" class="btn primary" style="padding: 10px 20px; flex: none;">Start Benchmark</button>
-            <span id="benchmark-status" style="font-weight: bold; color: #888;">READY</span>
+            <button id="btn-start-benchmark" class="btn primary" style="padding: 10px 20px; flex: none;" data-i18n="action.start_benchmark">Start Benchmark</button>
+            <span id="benchmark-status" style="font-weight: bold; color: #888;" data-i18n="status.ready">READY</span>
           </div>
           <pre id="console-benchmark" class="console-output"></pre>
         </div>
