@@ -237,17 +237,22 @@ def evaluate_candidate_ti(
                             sum_t_g += t_g * w
                             sum_t_b += t_b * w
 
-                            sum_c_r += c_r * w
-                            sum_c_g += c_g * w
-                            sum_c_b += c_b * w
+                            # ⚡ Bolt Optimization: Factorize c_r * w to prevent redundant multiplications
+                            c_r_w = c_r * w
+                            c_g_w = c_g * w
+                            c_b_w = c_b * w
 
-                            sum_c2_r += (c_r * c_r) * w
-                            sum_c2_g += (c_g * c_g) * w
-                            sum_c2_b += (c_b * c_b) * w
+                            sum_c_r += c_r_w
+                            sum_c_g += c_g_w
+                            sum_c_b += c_b_w
 
-                            sum_ct_r += (c_r * t_r) * w
-                            sum_ct_g += (c_g * t_g) * w
-                            sum_ct_b += (c_b * t_b) * w
+                            sum_c2_r += c_r * c_r_w
+                            sum_c2_g += c_g * c_g_w
+                            sum_c2_b += c_b * c_b_w
+
+                            sum_ct_r += t_r * c_r_w
+                            sum_ct_g += t_g * c_g_w
+                            sum_ct_b += t_b * c_b_w
                             x += sample_step
                     y += sample_step
 

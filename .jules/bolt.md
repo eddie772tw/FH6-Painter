@@ -37,3 +37,6 @@
 ## 2026-07-06 - Numba 3D Slice Assignment Regressions
 **Learning:** In Numba JIT kernels, attempting to do 3D slice assignments like `canvas[:, :, 0] = r_val` fails to vectorize effectively and executes substantially slower than explicitly writing out the nested 2D loops `for y in range(height): for x in range(width): canvas[y, x, 0] = r_val`. This causes measurable performance regressions (e.g., ~3x slowdown for `rebuild_canvas_jit`).
 **Action:** When filling or rebuilding large multi-dimensional arrays (like a 3D canvas) in Numba, avoid using 3D slice syntax and prefer explicitly looping through the dimensions and performing point assignments.
+## 2026-07-15 - Numba 2D Boolean Mask Assignment
+**Learning:** In Numba JIT functions compiled in `nopython` mode, 2D boolean mask assignments (e.g., `arr[mask > threshold] = value`) fail to compile due to typing errors with setitem (`Multi-dimensional indices are not supported.`). While Numba supports 1D boolean masks, it cannot natively vectorize this pattern across multi-dimensional arrays without throwing `NumbaTypeError`.
+**Action:** When performing conditional updates against a multi-dimensional threshold map inside Numba JIT kernels (like `alpha_mask > 10.0`), use explicit nested 2D spatial loops to iterate over coordinates instead of boolean mask assignment arrays to prevent compilation failures.

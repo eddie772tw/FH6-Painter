@@ -454,9 +454,10 @@ def draw_ellipse(canvas, x_c, y_c, r_x, r_y, theta, r, g, b, alpha):
     a_f = np.float32(alpha * 0.00392156862745098)
     one_minus_a = np.float32(1.0 - a_f)
 
-    r_val = np.float32(r)
-    g_val = np.float32(g)
-    b_val = np.float32(b)
+    # ⚡ Bolt Optimization: Hoist variable multiplication outside inner-loop to save per-pixel ops
+    r_val_af = np.float32(r) * a_f
+    g_val_af = np.float32(g) * a_f
+    b_val_af = np.float32(b) * a_f
 
     sin_cos = sin_t * cos_t
     a = inv_rx2 * cos_t * cos_t + inv_ry2 * sin_t * sin_t
@@ -487,9 +488,9 @@ def draw_ellipse(canvas, x_c, y_c, r_x, r_y, theta, r, g, b, alpha):
                 x_end = min(max_x, int(math.floor(x_c + dx_max)))
 
                 for x in range(x_start, x_end + 1):
-                    canvas[y, x, 0] = canvas[y, x, 0] * one_minus_a + r_val * a_f
-                    canvas[y, x, 1] = canvas[y, x, 1] * one_minus_a + g_val * a_f
-                    canvas[y, x, 2] = canvas[y, x, 2] * one_minus_a + b_val * a_f
+                    canvas[y, x, 0] = canvas[y, x, 0] * one_minus_a + r_val_af
+                    canvas[y, x, 1] = canvas[y, x, 1] * one_minus_a + g_val_af
+                    canvas[y, x, 2] = canvas[y, x, 2] * one_minus_a + b_val_af
                     canvas[y, x, 3] = canvas[y, x, 3] * one_minus_a + np.float32(alpha)
 
             b_quad += b_coeff
@@ -515,9 +516,9 @@ def draw_ellipse(canvas, x_c, y_c, r_x, r_y, theta, r, g, b, alpha):
                 x_end = min(max_x, int(math.floor(x_c + dx_max)))
 
                 for x in range(x_start, x_end + 1):
-                    canvas[y, x, 0] = canvas[y, x, 0] * one_minus_a + r_val * a_f
-                    canvas[y, x, 1] = canvas[y, x, 1] * one_minus_a + g_val * a_f
-                    canvas[y, x, 2] = canvas[y, x, 2] * one_minus_a + b_val * a_f
+                    canvas[y, x, 0] = canvas[y, x, 0] * one_minus_a + r_val_af
+                    canvas[y, x, 1] = canvas[y, x, 1] * one_minus_a + g_val_af
+                    canvas[y, x, 2] = canvas[y, x, 2] * one_minus_a + b_val_af
 
             b_quad += b_coeff
             discriminant += disc_step_1 + disc_step_2
@@ -859,9 +860,8 @@ def run_redundancy_check_jit(shapes_data, shapes_color, shapes_type, width, heig
         if s_type == 1:
             visible_mask[i] = True
 
-            for y in range(height):
-                for x in range(width):
-                    occlusion[y, x] = 1.0
+            # ⚡ Bolt Optimization: Replace nested loops with highly-vectorized slice assignment for 2D fill operations in Numba
+            occlusion[:] = 1.0
             continue
 
         x_c = np.float32(shapes_data[i, 0])
