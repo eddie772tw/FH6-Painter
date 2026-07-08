@@ -40,3 +40,11 @@
 ## 2026-07-15 - Numba 2D Boolean Mask Assignment
 **Learning:** In Numba JIT functions compiled in `nopython` mode, 2D boolean mask assignments (e.g., `arr[mask > threshold] = value`) fail to compile due to typing errors with setitem (`Multi-dimensional indices are not supported.`). While Numba supports 1D boolean masks, it cannot natively vectorize this pattern across multi-dimensional arrays without throwing `NumbaTypeError`.
 **Action:** When performing conditional updates against a multi-dimensional threshold map inside Numba JIT kernels (like `alpha_mask > 10.0`), use explicit nested 2D spatial loops to iterate over coordinates instead of boolean mask assignment arrays to prevent compilation failures.
+
+## 2026-07-20 - Loop unswitching in Taichi Evaluator for validation check
+**Learning:** The `check_contour` and `use_freeze` configuration flags in the inner `evaluate_candidate_ti` loop inside `taichi_evaluator.py` caused branching for every pixel checked. This prevented the LLVM/Taichi compiler from optimally executing the tight loop. Numba CPU already implemented unswitching for `use_freeze` externally, and `taichi_evaluator.py` was lagging in this optimization.
+**Action:** Unswitched the `check_contour` and `use_freeze` validations in the Taichi loop by hoisting these boolean checks outside of the pixel Y/X evaluation loops.
+
+## 2026-07-20 - Taichi GPU Loop Unswitching for Boolean Flags
+**Learning:** In the highly executed Taichi scanline evaluation kernel (`evaluate_candidate_ti`), configuration flags such as `check_contour` and `use_freeze` (in the validation pass) and `use_weight`/`use_uncovered` (in the accumulation pass) were checked inside the inner loops. This per-pixel branching causes thread divergence and inhibits Taichi/LLVM from adequately vectorizing or unswitching the loops automatically on the GPU. Numba kernels previously incorporated unswitching for `use_freeze` and others, but Taichi was lagging.
+**Action:** Unswitched these configuration checks by manually hoisting the `if` branches completely outside the spatial bounding box iteration loops, creating discrete code paths (fast/slow branches) for the inner core. While this duplicates loop structures in source code, it dramatically lowers branch overhead during runtime execution.
