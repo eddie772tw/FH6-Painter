@@ -129,15 +129,26 @@ def evaluate_candidate_ti(
         # Precompute division (1.0 / a) to avoid expensive division inside tight loops
         inv_a = 1.0 / a if a > 0.0 else 0.0
 
+        # ⚡ Bolt Optimization: Forward differencing constants to eliminate per-scanline multiplication
+        dy_init = ti.cast(min_y, ti.f32) - y_c
+        dy_step = ti.cast(sample_step, ti.f32)
+        dy_sq_step = dy_step * dy_step
+        b_val_init = dy_init * b_coeff
+        b_val_step = dy_step * b_coeff
+        disc_init = a - dy_init * dy_init * inv_rx2_ry2
+        disc_step_1_init = -2.0 * dy_init * dy_step * inv_rx2_ry2
+        disc_step_2 = -dy_sq_step * inv_rx2_ry2
+        disc_step_1_sub = 2.0 * dy_sq_step * inv_rx2_ry2
+
         # Validation Pass (Scalar constraints check)
         # ⚡ Bolt Optimization: Loop unswitching for check_contour and use_freeze boolean flags.
         # By pulling the configuration flag outside the inner pixel-loop, we remove per-pixel branching
         if check_contour == 1 and use_freeze == 0:
+            b_val = b_val_init
+            discriminant = disc_init
+            disc_step_1 = disc_step_1_init
             y = min_y
             while y <= max_y and is_valid == 1:
-                dy = ti.cast(y, ti.f32) - y_c
-                b_val = dy * b_coeff
-                discriminant = a - dy * dy * inv_rx2_ry2
                 if discriminant >= 0.0:
                     sqrt_d = ti.math.sqrt(discriminant)
                     dx_min = (-b_val - sqrt_d) * inv_a
@@ -150,13 +161,16 @@ def evaluate_candidate_ti(
                         if alpha_mask[y, x] <= 10.0:
                             is_valid = 0
                         x += sample_step
+                b_val += b_val_step
+                discriminant += disc_step_1 + disc_step_2
+                disc_step_1 -= disc_step_1_sub
                 y += sample_step
         elif check_contour == 0 and use_freeze == 1:
+            b_val = b_val_init
+            discriminant = disc_init
+            disc_step_1 = disc_step_1_init
             y = min_y
             while y <= max_y and is_valid == 1:
-                dy = ti.cast(y, ti.f32) - y_c
-                b_val = dy * b_coeff
-                discriminant = a - dy * dy * inv_rx2_ry2
                 if discriminant >= 0.0:
                     sqrt_d = ti.math.sqrt(discriminant)
                     dx_min = (-b_val - sqrt_d) * inv_a
@@ -169,13 +183,16 @@ def evaluate_candidate_ti(
                         if freeze_mask[y, x] == 1:
                             is_valid = 0
                         x += sample_step
+                b_val += b_val_step
+                discriminant += disc_step_1 + disc_step_2
+                disc_step_1 -= disc_step_1_sub
                 y += sample_step
         elif check_contour == 1 and use_freeze == 1:
+            b_val = b_val_init
+            discriminant = disc_init
+            disc_step_1 = disc_step_1_init
             y = min_y
             while y <= max_y and is_valid == 1:
-                dy = ti.cast(y, ti.f32) - y_c
-                b_val = dy * b_coeff
-                discriminant = a - dy * dy * inv_rx2_ry2
                 if discriminant >= 0.0:
                     sqrt_d = ti.math.sqrt(discriminant)
                     dx_min = (-b_val - sqrt_d) * inv_a
@@ -190,16 +207,19 @@ def evaluate_candidate_ti(
                         if freeze_mask[y, x] == 1:
                             is_valid = 0
                         x += sample_step
+                b_val += b_val_step
+                discriminant += disc_step_1 + disc_step_2
+                disc_step_1 -= disc_step_1_sub
                 y += sample_step
 
         # Accumulation Pass (Perfect for coalesced parallel loads)
         if is_valid == 1:
             if use_weight == 0 and use_uncovered == 0:
+                b_val = b_val_init
+                discriminant = disc_init
+                disc_step_1 = disc_step_1_init
                 y = min_y
                 while y <= max_y:
-                    dy = ti.cast(y, ti.f32) - y_c
-                    b_val = dy * b_coeff
-                    discriminant = a - dy * dy * inv_rx2_ry2
                     if discriminant >= 0.0:
                         sqrt_d = ti.math.sqrt(discriminant)
                         dx_min = (-b_val - sqrt_d) * inv_a
@@ -238,13 +258,16 @@ def evaluate_candidate_ti(
                             sum_ct_g += c_g * t_g
                             sum_ct_b += c_b * t_b
                             x += sample_step
+                    b_val += b_val_step
+                    discriminant += disc_step_1 + disc_step_2
+                    disc_step_1 -= disc_step_1_sub
                     y += sample_step
             elif use_weight == 1 and use_uncovered == 0:
+                b_val = b_val_init
+                discriminant = disc_init
+                disc_step_1 = disc_step_1_init
                 y = min_y
                 while y <= max_y:
-                    dy = ti.cast(y, ti.f32) - y_c
-                    b_val = dy * b_coeff
-                    discriminant = a - dy * dy * inv_rx2_ry2
                     if discriminant >= 0.0:
                         sqrt_d = ti.math.sqrt(discriminant)
                         dx_min = (-b_val - sqrt_d) * inv_a
@@ -290,13 +313,16 @@ def evaluate_candidate_ti(
                             sum_ct_g += t_g * c_g_w
                             sum_ct_b += t_b * c_b_w
                             x += sample_step
+                    b_val += b_val_step
+                    discriminant += disc_step_1 + disc_step_2
+                    disc_step_1 -= disc_step_1_sub
                     y += sample_step
             elif use_weight == 0 and use_uncovered == 1:
+                b_val = b_val_init
+                discriminant = disc_init
+                disc_step_1 = disc_step_1_init
                 y = min_y
                 while y <= max_y:
-                    dy = ti.cast(y, ti.f32) - y_c
-                    b_val = dy * b_coeff
-                    discriminant = a - dy * dy * inv_rx2_ry2
                     if discriminant >= 0.0:
                         sqrt_d = ti.math.sqrt(discriminant)
                         dx_min = (-b_val - sqrt_d) * inv_a
@@ -342,13 +368,16 @@ def evaluate_candidate_ti(
                             sum_ct_g += t_g * c_g_w
                             sum_ct_b += t_b * c_b_w
                             x += sample_step
+                    b_val += b_val_step
+                    discriminant += disc_step_1 + disc_step_2
+                    disc_step_1 -= disc_step_1_sub
                     y += sample_step
             else:
+                b_val = b_val_init
+                discriminant = disc_init
+                disc_step_1 = disc_step_1_init
                 y = min_y
                 while y <= max_y:
-                    dy = ti.cast(y, ti.f32) - y_c
-                    b_val = dy * b_coeff
-                    discriminant = a - dy * dy * inv_rx2_ry2
                     if discriminant >= 0.0:
                         sqrt_d = ti.math.sqrt(discriminant)
                         dx_min = (-b_val - sqrt_d) * inv_a
@@ -394,6 +423,9 @@ def evaluate_candidate_ti(
                             sum_ct_g += t_g * c_g_w
                             sum_ct_b += t_b * c_b_w
                             x += sample_step
+                    b_val += b_val_step
+                    discriminant += disc_step_1 + disc_step_2
+                    disc_step_1 -= disc_step_1_sub
                     y += sample_step
 
     avg_r = 0.0
