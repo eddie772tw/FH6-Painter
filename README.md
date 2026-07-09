@@ -55,12 +55,16 @@ Support Go-OpenCL, Taichi, and Numba acceleration across CPU and GPU, provide GU
 │   ├── numba_evaluator.py     # CPU 多線程評估器 / CPU Numba JIT Evaluator
 │   └── numba_kernels.py       # Numba 核心計算邏輯 / Numba Kernels
 ├── tools/                     # 核心工具箱 / Project core toolbox
+│   ├── benchmark/             # 效能跑分套件 / Benchmark Suite Package
 │   ├── bin/                   # 外部二進位工具目錄 / External Binaries
+│   ├── fh6-heuristics.json    # 記憶體掃描快取 / Memory scan heuristics
 │   ├── fh6_import_layer_table.py # 記憶體掃描與寫入核心 / Win32 RAM scanner & injector
-│   ├── fh6_painter_generator.py # JIT 幾何生成器 / JIT shape generator tool
-│   ├── benchmark/                # 效能跑分套件 / Benchmark Suite Package
-│   ├── fh6-heuristics.json      # 記憶體掃描快取 / Memory scan heuristics
-│   └── verify_boundary.py       # 邊界驗證工具 / Boundary validation tool
+│   ├── fh6_painter_generator.py  # JIT 幾何生成器 / JIT shape generator tool
+│   ├── test_pso_optimizer.py  # PSO 最佳化測試 / PSO optimizer test
+│   ├── text_generator.py      # 文字生成器 / Text generator tool
+│   └── verify_boundary.py     # 邊界驗證工具 / Boundary validation tool
+├── lang/                      # 多國語系與本地化設定檔 / Locales and translation files
+├── tests/                     # 測試套件 / Test suites
 ```
 
 ---
