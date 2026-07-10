@@ -482,6 +482,8 @@ def run_generator(
 
     gc.disable()
 
+    if hasattr(evaluator, "sync"):
+        evaluator.sync()
     start_time = time.time()
     last_print = time.time()
 
@@ -875,6 +877,8 @@ def run_generator(
                         file=sys.stderr,
                     )
 
+            if hasattr(evaluator, "sync"):
+                evaluator.sync()
             now = time.time()
             elapsed = now - start_time
             generated_in_session = current_layer - starting_layer_count
@@ -916,6 +920,8 @@ def run_generator(
 
         print()
         gc.enable()
+        if hasattr(evaluator, "sync"):
+            evaluator.sync()
         total_time = time.time() - start_time
 
         print(f"Shape generation completed in {total_time:.2f} seconds!")

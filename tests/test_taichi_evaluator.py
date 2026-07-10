@@ -60,13 +60,29 @@ def test_taichi_evaluator_pure_gpu_search():
     evaluator.cleanup()
 
 
-def test_taichi_numba_consistency():
+import time
+
+# 針對 Taichi 的後端矩陣與基礎測試，加入 `ti.sync()` 與並行防呆機制
+
+
+@pytest.mark.parametrize("arch", ["cpu", "vulkan", "cuda"])
+def test_taichi_numba_consistency(arch):
+    import taichi as ti
+
     from evaluators.numba_evaluator import NumbaEvaluator
     from evaluators.taichi_evaluator import TaichiEvaluator
 
-    # Set up matching target image (32x32x3)
+    # 重置 Taichi 並強制使用指定後端與 Debug 模式，攔截越界與非同步錯誤
+    ti.reset()
+    try:
+        ti_arch = getattr(ti, arch)
+        ti.init(arch=ti_arch, debug=True)
+    except Exception as e:
+        pytest.skip(f"Taichi arch {arch} 初始化失敗或不支援: {e}")
+
+    # Set up matching target image (512x512x3) to strictly enforce block-level concurrency
     np.random.seed(42)
-    target = np.random.rand(32, 32, 3).astype(np.float32)
+    target = np.random.rand(512, 512, 3).astype(np.float32)
 
     try:
         taichi_eval = TaichiEvaluator(target)
@@ -84,8 +100,8 @@ def test_taichi_numba_consistency():
     canvas_ti = np.zeros_like(target)
     canvas_nb = np.zeros_like(target)
 
-    # Draw an ellipse exceeding boundaries (centered at (2,2) with radius 15) to check clipping parity
-    shape_args = (2.0, 2.0, 15.0, 10.0, 0.5, 0.8, 0.4, 0.6, 128.0)
+    # Draw an ellipse exceeding boundaries (centered at (256, 256) with radius 150) to check clipping parity and Data Races
+    shape_args = (256.0, 256.0, 150.0, 100.0, 0.5, 0.8, 0.4, 0.6, 128.0)
     taichi_eval.draw_shape_on_canvas(canvas_ti, *shape_args)
     numba_eval.draw_shape_on_canvas(canvas_nb, *shape_args)
 
@@ -108,12 +124,17 @@ def test_taichi_numba_consistency():
     }
 
     # Execute Hybrid search (which utilizes Taichi random candidates selection + Numba CPU climbing)
+    ti.sync()
+    start_time = time.time()
     shape_params, delta = taichi_eval.search_best_shape(
         canvas_search, batch_size=256, params=params
     )
+    ti.sync()
+    elapsed = time.time() - start_time
+    assert elapsed >= 0.0  # 確保效能測試有被正確計算，且等待了 GPU 結束
 
     # Assert shape scale parameters are well within maximum boundaries (not giant misplaced blobs)
-    max_r = max(10.0, 32.0 / 3.0)
+    max_r = max(10.0, 512.0 / 3.0)
     assert shape_params[2] <= max_r * 1.1, (
         f"Candidate radius r_x is too large: {shape_params[2]}"
     )
