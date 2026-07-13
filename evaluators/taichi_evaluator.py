@@ -755,30 +755,18 @@ def update_uncovered_mask_gpu(
     # Also hoists inverse division outside the loop for performance
     inv_a = 1.0 / a if a > 0.0 else 0.0
 
-    # ⚡ Bolt Optimization: Forward differencing variables to eliminate per-row quadratic multiplication
-    dy_init = ti.cast(min_y, ti.f32) - y_c
-    two_dy = 2.0 * dy_init
-    b_quad_init = dy_init * b_coeff
-    disc_init = a - dy_init * dy_init * inv_rx2_ry2
-    disc_step_1_init = -two_dy * inv_rx2_ry2
-    disc_step_2_init = -inv_rx2_ry2
-
-    b_quad = b_quad_init
-    discriminant = disc_init
-    disc_step_1 = disc_step_1_init
-    disc_step_2 = disc_step_2_init
     for y in range(min_y, max_y + 1):
+        dy = ti.cast(y, ti.f32) - y_c
+        b_val = dy * b_coeff
+        discriminant = a - dy * dy * inv_rx2_ry2
         if discriminant >= 0.0:
             sqrt_d = ti.math.sqrt(discriminant)
-            dx_min = (-b_quad - sqrt_d) * inv_a
-            dx_max = (-b_quad + sqrt_d) * inv_a
+            dx_min = (-b_val - sqrt_d) * inv_a
+            dx_max = (-b_val + sqrt_d) * inv_a
             x_start = ti.max(min_x, ti.cast(ti.math.ceil(x_c + dx_min), ti.i32))
             x_end = ti.min(max_x, ti.cast(ti.math.floor(x_c + dx_max), ti.i32))
             for x in range(x_start, x_end + 1):
                 uncovered_map[y, x] = 1.0
-        b_quad += b_coeff
-        discriminant += disc_step_1 + disc_step_2
-        disc_step_1 -= 2.0 * inv_rx2_ry2
 
 
 @ti.kernel
@@ -886,33 +874,26 @@ def draw_ellipse_gpu(
 
     inv_a = 1.0 / a if a > 0.0 else 0.0
 
-    # ⚡ Bolt Optimization: Forward differencing variables to eliminate per-row quadratic multiplication
-    dy_init = ti.cast(min_y, ti.f32) - y_c
-    two_dy = 2.0 * dy_init
-    b_quad_init = dy_init * b_coeff
-    disc_init = a - dy_init * dy_init * inv_rx2_ry2
-    disc_step_1_init = -two_dy * inv_rx2_ry2
-    disc_step_2_init = -inv_rx2_ry2
+    # ⚡ PR #73 Hoisted: Compute once per kernel call (outside both loops)
+    r_val_af = r * a_f
+    g_val_af = g * a_f
+    b_val_af = b * a_f
 
-    b_quad = b_quad_init
-    discriminant = disc_init
-    disc_step_1 = disc_step_1_init
-    disc_step_2 = disc_step_2_init
     for y in range(min_y, max_y + 1):
+        dy = ti.cast(y, ti.f32) - y_c
+        b_val = dy * b_coeff
+        discriminant = a - dy * dy * inv_rx2_ry2
         if discriminant >= 0.0:
             sqrt_d = ti.math.sqrt(discriminant)
-            dx_min = (-b_quad - sqrt_d) * inv_a
-            dx_max = (-b_quad + sqrt_d) * inv_a
+            dx_min = (-b_val - sqrt_d) * inv_a
+            dx_max = (-b_val + sqrt_d) * inv_a
             x_start = ti.max(min_x, ti.cast(ti.math.ceil(x_c + dx_min), ti.i32))
             x_end = ti.min(max_x, ti.cast(ti.math.floor(x_c + dx_max), ti.i32))
 
             for x in range(x_start, x_end + 1):
-                canvas[y, x, 0] = canvas[y, x, 0] * one_minus_a + r * a_f
-                canvas[y, x, 1] = canvas[y, x, 1] * one_minus_a + g * a_f
-                canvas[y, x, 2] = canvas[y, x, 2] * one_minus_a + b * a_f
-        b_quad += b_coeff
-        discriminant += disc_step_1 + disc_step_2
-        disc_step_1 -= 2.0 * inv_rx2_ry2
+                canvas[y, x, 0] = canvas[y, x, 0] * one_minus_a + r_val_af
+                canvas[y, x, 1] = canvas[y, x, 1] * one_minus_a + g_val_af
+                canvas[y, x, 2] = canvas[y, x, 2] * one_minus_a + b_val_af
 
 
 @ti.kernel
