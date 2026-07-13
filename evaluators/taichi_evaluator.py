@@ -794,10 +794,15 @@ def draw_ellipse_gpu(
             x_start = ti.max(min_x, ti.cast(ti.math.ceil(x_c + dx_min), ti.i32))
             x_end = ti.min(max_x, ti.cast(ti.math.floor(x_c + dx_max), ti.i32))
 
+            # ⚡ Bolt Optimization: Hoist variable multiplication outside inner-loop to save per-pixel ops
+            r_val_af = r * a_f
+            g_val_af = g * a_f
+            b_val_af = b * a_f
+
             for x in range(x_start, x_end + 1):
-                canvas[y, x, 0] = canvas[y, x, 0] * one_minus_a + r * a_f
-                canvas[y, x, 1] = canvas[y, x, 1] * one_minus_a + g * a_f
-                canvas[y, x, 2] = canvas[y, x, 2] * one_minus_a + b * a_f
+                canvas[y, x, 0] = canvas[y, x, 0] * one_minus_a + r_val_af
+                canvas[y, x, 1] = canvas[y, x, 1] * one_minus_a + g_val_af
+                canvas[y, x, 2] = canvas[y, x, 2] * one_minus_a + b_val_af
 
 
 @ti.kernel
