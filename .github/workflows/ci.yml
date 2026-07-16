@@ -2,17 +2,23 @@ name: FH6 Painter CI/CD Pipeline
 
 on:
   push:
-    branches: [ "master", "main" ]
+    branches: [ "main" ]
   pull_request:
-    branches: [ "master", "main" ]
+    branches: [ "main" ]
 
 permissions:
   contents: read
 
+# 定義全域變數，方便未來統一升級版本
+env:
+  PYINSTALLER_VERSION: "v6.11.1" # 鎖定 PyInstaller 穩定版本，避免隨官方 main 分支更新而無預警損壞
+
 jobs:
-  # 任務 1：極速 Linux 代碼風格與語法檢查 (與單元測試並行)
+  # 任務 1：代碼風格與語法檢查
   lint:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
@@ -27,43 +33,77 @@ jobs:
       with:
         args: "format --check ."
 
-  # 任務 2：跨平台單元測試與邏輯驗證
+  # 任務 2：單元測試與邏輯驗證
   test:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [windows-latest, ubuntu-latest]
-        python-version: ["3.13"]
-
+    needs: [lint]
+    runs-on: windows-latest
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    - name: Set up Python ${{ matrix.python-version }}
+    - name: Set up Python 3.13
       uses: actions/setup-python@v5
       with:
-        python-version: ${{ matrix.python-version }}
+        python-version: "3.13"
         cache: 'pip'
 
-    - name: Upgrade pip and install core requirements
+    - name: Upgrade pip and install requirements and pytest
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
-
-    - name: Install testing tools
-      run: |
         pip install pytest
 
     - name: Execute automated test suite
       run: |
         python -m pytest -v
 
-  # 任務 3：建置與封裝發行版 (依賴 test 與 lint 通過)
-  build-release:
-    needs: [test, lint]
+  # 任務 2.5：獨立並行自編譯 PyInstaller
+  build-pyinstaller:
     runs-on: windows-latest
-    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main'
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python 3.13
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.13"
+        cache: 'pip' # 啟用 pip 快取
+
+    # 檢查是否有先前編譯好的 PyInstaller 快取
+    - name: Cache PyInstaller Wheel
+      id: cache-pyinstaller
+      uses: actions/cache@v4
+      with:
+        path: dist-pyinstaller/
+        key: pyinstaller-wheel-${{ runner.os }}-${{ env.PYINSTALLER_VERSION }}-py3.13
+
+    # 如果沒命中快取，才進行下載與手動編譯
+    - name: Manually compile PyInstaller Bootloader & Package as Wheel
+      if: steps.cache-pyinstaller.outputs.cache-hit != 'true'
+      run: |
+        python -m pip install --upgrade pip
+        pip install wheel
+        git clone --depth 1 --branch ${{ env.PYINSTALLER_VERSION }} https://github.com/pyinstaller/pyinstaller.git
+        cd pyinstaller
+        cd bootloader
+        python waf configure build install
+        cd ..
+        pip wheel . --wheel-dir=../dist-pyinstaller --no-deps
+
+    - name: Upload PyInstaller Wheel Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: pyinstaller-wheel
+        path: dist-pyinstaller/
+        retention-days: 1 # 暫存檔，完成後即可丟棄
+
+  # 任務 3：建置與封裝發行版
+  build-release:
+    needs: [test, lint, build-pyinstaller] # 額外依賴 build-pyinstaller
+    runs-on: windows-latest
+    if: github.ref == 'refs/heads/main'
     
     steps:
     - name: Checkout repository
@@ -75,12 +115,22 @@ jobs:
         python-version: "3.13"
         cache: 'pip'
 
-    - name: Install requirements & PyInstaller
+    # 1. 下載剛剛並行編譯好的 PyInstaller Wheel
+    - name: Download PyInstaller Wheel
+      uses: actions/download-artifact@v4
+      with:
+        name: pyinstaller-wheel
+        path: dist-pyinstaller
+
+    # 2. 安裝 requirements 項目以及本地的 PyInstaller Wheel
+    # 使用 shell: bash 確保 Windows 環境下能正確展開「*.whl」萬用字元
+    - name: Install requirements & Compiled PyInstaller
+      shell: bash
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
-        pip install pyinstaller
-
+        pip install dist-pyinstaller/*.whl
+        
     - name: Set up Node.js
       uses: actions/setup-node@v4
       with:
@@ -91,20 +141,20 @@ jobs:
       with:
         targets: x86_64-pc-windows-msvc
 
+    # 引入 Rust 快取，大幅加速 build_release.bat 中可能含有的 Rust 編譯過程
+    - name: Rust Cache
+      uses: swatinem/rust-cache@v2
+
     - name: Build Standalone Windows Executable
       shell: cmd
       run: |
+        mkdir Release
         call build_release.bat
-
-    - name: Prepare Portable Release Folder
-      shell: cmd
-      run: |
-        mkdir PortableRelease
-        copy dist\FH6-Painter.exe PortableRelease\
+        copy dist\FH6-Painter.exe Release\
 
     - name: Upload build artifact preview
       uses: actions/upload-artifact@v4
       with:
-        name: FH6-Painter_Windows_Portable
-        path: PortableRelease/
+        name: FH6-Painter
+        path: Release/
         retention-days: 7
