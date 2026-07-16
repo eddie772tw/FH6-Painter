@@ -43,6 +43,8 @@ Support Go-OpenCL, Taichi, and Numba acceleration across CPU and GPU, provide GU
 ├── optimization_settings.json # 全局效能與排程配置 / Global Performance & Scheduling Settings
 ├── fh6_painter_launcher.py    # 控制台拖曳啟動器 / Drag-and-drop CLI launcher
 ├── requirements.txt           # 專案 Python 依賴清單 / Python dependencies list
+├── pyproject.toml             # Ruff 程式碼規範與格式化配置 / Ruff code style configs
+├── .pkgdirignore              # 打包排除目錄配置 / Directory exclusion settings for bundling
 ├── settings/                  # 各種生成速率與品質預設配置 / Generation presets
 │   ├── a. keemstar fast...ini
 │   ├── c. balanced...         # 預設平衡配置檔 / Default balanced configuration
@@ -77,7 +79,7 @@ Support Go-OpenCL, Taichi, and Numba acceleration across CPU and GPU, provide GU
 *   **方法 B：開發原始碼版（需要 Python 環境與 Node.js）**：
     專案原生支援 **Python 3.13**（支援全部 CPU/GPU 引擎），並相容 **Python 3.14**（僅支援 Go-OpenCL 與 Numba 加速，Taichi 將自動停用）。需安裝 **Node.js** 以編譯與執行前端環境。選裝 **Rust (cargo)** 可用於原生 Tauri 應用編譯。
     1. 複製儲存庫：`git clone https://github.com/eddie772tw/FH6-Painter.git`
-    2. 直接雙擊啟動 **`forza-painter-py.bat`**。該腳本會全自動偵測、建立 Python 3.13 虛擬環境 (`.venv`) 並安裝所有依賴，同時也會透過 npm 安裝前端套件，隨後啟動程式。也可以手動安裝依賴：`pip install -r requirements.txt`。
+    2. 直接雙擊啟動 **`forza-painter-py.bat`**。該腳本會全自動偵測、建立 Python 3.13 虛擬環境 (`.venv`) 並安裝所有依賴，同時也會透過 npm 安裝前端套件，隨後啟動程式。也可以手動安裝依賴：`pip install -r requirements.txt`、`pip install -r backend/requirements.txt` 與 `npm --prefix frontend install`。
 
 *   **Method A: Standalone Portable Version (Recommended)**:
     1. Download the latest standalone release `FH6-Painter` ZIP package from the Release page.
@@ -85,7 +87,7 @@ Support Go-OpenCL, Taichi, and Numba acceleration across CPU and GPU, provide GU
 *   **Method B: Source Code Version (Requires Python & Node.js)**:
     Native support for **Python 3.13** (Full CPU/GPU engines) and compatible with **Python 3.14** (Go-OpenCL and Numba JIT only; Taichi automatically disabled). **Node.js** is required to compile and run the frontend environment. **Rust (cargo)** is optional but recommended for native Tauri app compilation.
     1. Clone the repository: `git clone https://github.com/eddie772tw/FH6-Painter.git`
-    2. Double-click **`forza-painter-py.bat`** to start. The script will automatically detect Python, create a Python 3.13 virtual environment (`.venv`), install Python requirements, install npm dependencies, and run the app. You can also install requirements manually: `pip install -r requirements.txt`.
+    2. Double-click **`forza-painter-py.bat`** to start. The script will automatically detect Python, create a Python 3.13 virtual environment (`.venv`), install Python requirements, install npm dependencies, and run the app. You can also install requirements manually: `pip install -r requirements.txt`, `pip install -r backend/requirements.txt` and `npm --prefix frontend install`.
 
 ---
 
@@ -98,7 +100,7 @@ Support Go-OpenCL, Taichi, and Numba acceleration across CPU and GPU, provide GU
     2. 將要轉換的圖片拖曳至左側 **「1. INPUT SOURCE」** 的輸入框中。
     3. 點選 **「開始生成 (Start Generation)」**。您可以在右側看見即時畫布生成預覽與實時指標 HUD！
 *   **🔵 方法 B：拖曳至啟動器（CLI 快速模式 / CLI Fast Mode）**：
-    1. 將您的圖片拖曳至 `fh6_painter_launcher.py` 或 `forza-painter-py.bat` 圖示上。
+    1. 將您的圖片拖曳至 `fh6_painter_launcher.py` 圖示上。
     2. 依提示選擇層數限制與設定檔，即會於背景自動執行生成。
 
 *   **🟢 Method A: Using Premium Studio GUI (Recommended)**:
@@ -106,7 +108,7 @@ Support Go-OpenCL, Taichi, and Numba acceleration across CPU and GPU, provide GU
     2. Drag and drop the target image into the **"1. INPUT SOURCE"** input field on the left.
     3. Click **"Start Generation"** to view real-time canvas fitting and live HUD metrics.
 *   **🔵 Method B: Drag to Launcher (CLI Fast Mode)**:
-    1. Drag your image directly onto `fh6_painter_launcher.py` or the `forza-painter-py.bat` icon.
+    1. Drag your image directly onto the `fh6_painter_launcher.py` icon.
     2. Follow the prompt to choose layers limit and presets, then let the generator run in the background.
 
 > [!TIP]
