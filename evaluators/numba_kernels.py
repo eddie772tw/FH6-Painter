@@ -458,6 +458,7 @@ def draw_ellipse(canvas, x_c, y_c, r_x, r_y, theta, r, g, b, alpha):
     r_val_af = np.float32(r) * a_f
     g_val_af = np.float32(g) * a_f
     b_val_af = np.float32(b) * a_f
+    alpha_f32 = np.float32(alpha)
 
     sin_cos = sin_t * cos_t
     a = inv_rx2 * cos_t * cos_t + inv_ry2 * sin_t * sin_t
@@ -491,7 +492,7 @@ def draw_ellipse(canvas, x_c, y_c, r_x, r_y, theta, r, g, b, alpha):
                     canvas[y, x, 0] = canvas[y, x, 0] * one_minus_a + r_val_af
                     canvas[y, x, 1] = canvas[y, x, 1] * one_minus_a + g_val_af
                     canvas[y, x, 2] = canvas[y, x, 2] * one_minus_a + b_val_af
-                    canvas[y, x, 3] = canvas[y, x, 3] * one_minus_a + np.float32(alpha)
+                    canvas[y, x, 3] = canvas[y, x, 3] * one_minus_a + alpha_f32
 
             b_quad += b_coeff
             discriminant += disc_step_1 + disc_step_2
@@ -872,6 +873,7 @@ def run_redundancy_check_jit(shapes_data, shapes_color, shapes_type, width, heig
 
         alpha = shapes_color[i, 3]
         a_f = np.float32(alpha * 0.00392156862745098)
+        one_minus_a_f = np.float32(1.0) - a_f
 
         cos_t = np.float32(math.cos(theta))
         sin_t = np.float32(math.sin(theta))
@@ -918,7 +920,7 @@ def run_redundancy_check_jit(shapes_data, shapes_color, shapes_type, width, heig
                     val = occlusion[y, x]
                     if val < 0.999:
                         has_contribution = True
-                        occlusion[y, x] = val + (1.0 - val) * a_f
+                        occlusion[y, x] = val * one_minus_a_f + a_f
 
             b_quad += b_coeff
             discriminant += disc_step_1 + disc_step_2
