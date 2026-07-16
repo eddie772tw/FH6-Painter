@@ -148,8 +148,8 @@ jobs:
     - name: Build Standalone Windows Executable
       shell: cmd
       run: |
-        mkdir Release
         call build_release.bat
+        mkdir Release
         copy dist\FH6-Painter.exe Release\
 
     - name: Upload build artifact preview

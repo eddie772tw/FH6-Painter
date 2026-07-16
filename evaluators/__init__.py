@@ -16,7 +16,10 @@ try:
 except ImportError:
     TaichiEvaluator = None
 
-from evaluators.go_opencl_evaluator import GoOpenCLEvaluator
+try:
+    from evaluators.go_opencl_evaluator import GoOpenCLEvaluator
+except ImportError:
+    GoOpenCLEvaluator = None
 
 
 class EvaluatorFactory:
@@ -53,7 +56,10 @@ class EvaluatorFactory:
         # Disable Taichi JIT on Python 3.14+ due to lack of cp314 wheels on PyPI
         is_python_314_or_newer = sys.version_info >= (3, 14)
 
-        from evaluators.taichi_evaluator import HAS_TAICHI
+        try:
+            from evaluators.taichi_evaluator import HAS_TAICHI
+        except ImportError:
+            HAS_TAICHI = False
 
         taichi_avail = HAS_TAICHI and not is_python_314_or_newer
         taichi_name = "Taichi JIT (GPU)"

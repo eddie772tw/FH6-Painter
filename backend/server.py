@@ -18,7 +18,14 @@ sys.path.append(os.path.join(ROOT_DIR, "tools"))
 
 try:
     from evaluators import EvaluatorFactory
-except ImportError as e:
+except Exception as e:
+    import tempfile
+    import traceback
+
+    log_path = os.path.join(tempfile.gettempdir(), "fh6_import_error.log")
+    with open(log_path, "w") as f:
+        f.write(f"Failed to import EvaluatorFactory: {e}\n")
+        f.write(traceback.format_exc())
     print(f"Failed to import EvaluatorFactory: {e}")
     pass
 
@@ -109,6 +116,15 @@ class PainterServer:
             await websocket.send(json.dumps({"action": "pong"}))
         elif action == "get_engines":
             engines = []
+            keys = list(globals().keys())
+            try:
+                await websocket.send(
+                    json.dumps(
+                        {"action": "log", "text": f"DEBUG: globals keys = {keys}\n"}
+                    )
+                )
+            except Exception:
+                pass
             if "EvaluatorFactory" in globals():
                 raw_engines = EvaluatorFactory.get_available_evaluators()
                 for e in raw_engines:
