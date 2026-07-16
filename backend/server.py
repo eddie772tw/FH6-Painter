@@ -116,15 +116,6 @@ class PainterServer:
             await websocket.send(json.dumps({"action": "pong"}))
         elif action == "get_engines":
             engines = []
-            keys = list(globals().keys())
-            try:
-                await websocket.send(
-                    json.dumps(
-                        {"action": "log", "text": f"DEBUG: globals keys = {keys}\n"}
-                    )
-                )
-            except Exception:
-                pass
             if "EvaluatorFactory" in globals():
                 raw_engines = EvaluatorFactory.get_available_evaluators()
                 for e in raw_engines:
