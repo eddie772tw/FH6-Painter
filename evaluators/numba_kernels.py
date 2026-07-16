@@ -106,8 +106,8 @@ def evaluate_candidate(
             disc_step_1 -= np.float32(2.0) * dy_sq_step * inv_rx2_ry2
 
     # Accumulation Pass variables
-    count = 0.0
-    count_transparent = 0.0
+    count = np.float32(0.0)
+    count_transparent = np.float32(0.0)
     sum_t_r = np.float32(0.0)
     sum_t_g = np.float32(0.0)
     sum_t_b = np.float32(0.0)
@@ -154,7 +154,7 @@ def evaluate_candidate(
                 if check_contour:
                     for x in range(x_start, x_end + 1, sample_step):
                         if alpha_mask[y, x] <= 10.0:
-                            count_transparent += 1.0
+                            count_transparent += np.float32(1.0)
                             continue
                         t_r = target_r[y, x]
                         t_g = target_g[y, x]
@@ -239,7 +239,7 @@ def evaluate_candidate(
                     if check_contour:
                         for x in range(x_start, x_end + 1, sample_step):
                             if alpha_mask[y, x] <= 10.0:
-                                count_transparent += 1.0
+                                count_transparent += np.float32(1.0)
                                 continue
                             t_r = target_r[y, x]
                             t_g = target_g[y, x]
@@ -293,7 +293,7 @@ def evaluate_candidate(
                     if check_contour:
                         for x in range(x_start, x_end + 1, sample_step):
                             if alpha_mask[y, x] <= 10.0:
-                                count_transparent += 1.0
+                                count_transparent += np.float32(1.0)
                                 continue
                             t_r = target_r[y, x]
                             t_g = target_g[y, x]
@@ -349,7 +349,9 @@ def evaluate_candidate(
             disc_step_1 -= np.float32(2.0) * dy_sq_step * inv_rx2_ry2
 
     # Overhang Tolerance Check: reject if shape has >1% transparent overhang or no opaque pixels
-    if count == 0.0 or (check_contour and (count_transparent * 100.0 > count)):
+    if count == np.float32(0.0) or (
+        check_contour and (count_transparent * np.float32(100.0) > count)
+    ):
         return np.float32(0.0), np.float32(0.0), np.float32(0.0), np.float32(99999999.0)
 
     inv_count = np.float32(1.0) / count
@@ -469,6 +471,7 @@ def draw_ellipse(canvas, x_c, y_c, r_x, r_y, theta, r, g, b, alpha):
     has_alpha = canvas.shape[2] == 4
 
     if has_alpha:
+        alpha_f32 = np.float32(alpha)
         dy = np.float32(min_y - y_c)
         dy_sq = dy * dy
         two_dy = np.float32(2.0) * dy
@@ -491,7 +494,7 @@ def draw_ellipse(canvas, x_c, y_c, r_x, r_y, theta, r, g, b, alpha):
                     canvas[y, x, 0] = canvas[y, x, 0] * one_minus_a + r_val_af
                     canvas[y, x, 1] = canvas[y, x, 1] * one_minus_a + g_val_af
                     canvas[y, x, 2] = canvas[y, x, 2] * one_minus_a + b_val_af
-                    canvas[y, x, 3] = canvas[y, x, 3] * one_minus_a + np.float32(alpha)
+                    canvas[y, x, 3] = canvas[y, x, 3] * one_minus_a + alpha_f32
 
             b_quad += b_coeff
             discriminant += disc_step_1 + disc_step_2
@@ -872,6 +875,7 @@ def run_redundancy_check_jit(shapes_data, shapes_color, shapes_type, width, heig
 
         alpha = shapes_color[i, 3]
         a_f = np.float32(alpha * 0.00392156862745098)
+        one_minus_af = np.float32(1.0 - a_f)
 
         cos_t = np.float32(math.cos(theta))
         sin_t = np.float32(math.sin(theta))
@@ -918,7 +922,8 @@ def run_redundancy_check_jit(shapes_data, shapes_color, shapes_type, width, heig
                     val = occlusion[y, x]
                     if val < 0.999:
                         has_contribution = True
-                        occlusion[y, x] = val + (1.0 - val) * a_f
+                        # ⚡ Bolt Optimization: Replace `val + (1.0 - val) * a_f` with factorized equivalent to save per-pixel subtraction
+                        occlusion[y, x] = val * one_minus_af + a_f
 
             b_quad += b_coeff
             discriminant += disc_step_1 + disc_step_2
