@@ -60,7 +60,7 @@ jobs:
   # 任務 2.5：獨立並行自編譯 PyInstaller
   build-pyinstaller:
     runs-on: windows-latest
-    if: github.ref == 'refs/heads/main'
+    # if: github.ref == 'refs/heads/main'
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
@@ -103,7 +103,7 @@ jobs:
   build-release:
     needs: [test, lint, build-pyinstaller] # 額外依賴 build-pyinstaller
     runs-on: windows-latest
-    if: github.ref == 'refs/heads/main'
+    # if: github.ref == 'refs/heads/main'
     
     steps:
     - name: Checkout repository
@@ -134,7 +134,7 @@ jobs:
     - name: Set up Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: '20'
+        node-version: '24'
 
     - name: Set up Rust
       uses: dtolnay/rust-toolchain@stable
