@@ -12,7 +12,6 @@ permissions:
 # 定義全域變數，方便未來統一升級版本
 env:
   PYINSTALLER_VERSION: "v6.11.1" 
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24=true # 避免Node20導致的Warning
 
 jobs:
   # 任務 1：代碼風格與語法檢查
