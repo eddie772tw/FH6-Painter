@@ -45,8 +45,8 @@ def test_packaging_includes_all_resource_directories():
     assert os.path.exists(bat_path), f"找不到打包腳本: {bat_path}"
     assert os.path.exists(spec_path), f"找不到 spec 檔案: {spec_path}"
 
-    with open(bat_path, "r", encoding="utf-8") as f:
-        bat_content = f.read()
+    # with open(bat_path, "r", encoding="utf-8") as f:
+    #     bat_content = f.read()
 
     with open(spec_path, "r", encoding="utf-8") as f:
         spec_content = f.read()
