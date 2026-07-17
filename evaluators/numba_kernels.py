@@ -872,6 +872,7 @@ def run_redundancy_check_jit(shapes_data, shapes_color, shapes_type, width, heig
 
         alpha = shapes_color[i, 3]
         a_f = np.float32(alpha * 0.00392156862745098)
+        one_minus_a_f = np.float32(1.0 - a_f)
 
         cos_t = np.float32(math.cos(theta))
         sin_t = np.float32(math.sin(theta))
@@ -918,7 +919,10 @@ def run_redundancy_check_jit(shapes_data, shapes_color, shapes_type, width, heig
                     val = occlusion[y, x]
                     if val < 0.999:
                         has_contribution = True
-                        occlusion[y, x] = val + (1.0 - val) * a_f
+                        # ⚡ Bolt Optimization: Replace `val + (1.0 - val) * a_f` with `val * one_minus_a_f + a_f`
+                        # This algebraic factorization hoists the subtraction `1.0 - a_f` outside the loop,
+                        # saving one arithmetic operation per pixel checked during occlusion scanning.
+                        occlusion[y, x] = val * one_minus_a_f + a_f
 
             b_quad += b_coeff
             discriminant += disc_step_1 + disc_step_2
