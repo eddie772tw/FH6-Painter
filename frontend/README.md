@@ -17,6 +17,7 @@ Make sure you have Node.js and Rust installed.
 1. Install dependencies:
    ```bash
    npm install
+   # Or from repository root: npm --prefix frontend install
    ```
 
 2. Start the development server (runs Vite):
@@ -27,6 +28,7 @@ Make sure you have Node.js and Rust installed.
 3. Build for production:
    ```bash
    npm run build
+   # Or from repository root: npm --prefix frontend run build
    ```
 
 For desktop integration commands, see `package.json` for Tauri-specific scripts.
