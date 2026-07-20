@@ -59,6 +59,7 @@ dist/
 !server-sidecar-x86_64-pc-windows-msvc.spec
 !FH6-Painter.spec
 .ref/
+dist-pyinstaller/
 
 # Keep key configuration JSONs tracked
 !optimization_settings.json

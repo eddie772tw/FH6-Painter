@@ -81,6 +81,7 @@ if errorlevel 1 (
 :venv_exists
 :: Set PY_EXE to the virtual environment's python.exe
 set "PY_EXE=%VENV_DIR%\Scripts\python.exe"
+set "PYINSTALLER_VERSION=v6.11.1"
 
 :: Check for basic dependencies
 "!PY_EXE!" -c "import PIL, numpy, numba, taichi, websockets" >nul 2>nul
@@ -88,13 +89,12 @@ if %errorlevel% equ 0 goto :dependencies_ok
 
 echo [INFO] Installing dependencies into the virtual environment...
 "!PY_EXE!" -m pip install --upgrade pip
+:: 一行指令完成：下載、背後自動調用工具編譯 bootloader、安裝
+"!PY_EXE!" -m pip install git+https://github.com/pyinstaller/pyinstaller.git@%PYINSTALLER_VERSION%
+
+:: 安裝其餘專案依賴
 "!PY_EXE!" -m pip install -r "%~dp0requirements.txt"
 "!PY_EXE!" -m pip install -r "%~dp0backend\requirements.txt"
-if errorlevel 1 (
-    echo [ERROR] Failed to install dependencies.
-    pause
-    exit /b 1
-)
 
 :dependencies_ok
 

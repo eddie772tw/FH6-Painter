@@ -42,6 +42,7 @@ from benchmark.sysinfo import (
     get_ram_size,
 )
 from benchmark.workloads import WORKLOADS
+
 from evaluators import EvaluatorFactory
 
 # ----------------------------------------------------------------------

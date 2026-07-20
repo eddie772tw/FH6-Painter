@@ -16,3 +16,4 @@ build
 dist
 output
 frontend
+dist-pyinstaller

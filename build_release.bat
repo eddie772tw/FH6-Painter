@@ -57,7 +57,7 @@ for /d %%D in ("%~dp0*") do (
     
     if "!IS_IGNORED!" == "false" (
         :: Check if it's already packaged in this script by searching for its name
-        findstr /I /C:"%%~nxD" "%~dp0build_release.bat" >nul
+        findstr /I /C:"%%~nxD" "%~dp0FH6-Painter.spec" >nul
         if errorlevel 1 (
             echo.
             echo [WARNING] Found directory '%%~nxD' that is neither ignored nor packaged.
@@ -106,37 +106,7 @@ echo [INFO] Running PyInstaller to create final standalone executable...
 echo --------------------------------------------------------------------
 if not exist "%~dp0dist" mkdir "%~dp0dist"
 
-"%PYINSTALLER_EXE%" ^
-    --noconfirm ^
-    --onefile ^
-    --windowed ^
-    --noupx ^
-    --icon="%~dp0app_icon.ico" ^
-    --distpath "%~dp0dist" ^
-    --name "FH6-Painter" ^
-    --paths "%~dp0." ^
-    --add-data "%~dp0frontend\src-tauri\target\release\frontend.exe;." ^
-    --collect-all "taichi" ^
-    --collect-all "numba" ^
-    --collect-all "llvmlite" ^
-    --exclude-module "PIL._imagingcms" ^
-    --exclude-module "PIL.ImageCms" ^
-    --exclude-module "PIL._webp" ^
-    --exclude-module "PIL._imagingtk" ^
-    --exclude-module "PIL.ImageTk" ^
-    --exclude-module "PIL._imagingmorph" ^
-    --hidden-import "utils" ^
-    --hidden-import "evaluators.numba_kernels" ^
-    --hidden-import "evaluators.numba_evaluator" ^
-    --hidden-import "evaluators.taichi_evaluator" ^
-    --hidden-import "evaluators.go_opencl_evaluator" ^
-    --hidden-import "tools.fh6_import_layer_table" ^
-    --hidden-import "tools.fh6_painter_generator" ^
-    --add-data "tools\bin\*;tools\bin" ^
-    --add-data "tools\fh6-heuristics.json;tools" ^
-    --add-data "settings\*;settings" ^
-    --add-data "lang\*;lang" ^
-    "%~dp0backend\server.py"
+"%PYINSTALLER_EXE%" "%~dp0FH6-Painter.spec" --clean
 
 echo --------------------------------------------------------------------
 
