@@ -10,7 +10,7 @@ This is the Tauri and Vanilla HTML/CSS/JS frontend for FH6-Painter. It provides 
 
 ## Development
 
-Make sure you have Node.js and Rust installed.
+Make sure you have Node.js installed to run the development server, and optionally Rust (cargo) if you wish to compile the native Tauri desktop application.
 
 ### Setup and Build
 
