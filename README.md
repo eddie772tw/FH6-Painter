@@ -186,7 +186,7 @@ The project supports a fully dynamic multi-language framework. Contributors can 
      - [ ] 翻譯 JSON 中的所有翻譯鍵（Keys）皆已完整對齊 `en-us.json`
      - [ ] 確認翻譯內容中無殘留的中文字元或錯位
      - [ ] 已在本地測試過，選單能正常加載並正確切換該語系
-     - [ ] 已在本地手動執行並通過 i18n 單元測試 (Run and passed: `pytest tests/test_i18n.py`)
+     - [ ] 已在本地手動執行並通過 i18n 單元測試 (Run and passed: `PYTHONPATH=. pytest tests/test_i18n.py`)
      ```
 
 ---
