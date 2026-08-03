@@ -14,11 +14,7 @@ hiddenimports = [
     "evaluators.taichi_evaluator",
     "evaluators.go_opencl_evaluator",
     "tools.fh6_import_layer_table",
-    "tools.fh6_painter_generator",
-    "numpy",
-    "numpy._core",
-    "numpy._core._exceptions",
-    "numpy._core._machar"
+    "tools.fh6_painter_generator"
 ]
 
 # 收集 taichi
@@ -29,9 +25,17 @@ hiddenimports += t_hidden
 
 # 收集 numpy (fix for ModuleNotFoundError: No module named 'numpy._core._exceptions' in numpy 2.x)
 np_datas, np_bins, np_hidden = collect_all("numpy")
-datas += np_datas
-binaries += np_bins
-hiddenimports += np_hidden
+datas.extend(np_datas)
+binaries.extend(np_bins)
+hiddenimports.extend(np_hidden)
+
+# Explicity include module since `collect_all` does not properly pull in numpy._core._exceptions
+hiddenimports.extend([
+    "numpy",
+    "numpy._core",
+    "numpy._core._exceptions",
+    "numpy._core._machar"
+])
 
 # 收集 numba
 tmp_datas, tmp_binaries, tmp_hiddenimports = collect_all('numba')
