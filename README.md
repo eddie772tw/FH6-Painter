@@ -41,6 +41,9 @@ Support Go-OpenCL, Taichi, and Numba acceleration across CPU and GPU, provide GU
 ├── build_release.bat          # 一鍵編譯獨立 Windows 執行檔腳本 / One-click EXE Bundler
 ├── forza-painter-py.bat       # 啟動與自動依賴部署腳本 / Auto-venv Setup & Startup batch
 ├── backend/                   # Python WebSocket 後端 / Python WebSocket Backend
+│   ├── requirements.txt       # 後端 Python 依賴清單 / Backend Python dependencies list
+│   ├── server.py              # WebSocket 伺服器核心 / WebSocket server core
+│   └── utils.py               # 後端共用工具函數 / Backend utility functions
 ├── frontend/                  # Tauri 現代化圖形前端 / Tauri Modern GUI Frontend
 ├── optimization_settings.json # 全局效能與排程配置 / Global Performance & Scheduling Settings
 ├── fh6_painter_launcher.py    # 控制台拖曳啟動器 / Drag-and-drop CLI launcher
@@ -59,6 +62,7 @@ Support Go-OpenCL, Taichi, and Numba acceleration across CPU and GPU, provide GU
 │   ├── numba_evaluator.py     # CPU 多線程評估器 / CPU Numba JIT Evaluator
 │   └── numba_kernels.py       # Numba 核心計算邏輯 / Numba Kernels
 ├── tools/                     # 核心工具箱 / Project core toolbox
+│   ├── __init__.py            # Python 套件初始化檔 / Python package init file
 │   ├── benchmark/             # 效能跑分套件 / Benchmark Suite Package
 │   ├── bin/                   # 外部二進位工具目錄 / External Binaries
 │   ├── fh6-heuristics.json    # 記憶體掃描快取 / Memory scan heuristics
