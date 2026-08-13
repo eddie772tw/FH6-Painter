@@ -22,6 +22,9 @@ Support Go-OpenCL, Taichi, and Numba acceleration across CPU and GPU, provide GU
 *   **三重異質加速支援**：整合 Go-OpenCL (GPU)、Taichi (GPU) 與 Numba (CPU)，為不同硬體提供極致效能的幾何擬合計算。
 *   **專業暗黑科技風格 Studio GUI**：提供實時幾何擬合工作台預覽，以及包含層數、生成速度與剩餘時間 (ETA) 等實時數據 HUD 看板。
 *   **實時畫布區域重繪 (ROI Painting)**：允許用戶在畫布上直接框選特定區域 (矩形/橢圓) 進行重新擬合，自動略過不需修改的背景，實現局部精細修復與優化。
+*   **歷史回溯與重續 (History Rewind)**：允許隨時退回指定層數並從該點重新生成。
+*   **文字車貼生成器 (Text Vinyl Generator)**：內建工具可直接將文字轉換為形狀層的 JSON 車貼格式。
+*   **效能基準測試面板 (Performance Benchmark Console)**：內建跑分工具可評估 CPU 與 GPU 的幾何擬合運算效能。
 *   **一鍵診斷主控台 (Show Logs)**：GUI 內建實時主控台，即便在無視窗發行版下也能 100% 捕獲背景日誌與 Traceback 錯誤資訊。
 *   **高效 Win32 記憶體掃描匯入引擎**：透過快取與啟發式匹配，數秒內安全將幾何向量寫入遊戲中。
 *   **綠色免安裝獨立執行檔 (.exe)**：支援一鍵編譯為單機 EXE，且主配置與預設資料夾完全維持在外置同層目錄，便於攜帶與自訂。
@@ -29,6 +32,9 @@ Support Go-OpenCL, Taichi, and Numba acceleration across CPU and GPU, provide GU
 *   **Triple Heterogeneous Acceleration**: Integrate Go-OpenCL (GPU), Taichi (GPU), and Numba (CPU) to provide top-tier geometry fitting performance across different hardware configurations.
 *   **Premium Dark Tech Style Studio GUI**: Provide real-time canvas preview of geometry fitting and live HUD metrics for current layers, generation speed, and estimated remaining time (ETA).
 *   **Region of Interest (ROI) Painting**: Allows users to select specific areas on the canvas for targeted refitting, automatically ignoring the rest of the image to achieve fine-grained local refinement.
+*   **History Rewind**: Allows rewinding back to a specific layer count and resuming generation from that point at any time.
+*   **Text Vinyl Generator**: Built-in tool to directly convert text into shape layers JSON format.
+*   **Performance Benchmark Console**: Built-in benchmark suite to evaluate CPU and GPU geometry fitting performance.
 *   **One-Click Diagnostic Console**: Integrated real-time console that captures 100% of background stdout/stderr logs and tracebacks even in windowed standalone mode.
 *   **High-Performance Win32 Memory Injector**: Safely scan FH6's layer table memory and hot-inject JSON liveries within seconds using heuristics caching.
 *   **Portable Standalone Executable (.exe)**: Support compiling into a single portable EXE with external configuration directories for easy customization and portability.
@@ -67,7 +73,7 @@ Support Go-OpenCL, Taichi, and Numba acceleration across CPU and GPU, provide GU
 │   ├── test_pso_optimizer.py  # PSO 最佳化測試 / PSO optimizer test
 │   ├── text_generator.py      # 文字生成器 / Text generator tool
 │   └── verify_boundary.py     # 邊界驗證工具 / Boundary validation tool
-├── lang/                      # 多國語系與本地化設定檔 / Locales and translation files
+├── lang/                      # 多國語系與本地化設定檔 / Locales and translation files (Built-in: English, Japanese, Traditional Chinese)
 ├── tests/                     # 測試套件 / Test suites
 ```
 
