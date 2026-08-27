@@ -1,6 +1,6 @@
 # FH6-Painter Frontend
 
-This is the Tauri and Vanilla HTML/CSS/JS frontend for FH6-Painter. It provides a real-time canvas preview of geometry fitting, live HUD metrics, and interactive Region of Interest (ROI) painting capabilities for generating Forza Horizon 6 liveries.
+This is the Tauri and Vanilla HTML/CSS/JS frontend for FH6-Painter. It provides a real-time canvas preview of geometry fitting, live HUD metrics, interactive Region of Interest (ROI) painting capabilities, a Text Vinyl Generator, History Rewind & Resume functionality, and a Performance Benchmark Console for generating Forza Horizon 6 liveries.
 
 ## Architecture
 
