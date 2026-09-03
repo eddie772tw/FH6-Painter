@@ -25,6 +25,9 @@ Support Go-OpenCL, Taichi, and Numba acceleration across CPU and GPU, provide GU
 *   **一鍵診斷主控台 (Show Logs)**：GUI 內建實時主控台，即便在無視窗發行版下也能 100% 捕獲背景日誌與 Traceback 錯誤資訊。
 *   **高效 Win32 記憶體掃描匯入引擎**：透過快取與啟發式匹配，數秒內安全將幾何向量寫入遊戲中。
 *   **綠色免安裝獨立執行檔 (.exe)**：支援一鍵編譯為單機 EXE，且主配置與預設資料夾完全維持在外置同層目錄，便於攜帶與自訂。
+*   **文字車貼生成器 (Text Vinyl Generator)**：內建專屬文字轉幾何形狀引擎，可將任意文字轉換為遊戲內的形狀。
+*   **效能跑分主控台 (Performance Benchmark Console)**：提供詳細的效能測試與診斷工具。
+*   **歷史回放與續傳 (History Rewind & Resume)**：支援回溯與繼續先前的生成進度。
 
 *   **Triple Heterogeneous Acceleration**: Integrate Go-OpenCL (GPU), Taichi (GPU), and Numba (CPU) to provide top-tier geometry fitting performance across different hardware configurations.
 *   **Premium Dark Tech Style Studio GUI**: Provide real-time canvas preview of geometry fitting and live HUD metrics for current layers, generation speed, and estimated remaining time (ETA).
@@ -32,6 +35,9 @@ Support Go-OpenCL, Taichi, and Numba acceleration across CPU and GPU, provide GU
 *   **One-Click Diagnostic Console**: Integrated real-time console that captures 100% of background stdout/stderr logs and tracebacks even in windowed standalone mode.
 *   **High-Performance Win32 Memory Injector**: Safely scan FH6's layer table memory and hot-inject JSON liveries within seconds using heuristics caching.
 *   **Portable Standalone Executable (.exe)**: Support compiling into a single portable EXE with external configuration directories for easy customization and portability.
+*   **Text Vinyl Generator**: Built-in engine to convert arbitrary text into in-game shapes.
+*   **Performance Benchmark Console**: Provide detailed performance benchmarking and diagnostic tools.
+*   **History Rewind & Resume**: Support rewinding and resuming previous generation progress.
 
 ---
 
