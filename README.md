@@ -22,6 +22,9 @@ Support Go-OpenCL, Taichi, and Numba acceleration across CPU and GPU, provide GU
 *   **三重異質加速支援**：整合 Go-OpenCL (GPU)、Taichi (GPU) 與 Numba (CPU)，為不同硬體提供極致效能的幾何擬合計算。
 *   **專業暗黑科技風格 Studio GUI**：提供實時幾何擬合工作台預覽，以及包含層數、生成速度與剩餘時間 (ETA) 等實時數據 HUD 看板。
 *   **實時畫布區域重繪 (ROI Painting)**：允許用戶在畫布上直接框選特定區域 (矩形/橢圓) 進行重新擬合，自動略過不需修改的背景，實現局部精細修復與優化。
+*   **文字車貼生成器 (Text Vinyl Generator)**：將文字轉換為遊戲內的圖形形狀。
+*   **效能跑分主控台 (Performance Benchmark Console)**：內建效能跑分套件以評估各種引擎與硬體的生成效能。
+*   **歷史倒轉與接續生成 (History Rewind & Resume)**：支援歷史紀錄的倒轉與無縫恢復功能，防護意外中斷並增強靈活性。
 *   **一鍵診斷主控台 (Show Logs)**：GUI 內建實時主控台，即便在無視窗發行版下也能 100% 捕獲背景日誌與 Traceback 錯誤資訊。
 *   **高效 Win32 記憶體掃描匯入引擎**：透過快取與啟發式匹配，數秒內安全將幾何向量寫入遊戲中。
 *   **綠色免安裝獨立執行檔 (.exe)**：支援一鍵編譯為單機 EXE，且主配置與預設資料夾完全維持在外置同層目錄，便於攜帶與自訂。
@@ -29,6 +32,9 @@ Support Go-OpenCL, Taichi, and Numba acceleration across CPU and GPU, provide GU
 *   **Triple Heterogeneous Acceleration**: Integrate Go-OpenCL (GPU), Taichi (GPU), and Numba (CPU) to provide top-tier geometry fitting performance across different hardware configurations.
 *   **Premium Dark Tech Style Studio GUI**: Provide real-time canvas preview of geometry fitting and live HUD metrics for current layers, generation speed, and estimated remaining time (ETA).
 *   **Region of Interest (ROI) Painting**: Allows users to select specific areas on the canvas for targeted refitting, automatically ignoring the rest of the image to achieve fine-grained local refinement.
+*   **Text Vinyl Generator**: Convert text directly into in-game vinyl shapes.
+*   **Performance Benchmark Console**: Built-in benchmark suite to evaluate fitting performance across different engines and hardware.
+*   **History Rewind & Resume**: Support rewinding history and seamlessly resuming generation to prevent accidental interruptions and boost flexibility.
 *   **One-Click Diagnostic Console**: Integrated real-time console that captures 100% of background stdout/stderr logs and tracebacks even in windowed standalone mode.
 *   **High-Performance Win32 Memory Injector**: Safely scan FH6's layer table memory and hot-inject JSON liveries within seconds using heuristics caching.
 *   **Portable Standalone Executable (.exe)**: Support compiling into a single portable EXE with external configuration directories for easy customization and portability.
