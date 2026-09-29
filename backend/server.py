@@ -237,8 +237,22 @@ class PainterServer:
         elif action == "get_checkpoints":
             img_path = data.get("img_path", "")
             checkpoints = {}
+
+            def _read_layers(filepath):
+                try:
+                    with open(filepath, "r", encoding="utf-8") as f:
+                        json_data = json.load(f)
+                    return max(0, len(json_data.get("shapes", [])) - 1)
+                except Exception:
+                    return -1
+
             if img_path:
+                loop = asyncio.get_running_loop()
                 img_base = get_project_base(img_path)
+
+                tasks = []
+                paths = []
+
                 if img_base:
                     output_dir = os.path.join(get_output_base_dir(), "output", img_base)
                     if os.path.exists(output_dir):
@@ -258,32 +272,27 @@ class PainterServer:
                                 checkpoints[num] = os.path.abspath(f)
                             except Exception:
                                 pass
+
                         # Also check for the final completed JSON file (without _<layer> suffix)
                         final_json = os.path.join(output_dir, f"{img_base}.json")
                         if os.path.exists(final_json):
-                            try:
-                                with open(final_json, "r", encoding="utf-8") as f:
-                                    json_data = json.load(f)
-                                num_layers = max(
-                                    0, len(json_data.get("shapes", [])) - 1
-                                )
-                                if num_layers > 0:
-                                    checkpoints[num_layers] = os.path.abspath(
-                                        final_json
-                                    )
-                            except Exception:
-                                pass
+                            paths.append(final_json)
+                            tasks.append(
+                                loop.run_in_executor(None, _read_layers, final_json)
+                            )
+
                 if img_path.lower().endswith(".json") and os.path.exists(img_path):
                     # Do not add temporary resume file to checkpoints list
                     if not os.path.basename(img_path).startswith("_temp_resume"):
-                        try:
-                            with open(img_path, "r", encoding="utf-8") as f:
-                                json_data = json.load(f)
-                            num_layers = max(0, len(json_data.get("shapes", [])) - 1)
-                            if num_layers > 0:
-                                checkpoints[num_layers] = os.path.abspath(img_path)
-                        except Exception:
-                            pass
+                        paths.append(img_path)
+                        tasks.append(loop.run_in_executor(None, _read_layers, img_path))
+
+                if tasks:
+                    results = await asyncio.gather(*tasks)
+                    for filepath, num_layers in zip(paths, results):
+                        if num_layers > 0:
+                            checkpoints[num_layers] = os.path.abspath(filepath)
+
             sorted_cps = [
                 {"layer": k, "path": v} for k, v in sorted(checkpoints.items())
             ]
