@@ -53,3 +53,7 @@
 ## 2026-07-21 - Forward Differencing & Loop-Carry Dependency in Taichi GPU Kernels
 **Learning:** While forward differencing works perfectly in sequential loops (like the `while` loops inside the JIT helper `evaluate_candidate_ti`), it is fundamentally incompatible with outermost `for` loops in `@ti.kernel` (like `draw_ellipse_gpu` and `update_uncovered_mask_gpu`). Since Taichi automatically parallelizes outermost kernel `for` loops across GPU threads, introducing variables modified inside the loop that are defined outside (like `discriminant` and `b_quad`) converts them into reduction variables. Because reading reduction variables inside a parallel loop is undefined behavior on GPU backends, threads read stale/initial values, corrupting the canvas.
 **Action:** Limit forward differencing optimization strictly to sequential functions (`evaluate_candidate_ti`). Revert parallel kernels (`draw_ellipse_gpu` and `update_uncovered_mask_gpu`) to use parallel-safe coordinate calculations (`dy = y - y_c`, etc.) to preserve correctness.
+
+## 2024-05-18 - [Server WebSocket I/O Bottleneck]
+**Learning:** [Synchronous file system operations (`os.listdir`, `open()`, `json.load()`) inside an `asyncio` WebSocket handler block the event loop, causing severe latency on repeated identical client requests.]
+**Action:** [Cache static configuration data (like localized language names) in an instance variable (`self._cached_languages`) on the first request to eliminate redundant synchronous disk I/O in `async` functions.]
