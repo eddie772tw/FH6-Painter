@@ -53,6 +53,8 @@ Support Go-OpenCL, Taichi, and Numba acceleration across CPU and GPU, provide GU
 ├── requirements.txt           # 專案 Python 依賴清單 / Python dependencies list
 ├── pyproject.toml             # Ruff 程式碼規範與格式化配置 / Ruff code style configs
 ├── .pkgdirignore              # 打包排除目錄配置 / Directory exclusion settings for bundling
+├── FH6-Painter.spec           # PyInstaller 打包設定檔 / PyInstaller build spec
+├── file_version_info.txt      # 執行檔版本資訊設定 / Executable version info
 ├── settings/                  # 各種生成速率與品質預設配置 / Generation presets
 │   ├── a. keemstar fast...ini
 │   ├── c. balanced...         # 預設平衡配置檔 / Default balanced configuration
@@ -65,6 +67,7 @@ Support Go-OpenCL, Taichi, and Numba acceleration across CPU and GPU, provide GU
 │   ├── numba_evaluator.py     # CPU 多線程評估器 / CPU Numba JIT Evaluator
 │   └── numba_kernels.py       # Numba 核心計算邏輯 / Numba Kernels
 ├── tools/                     # 核心工具箱 / Project core toolbox
+│   ├── __init__.py            # 工具箱模組初始化 / Toolbox module init
 │   ├── benchmark/             # 效能跑分套件 / Benchmark Suite Package
 │   ├── bin/                   # 外部二進位工具目錄 / External Binaries
 │   ├── fh6-heuristics.json    # 記憶體掃描快取 / Memory scan heuristics
@@ -74,6 +77,10 @@ Support Go-OpenCL, Taichi, and Numba acceleration across CPU and GPU, provide GU
 │   ├── text_generator.py      # 文字生成器 / Text generator tool
 │   └── verify_boundary.py     # 邊界驗證工具 / Boundary validation tool
 ├── lang/                      # 多國語系與本地化設定檔 / Locales and translation files
+│   ├── en-us.json             # 英文語系 / English locale
+│   ├── ja-jp.json             # 日文語系 / Japanese locale
+│   ├── zh-tw.json             # 繁體中文語系 / Traditional Chinese locale
+│   └── iso639.json            # 語系名稱對照表 / ISO 639 name registry
 ├── tests/                     # 測試套件 / Test suites
 ```
 
@@ -159,6 +166,11 @@ Support Go-OpenCL, Taichi, and Numba acceleration across CPU and GPU, provide GU
 
 本專案支援完全動態加載的多語言框架，貢獻者無需修改任何程式碼即可新增新語系：
 The project supports a fully dynamic multi-language framework. Contributors can add new languages without changing any code:
+
+目前內建支援以下語系 / Currently supported locales:
+*   **English** (`en-us`)
+*   **Japanese** (`ja-jp`)
+*   **Traditional Chinese** (`zh-tw`)
 
 1. **建立語系檔 / Create Localized JSON**:
    在 `lang/` 目錄下建立一個符合 ISO 639 與 locale 定義的 JSON 檔案（例如 `fr-fr.json`）。可以直接複製 `lang/en-us.json` 作為範本進行翻譯。
