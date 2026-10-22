@@ -28,6 +28,7 @@ Support Go-OpenCL, Taichi, and Numba acceleration across CPU and GPU, provide GU
 *   **文字彩繪生成器 (Text Vinyl Generator)**：將輸入文字直接轉換為遊戲內幾何圖形的專用工具。
 *   **性能基準測試主控台 (Performance Benchmark Console)**：內建的效能測試套件，用於評估不同 JIT 引擎的渲染能力。
 *   **歷史倒轉與接續 (History Rewind & Resume)**：提供歷史紀錄回溯功能，允許隨時撤銷或接續先前的生成狀態。
+*   **多國語系支援 (Multi-language Support)**：內建英文、日文與繁體中文，並支援動態加載自訂語系以配合不同玩家需求。
 
 *   **Triple Heterogeneous Acceleration**: Integrate Go-OpenCL (GPU), Taichi (GPU), and Numba (CPU) to provide top-tier geometry fitting performance across different hardware configurations.
 *   **Premium Dark Tech Style Studio GUI**: Provide real-time canvas preview of geometry fitting and live HUD metrics for current layers, generation speed, and estimated remaining time (ETA).
@@ -38,6 +39,7 @@ Support Go-OpenCL, Taichi, and Numba acceleration across CPU and GPU, provide GU
 *   **Text Vinyl Generator**: A dedicated tool for converting input text directly into in-game geometry shapes.
 *   **Performance Benchmark Console**: Built-in benchmark suite to evaluate the rendering capabilities of different JIT engines.
 *   **History Rewind & Resume**: Provides history tracking capabilities, allowing you to undo or resume previous generation states at any time.
+*   **Multi-language Support**: Built-in locales for English, Japanese, and Traditional Chinese, with dynamic loading capabilities for custom translations.
 
 ---
 
@@ -217,6 +219,20 @@ The project supports a fully dynamic multi-language framework. Contributors can 
     # 在 Windows 虛擬環境內 / Inside Windows venv
     .venv\Scripts\ruff.exe format --check .
     ```
+
+---
+
+## 單元測試 / Testing
+
+本專案使用 `pytest` 作為測試框架。為確保模組路徑解析與依賴載入正確，請在專案根目錄下執行測試：
+The project uses `pytest` for unit testing. To ensure proper module resolution and dependency loading, please run tests from the repository root:
+
+```bash
+# 執行所有測試 / Run all tests
+python -m pytest tests/
+# 或 / Or
+PYTHONPATH=. pytest tests/
+```
 
 ---
 
