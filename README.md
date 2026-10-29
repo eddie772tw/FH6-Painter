@@ -54,9 +54,13 @@ Support Go-OpenCL, Taichi, and Numba acceleration across CPU and GPU, provide GU
 ├── pyproject.toml             # Ruff 程式碼規範與格式化配置 / Ruff code style configs
 ├── .pkgdirignore              # 打包排除目錄配置 / Directory exclusion settings for bundling
 ├── settings/                  # 各種生成速率與品質預設配置 / Generation presets
-│   ├── a. keemstar fast...ini
-│   ├── c. balanced...         # 預設平衡配置檔 / Default balanced configuration
-│   └── g. i hate my pc...ini  
+│   ├── a. keemstar fast - extremely fast.ini
+│   ├── b. fast - get'er'done.ini
+│   ├── c. balanced - good quality and speed.ini  # 預設平衡配置檔 / Default balanced configuration
+│   ├── d. slow - conserve shapes.ini
+│   ├── e. super slow - best quality.ini
+│   ├── f. time is not important - extreme quality.ini
+│   └── g. i hate my pc - yeahboiiiiis dad quality.ini
 ├── evaluators/                # JIT 評估器核心組件目錄 / JIT Evaluator plugins
 │   ├── __init__.py            # 評估器載入工廠 / Evaluator Factory (含 3.14 防護機制)
 │   ├── base_evaluator.py      # 基礎評估器類別 / Base Evaluator Class
