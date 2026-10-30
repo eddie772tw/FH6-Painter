@@ -87,7 +87,7 @@ Support Go-OpenCL, Taichi, and Numba acceleration across CPU and GPU, provide GU
 *   **方法 B：開發原始碼版（需要 Python 環境與 Node.js）**：
     專案原生支援 **Python 3.13**（支援全部 CPU/GPU 引擎），並相容 **Python 3.14**（僅支援 Go-OpenCL 與 Numba 加速，Taichi 將自動停用）。需安裝 **Node.js** 以編譯與執行前端環境。選裝 **Rust (cargo)** 可用於原生 Tauri 應用編譯。
     1. 複製儲存庫：`git clone https://github.com/eddie772tw/FH6-Painter.git`
-    2. 直接雙擊啟動 **`forza-painter-py.bat`**。該腳本會全自動偵測、建立 Python 3.13 虛擬環境 (`.venv`) 並安裝所有依賴，同時也會透過 npm 安裝前端套件，隨後啟動程式。也可以手動安裝依賴：`pip install -r requirements.txt`、`pip install -r backend/requirements.txt` 與 `npm --prefix frontend install`。
+    2. 直接雙擊啟動 **`forza-painter-py.bat`**。該腳本會全自動偵測、建立 Python 3.13 虛擬環境 (`.venv`) 並安裝所有依賴，同時也會透過 npm 安裝前端套件，隨後啟動程式。也可以手動安裝依賴：`pip install -r requirements.txt`、`pip install -r backend/requirements.txt`、`npm --prefix frontend install` 與 `npm --prefix frontend run build`。
 
 *   **Method A: Standalone Portable Version (Recommended)**:
     1. Download the latest standalone release `FH6-Painter` ZIP package from the Release page.
@@ -95,7 +95,7 @@ Support Go-OpenCL, Taichi, and Numba acceleration across CPU and GPU, provide GU
 *   **Method B: Source Code Version (Requires Python & Node.js)**:
     Native support for **Python 3.13** (Full CPU/GPU engines) and compatible with **Python 3.14** (Go-OpenCL and Numba JIT only; Taichi automatically disabled). **Node.js** is required to compile and run the frontend environment. **Rust (cargo)** is optional but recommended for native Tauri app compilation.
     1. Clone the repository: `git clone https://github.com/eddie772tw/FH6-Painter.git`
-    2. Double-click **`forza-painter-py.bat`** to start. The script will automatically detect Python, create a Python 3.13 virtual environment (`.venv`), install Python requirements, install npm dependencies, and run the app. You can also install requirements manually: `pip install -r requirements.txt`, `pip install -r backend/requirements.txt` and `npm --prefix frontend install`.
+    2. Double-click **`forza-painter-py.bat`** to start. The script will automatically detect Python, create a Python 3.13 virtual environment (`.venv`), install Python requirements, install npm dependencies, and run the app. You can also install requirements manually: `pip install -r requirements.txt`, `pip install -r backend/requirements.txt`, `npm --prefix frontend install` and `npm --prefix frontend run build`.
 
 ---
 
@@ -192,7 +192,7 @@ The project supports a fully dynamic multi-language framework. Contributors can 
      - [ ] 翻譯 JSON 中的所有翻譯鍵（Keys）皆已完整對齊 `en-us.json`
      - [ ] 確認翻譯內容中無殘留的中文字元或錯位
      - [ ] 已在本地測試過，選單能正常加載並正確切換該語系
-     - [ ] 已在本地手動執行並通過 i18n 單元測試 (Run and passed: `pytest tests/test_i18n.py`)
+     - [ ] 已在本地手動執行並通過 i18n 單元測試 (Run and passed: `PYTHONPATH=. pytest tests/test_i18n.py`)
      ```
 
 ---
