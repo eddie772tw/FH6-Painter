@@ -47,7 +47,11 @@ Support Go-OpenCL, Taichi, and Numba acceleration across CPU and GPU, provide GU
 ├── build_release.bat          # 一鍵編譯獨立 Windows 執行檔腳本 / One-click EXE Bundler
 ├── forza-painter-py.bat       # 啟動與自動依賴部署腳本 / Auto-venv Setup & Startup batch
 ├── backend/                   # Python WebSocket 後端 / Python WebSocket Backend
+│   ├── server.py              # WebSocket 伺服器核心 / WebSocket server core
+│   └── utils.py               # 後端共用工具函數 / Backend utility functions
 ├── frontend/                  # Tauri 現代化圖形前端 / Tauri Modern GUI Frontend
+│   ├── package.json           # 前端套件配置 / Frontend dependencies configuration
+│   └── vite.config.js         # Vite 打包配置 / Vite build configuration
 ├── optimization_settings.json # 全局效能與排程配置 / Global Performance & Scheduling Settings
 ├── fh6_painter_launcher.py    # 控制台拖曳啟動器 / Drag-and-drop CLI launcher
 ├── requirements.txt           # 專案 Python 依賴清單 / Python dependencies list
