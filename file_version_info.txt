@@ -2,7 +2,7 @@ VSVersionInfo(
   ffi=FixedFileInfo(
     # filevers 與 prodvers 必須是 4 個數字組成的 tuple (major, minor, micro, build)
     filevers=(1, 0, 0, 0),
-    prodvers=(1, 4, 4, 0),
+    prodvers=(1, 4, 5, 0),
     mask=0x3f,
     flags=0x0,
     OS=0x40004,
@@ -22,7 +22,7 @@ VSVersionInfo(
         StringStruct('LegalCopyright', 'Copyright (c) 2026 eddie772tw. All rights reserved.'),
         StringStruct('OriginalFilename', 'FH6-Painter.exe'),
         StringStruct('ProductName', 'FH6 Painter'),
-        StringStruct('ProductVersion', '1.4.4')])
+        StringStruct('ProductVersion', '1.4.5')])
       ]), 
     VarFileInfo([VarStruct('Translation', [1033, 1200])]) # 1033 代表英文(美式), 1200 代表 Unicode
   ]
