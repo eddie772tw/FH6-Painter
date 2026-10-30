@@ -99,6 +99,7 @@ class PainterServer:
         self.cancel_flag = False
         self.current_go_evaluator = None
         self.preview_enabled = True
+        self._cached_languages = None
 
     async def register(self, websocket):
         self.clients.add(websocket)
@@ -155,30 +156,33 @@ class PainterServer:
                     print(f"Error scanning GPUs: {e}")
             await websocket.send(json.dumps({"action": "gpus_list", "data": gpus_list}))
         elif action == "get_languages":
-            lang_dir = os.path.join(ROOT_DIR, "lang")
-            languages = []
-            iso639_path = os.path.join(lang_dir, "iso639.json")
-            iso639_dict = {}
-            if os.path.exists(iso639_path):
-                try:
-                    with open(iso639_path, "r", encoding="utf-8") as f:
-                        iso639_dict = json.load(f)
-                except Exception as e:
-                    print(f"Error loading iso639.json: {e}")
+            if self._cached_languages is None:
+                lang_dir = os.path.join(ROOT_DIR, "lang")
+                languages = []
+                iso639_path = os.path.join(lang_dir, "iso639.json")
+                iso639_dict = {}
+                if os.path.exists(iso639_path):
+                    try:
+                        with open(iso639_path, "r", encoding="utf-8") as f:
+                            iso639_dict = json.load(f)
+                    except Exception as e:
+                        print(f"Error loading iso639.json: {e}")
 
-            if os.path.exists(lang_dir) and os.path.isdir(lang_dir):
-                try:
-                    for filename in os.listdir(lang_dir):
-                        if filename.endswith(".json") and filename != "iso639.json":
-                            code = filename[:-5]
-                            name = iso639_dict.get(code, code)
-                            languages.append({"code": code, "name": name})
-                except Exception as e:
-                    print(f"Error scanning lang directory: {e}")
+                if os.path.exists(lang_dir) and os.path.isdir(lang_dir):
+                    try:
+                        for filename in os.listdir(lang_dir):
+                            if filename.endswith(".json") and filename != "iso639.json":
+                                code = filename[:-5]
+                                name = iso639_dict.get(code, code)
+                                languages.append({"code": code, "name": name})
+                    except Exception as e:
+                        print(f"Error scanning lang directory: {e}")
 
-            languages.sort(key=lambda x: x["code"])
+                languages.sort(key=lambda x: x["code"])
+                self._cached_languages = languages
+
             await websocket.send(
-                json.dumps({"action": "languages_list", "data": languages})
+                json.dumps({"action": "languages_list", "data": self._cached_languages})
             )
         elif action == "get_lang":
             lang_code = data.get("lang", "en-us")

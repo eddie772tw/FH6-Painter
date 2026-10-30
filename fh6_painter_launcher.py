@@ -157,8 +157,8 @@ def list_profiles(root):
                     ) or line.lower().startswith("description="):
                         description = line.split("=", 1)[1].strip()
                         break
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"Warning: Failed to read description from {filename}: {e}")
         profiles.append(
             {
                 "path": filepath,
