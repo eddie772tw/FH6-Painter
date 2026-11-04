@@ -71,7 +71,6 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: "3.13"
-        cache: 'pip' # 啟用 pip 快取
 
     # 檢查是否有先前編譯好的 PyInstaller 快取
     - name: Cache PyInstaller Wheel
