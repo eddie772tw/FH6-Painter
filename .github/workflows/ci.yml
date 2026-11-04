@@ -5,6 +5,8 @@ on:
     branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
+  release:
+    types: [published]
 
 permissions:
   contents: read
@@ -69,7 +71,6 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: "3.13"
-        cache: 'pip' # 啟用 pip 快取
 
     # 檢查是否有先前編譯好的 PyInstaller 快取
     - name: Cache PyInstaller Wheel
@@ -148,7 +149,7 @@ jobs:
     - name: Build Standalone Windows Executable
       shell: cmd
       run: |
-        call build_release.bat
+        call build_release.bat || exit /b 1
         mkdir Release
         copy dist\FH6-Painter.exe Release\
 
@@ -158,3 +159,24 @@ jobs:
         name: FH6-Painter
         path: Release/
         retention-days: 7
+        if-no-files-found: error
+
+  publish-release:
+    if: github.event_name == 'release'
+    needs: [build-release]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+    - name: Download verified Windows executable
+      uses: actions/download-artifact@v4
+      with:
+        name: FH6-Painter
+        path: Release/
+
+    - name: Publish executable to the tagged release
+      env:
+        GH_TOKEN: ${{ github.token }}
+        GH_REPO: ${{ github.repository }}
+        RELEASE_TAG: ${{ github.event.release.tag_name }}
+      run: gh release upload "$RELEASE_TAG" Release/FH6-Painter.exe
