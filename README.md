@@ -49,16 +49,22 @@ Support Go-OpenCL, Taichi, and Numba acceleration across CPU and GPU, provide GU
 ├── build_release.bat          # 一鍵編譯獨立 Windows 執行檔腳本 / One-click EXE Bundler
 ├── forza-painter-py.bat       # 啟動與自動依賴部署腳本 / Auto-venv Setup & Startup batch
 ├── backend/                   # Python WebSocket 後端 / Python WebSocket Backend
+│   ├── requirements.txt       # 後端模組依賴清單 / Backend dependencies list
 │   ├── server.py              # WebSocket 伺服器核心 / WebSocket server core
 │   └── utils.py               # 後端共用工具函數 / Backend utility functions
 ├── frontend/                  # Tauri 現代化圖形前端 / Tauri Modern GUI Frontend
+│   ├── src/                   # 前端原始碼目錄 / Vanilla HTML/JS frontend source
+│   ├── src-tauri/             # Tauri 原生視窗程式碼 / Tauri native rust app code
 │   ├── package.json           # 前端套件配置 / Frontend dependencies configuration
 │   └── vite.config.js         # Vite 打包配置 / Vite build configuration
 ├── optimization_settings.json # 全局效能與排程配置 / Global Performance & Scheduling Settings
 ├── fh6_painter_launcher.py    # 控制台拖曳啟動器 / Drag-and-drop CLI launcher
 ├── requirements.txt           # 專案 Python 依賴清單 / Python dependencies list
 ├── pyproject.toml             # Ruff 程式碼規範與格式化配置 / Ruff code style configs
+├── .gitignore                 # Git 忽略設定檔 / Git ignore settings
 ├── .pkgdirignore              # 打包排除目錄配置 / Directory exclusion settings for bundling
+├── app_icon.ico               # 應用程式圖標 / App icon
+├── LICENSE                    # MIT 授權條款 / MIT License
 ├── FH6-Painter.spec           # PyInstaller 打包設定檔 / PyInstaller build spec
 ├── file_version_info.txt      # 執行檔版本資訊設定 / Executable version info
 ├── settings/                  # 各種生成速率與品質預設配置 / Generation presets
@@ -103,6 +109,7 @@ Support Go-OpenCL, Taichi, and Numba acceleration across CPU and GPU, provide GU
     2. 解壓縮後直接雙擊執行 **`FH6-Painter.exe`** 即可。您可以直接修改同目錄下的 `settings/` 預設配置與 `optimization_settings.json`。
 *   **方法 B：開發原始碼版（需要 Python 環境與 Node.js）**：
     專案原生支援 **Python 3.13**（支援全部 CPU/GPU 引擎），並相容 **Python 3.14**（僅支援 Go-OpenCL 與 Numba 加速，Taichi 將自動停用）。需安裝 **Node.js** 以編譯與執行前端環境。選裝 **Rust (cargo)** 可用於原生 Tauri 應用編譯。
+    *(提示: 若您的環境缺乏 Python 3.13.0，可使用 `pyenv install 3.13.0` 進行安裝。)*
     1. 複製儲存庫：`git clone https://github.com/eddie772tw/FH6-Painter.git`
     2. 直接雙擊啟動 **`forza-painter-py.bat`**。該腳本會全自動偵測、建立 Python 3.13 虛擬環境 (`.venv`) 並安裝所有依賴，同時也會透過 npm 安裝前端套件，隨後啟動程式。也可以手動安裝依賴：`pip install -r requirements.txt`、`pip install -r backend/requirements.txt`、`npm --prefix frontend install` 與 `npm --prefix frontend run build`。
 
@@ -111,6 +118,7 @@ Support Go-OpenCL, Taichi, and Numba acceleration across CPU and GPU, provide GU
     2. Unzip and double-click **`FH6-Painter.exe`** to run. You can directly edit the `settings/` presets and `optimization_settings.json` located beside the executable.
 *   **Method B: Source Code Version (Requires Python & Node.js)**:
     Native support for **Python 3.13** (Full CPU/GPU engines) and compatible with **Python 3.14** (Go-OpenCL and Numba JIT only; Taichi automatically disabled). **Node.js** is required to compile and run the frontend environment. **Rust (cargo)** is optional but recommended for native Tauri app compilation.
+    *(Tip: If your environment lacks Python 3.13.0, you can install it using `pyenv install 3.13.0`.)*
     1. Clone the repository: `git clone https://github.com/eddie772tw/FH6-Painter.git`
     2. Double-click **`forza-painter-py.bat`** to start. The script will automatically detect Python, create a Python 3.13 virtual environment (`.venv`), install Python requirements, install npm dependencies, and run the app. You can also install requirements manually: `pip install -r requirements.txt`, `pip install -r backend/requirements.txt`, `npm --prefix frontend install` and `npm --prefix frontend run build`.
 
@@ -252,6 +260,10 @@ The project uses `pytest` for unit testing. To ensure proper module resolution a
 python -m pytest tests/
 # 或 / Or
 PYTHONPATH=. pytest tests/
+
+# 執行 Win32 記憶體掃描模擬測試 (不需要遊戲執行)
+# Run Win32 memory scanning mock test (no game instance required)
+PYTHONPATH=. python tests/test_mock_scanner.py
 ```
 
 ---
